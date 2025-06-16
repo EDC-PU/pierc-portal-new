@@ -1,3 +1,4 @@
+
 'use client';
 
 import type { User } from 'firebase/auth';
@@ -83,7 +84,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     } catch (error: any) {
       console.error("Error during Google sign-in:", error);
-      toast({ title: "Sign-in Error", description: error.message || "Failed to sign in with Google.", variant: "destructive" });
+      if (error.code === 'auth/popup-closed-by-user') {
+        toast({ title: "Sign-in Cancelled", description: "The sign-in popup was closed before completion.", variant: "default" });
+      } else if (error.code === 'auth/cancelled-popup-request') {
+         toast({ title: "Sign-in Interrupted", description: "The sign-in process was interrupted. Please try again.", variant: "default" });
+      } else {
+        toast({ title: "Sign-in Error", description: error.message || "Failed to sign in with Google.", variant: "destructive" });
+      }
+    } finally {
       setLoading(false);
     }
   };
