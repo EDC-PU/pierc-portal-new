@@ -1,14 +1,14 @@
+
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Zap, Lightbulb, Rocket, TrendingUp, Target, Users, CheckCircle } from 'lucide-react';
+import { Zap, Lightbulb, Rocket, CheckCircle, Users, TrendingUp } from 'lucide-react'; // Adjusted icons
 import Image from 'next/image';
 
 interface Phase {
   icon: React.ElementType;
   title: string;
   description: string;
-  duration: string;
   keyActivities: string[];
   image?: string;
   imageHint?: string;
@@ -17,48 +17,27 @@ interface Phase {
 const incubationPhases: Phase[] = [
   {
     icon: Lightbulb,
-    title: 'Phase 1: Ideation & Validation',
-    description: 'Transforming raw ideas into viable concepts. Focus on market research, problem validation, and initial concept development.',
-    duration: '1-2 Months',
-    keyActivities: ['Market Research', 'Problem Definition', 'Solution Brainstorming', 'Initial Feasibility Study', 'Pitch Deck V1'],
+    title: 'Phase 1: Application Stage',
+    description: 'Submit Your Idea Through The Startup Support Tab On Our Website.',
+    keyActivities: ['Idea Submission', 'Initial Concept Outline', 'Team Formation (if any)'],
     image: "https://placehold.co/600x300.png",
-    imageHint: "brainstorming ideas"
+    imageHint: "idea submission form"
   },
   {
-    icon: Rocket,
-    title: 'Phase 2: Prototyping & MVP Development',
-    description: 'Building a Minimum Viable Product (MVP) to test the core functionalities and gather early user feedback.',
-    duration: '2-4 Months',
-    keyActivities: ['MVP Specification', 'Prototype Development', 'User Testing & Feedback Collection', 'Technology Stack Finalization', 'Business Model Canvas'],
+    icon: Users, // Using Users for evaluation/review
+    title: 'Phase 2: Evaluation',
+    description: 'Applications Undergo Expert Review And Pitch Presentations In Two Rounds.',
+    keyActivities: ['Expert Review of Application', 'First Round Pitch Presentation', 'Second Round Pitch Presentation', 'Feedback Incorporation'],
     image: "https://placehold.co/600x300.png",
-    imageHint: "product development"
+    imageHint: "expert review meeting"
   },
   {
-    icon: Target,
-    title: 'Phase 3: Market Entry & Early Traction',
-    description: 'Launching the MVP, acquiring first users, and iterating based on real-world market feedback. Focus on product-market fit.',
-    duration: '3-6 Months',
-    keyActivities: ['Soft Launch Strategy', 'Early Adopter Acquisition', 'Feedback Analysis & Iteration', 'Marketing & Sales Plan V1', 'Legal & IP Basics'],
+    icon: Rocket, // Rocket for program launch/training
+    title: 'Phase 3: Pre-Incubation Program (Cohort)',
+    description: 'Begin With The 2–Week Training Program And Enter The Idea Stage Of Incubation.',
+    keyActivities: ['2-Week Intensive Training', 'Cohort Formation', 'Mentorship Assignment', 'Business Model Development', 'MVP Scoping'],
     image: "https://placehold.co/600x300.png",
-    imageHint: "business launch"
-  },
-  {
-    icon: TrendingUp,
-    title: 'Phase 4: Growth & Scaling',
-    description: 'Focusing on sustainable growth, expanding user base, optimizing operations, and preparing for investment.',
-    duration: '6-12 Months',
-    keyActivities: ['Growth Hacking Strategies', 'Operational Scaling', 'Team Expansion', 'Investor Readiness Program', 'Financial Projections'],
-    image: "https://placehold.co/600x300.png",
-    imageHint: "business growth chart"
-  },
-  {
-    icon: Users,
-    title: 'Phase 5: Graduation & Alumni Support',
-    description: 'Successfully launching as an independent entity, with ongoing support and networking opportunities from PIERC.',
-    duration: 'Ongoing',
-    keyActivities: ['Formal Company Registration', 'Securing Follow-on Funding', 'Alumni Network Integration', 'Mentorship Contribution', 'Success Story Sharing'],
-    image: "https://placehold.co/600x300.png",
-    imageHint: "graduation success"
+    imageHint: "training program cohort"
   },
 ];
 
@@ -69,7 +48,7 @@ export default function IncubationPhasesPage() {
         <Zap className="h-16 w-16 text-primary mx-auto mb-4" />
         <h1 className="text-4xl font-headline font-bold mb-2">Phases of Incubation</h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Guiding your innovative ideas from concept to market success through structured support and mentorship.
+          Our structured program to guide your innovative ideas from concept to market readiness.
         </p>
       </header>
 
@@ -97,16 +76,12 @@ export default function IncubationPhasesPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <h4 className="font-semibold text-lg mb-1">Duration:</h4>
-                <p className="text-muted-foreground">{phase.duration}</p>
-              </div>
-              <div>
                 <h4 className="font-semibold text-lg mb-2">Key Activities:</h4>
                 <ul className="space-y-1">
                   {phase.keyActivities.map((activity, actIndex) => (
-                    <li key={actIndex} className="flex items-center text-muted-foreground">
-                      <CheckCircle className="h-4 w-4 mr-2 text-green-500 flex-shrink-0" />
-                      {activity}
+                    <li key={actIndex} className="flex items-start text-muted-foreground">
+                      <CheckCircle className="h-4 w-4 mr-2 mt-1 text-green-500 flex-shrink-0" />
+                      <span>{activity}</span>
                     </li>
                   ))}
                 </ul>
@@ -121,10 +96,10 @@ export default function IncubationPhasesPage() {
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground mb-4">
-            If you have an idea or a startup project, PIERC is here to support you. Learn more about our application process and how we can help you succeed.
+            If you have an idea or a startup project, PIERC is here to support you. The first step is to submit your application. Make sure your profile is complete!
           </p>
-          {/* Placeholder for a button or link to application page */}
-          {/* <Button variant="default" size="lg">Apply Now</Button> */}
+          {/* Placeholder for a button or link to application page (Startup Support Tab) */}
+          {/* e.g. <Button variant="default" size="lg" onClick={() => router.push('/dashboard/submit-idea')}>Submit Your Idea</Button> */}
         </CardContent>
       </Card>
     </div>
