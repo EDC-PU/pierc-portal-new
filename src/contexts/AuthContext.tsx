@@ -83,7 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     } catch (error: any) {
-      console.error("Error during Google sign-in:", error);
+      console.error("Error during Google sign-in:", error); // This line logs the error to the console.
       if (error.code === 'auth/popup-closed-by-user') {
         toast({ title: "Sign-in Cancelled", description: "The sign-in popup was closed before completion.", variant: "default" });
       } else if (error.code === 'auth/cancelled-popup-request') {
@@ -131,7 +131,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserProfile(null);
       router.push('/login');
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
-    } catch (error: any) {
+    } catch (error: any)
+       {
       console.error("Error signing out:", error);
       toast({ title: "Sign-out Error", description: error.message || "Failed to sign out.", variant: "destructive" });
     } finally {
