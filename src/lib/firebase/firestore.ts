@@ -1,30 +1,67 @@
 import { db } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage } from '@/types';
 
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
+  
+  // Explicitly define all fields for UserProfile, merging with provided data
   const profileData: UserProfile = {
     uid: userId,
     email: data.email || null,
-    displayName: data.displayName || null,
-    photoURL: data.photoURL || null,
-    role: data.role || null,
-    fullName: data.fullName || data.displayName || '',
+    displayName: data.displayName || null, // From Firebase Auth
+    photoURL: data.photoURL || null,     // From Firebase Auth
+    role: data.role || null, // This should be determined and passed in `data`
+
+    // PRD Mandatory Fields
+    fullName: data.fullName || data.displayName || '', // User-provided, fallback to Auth display name
+    contactNumber: data.contactNumber || '',
+    applicantCategory: data.applicantCategory || 'OTHERS', // Default, should be set
+    currentStage: data.currentStage || 'IDEA', // Default, should be set
+    startupTitle: data.startupTitle || '',
+    problemDefinition: data.problemDefinition || '',
+    solutionDescription: data.solutionDescription || '',
+    uniqueness: data.uniqueness || '',
+    
+    // Optional / Conditional based on PRD logic handled in form/context
+    enrollmentNumber: data.enrollmentNumber || undefined,
+    instituteName: data.instituteName || undefined,
+    college: data.college || undefined,
+    teamMembers: data.teamMembers || undefined,
+
+    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : data.isSuperAdmin || false,
+    
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-    ...data,
+    ...data, // Spread any other fields passed in, ensures all UserProfile fields are covered
   };
+
+  // Ensure all keys from UserProfile are present, even if undefined from data
+  // This is a bit redundant if profileData is typed correctly and fully populated above.
+  // However, spreading `data` last ensures its values take precedence for fields it defines.
+
   await setDoc(userProfileRef, profileData);
-  return profileData;
+  
+  // Fetch the just-created document to ensure server timestamps are resolved for the return value
+  const docSnap = await getDoc(userProfileRef);
+  if (docSnap.exists()) {
+    return docSnap.data() as UserProfile;
+  }
+  // Should not happen if setDoc was successful
+  throw new Error("Failed to create or retrieve user profile after creation.");
 };
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
   const userProfileRef = doc(db, 'users', userId);
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
-    return docSnap.data() as UserProfile;
+    const profile = docSnap.data() as UserProfile;
+    // Ensure isSuperAdmin is correctly set if email matches, even if not in DB (for robustness)
+    if (profile.email === 'pranavrathi07@gmail.com' && !profile.isSuperAdmin) {
+        profile.isSuperAdmin = true;
+    }
+    return profile;
   }
   return null;
 };
@@ -46,12 +83,14 @@ export const createAnnouncement = async (announcement: Omit<Announcement, 'id' |
     updatedAt: serverTimestamp(),
   };
   const docRef = await addDoc(announcementsCol, newAnnouncementData);
-  return { id: docRef.id, ...newAnnouncementData } as Announcement; // Timestamps will be resolved by server
+  // Fetch the document to get server-resolved timestamps
+  const newDocSnap = await getDoc(docRef);
+  return { id: newDocSnap.id, ...newDocSnap.data() } as Announcement;
 };
 
 export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void, limitCount: number = 20) => {
   const announcementsCol = collection(db, 'announcements');
-  const q = query(announcementsCol, orderBy('createdAt', 'desc'), where('isUrgent', '==', false)); // Initially, only non-urgent
+  const q = query(announcementsCol, orderBy('createdAt', 'desc'), where('isUrgent', '==', false)); 
 
   return onSnapshot(q, (querySnapshot) => {
     const announcements: Announcement[] = [];
@@ -64,9 +103,6 @@ export const getAnnouncementsStream = (callback: (announcements: Announcement[])
 
 export const getUrgentAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  // Get recent urgent announcements (e.g., created in the last 24 hours, or just latest few)
-  // For simplicity, let's get all urgent ones ordered by creation time.
-  // You might want to add a 'dismissedBy' field or similar for per-user dismissal.
   const q = query(announcementsCol, where('isUrgent', '==', true), orderBy('createdAt', 'desc'));
 
   return onSnapshot(q, (querySnapshot) => {
@@ -105,16 +141,9 @@ export const deleteAnnouncement = async (announcementId: string): Promise<void> 
   await deleteDoc(announcementRef);
 };
 
-// Example of a batch delete for users, if needed in future (e.g. GDPR)
 export const deleteUserAndProfile = async (userId: string): Promise<void> => {
   const batch = writeBatch(db);
   const userProfileRef = doc(db, 'users', userId);
   batch.delete(userProfileRef);
-  // Add other related data to delete in batch, e.g., user's posts, comments etc.
-  // const userPostsQuery = query(collection(db, 'posts'), where('authorId', '==', userId));
-  // const postDocs = await getDocs(userPostsQuery);
-  // postDocs.forEach(doc => batch.delete(doc.ref));
-  
   await batch.commit();
-  // Note: This does not delete the Firebase Auth user. That must be done separately via Admin SDK or client SDK if user is authenticated.
 };

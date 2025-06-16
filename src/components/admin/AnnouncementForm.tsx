@@ -1,5 +1,7 @@
+
 'use client';
 
+import { useState } from 'react'; // Added useState import
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -77,13 +79,10 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
         return;
     }
     try {
-      await onSave(data, currentUserProfile.uid, currentUserProfile.displayName);
-      onSubmitSuccess(); // Call the success callback (e.g., to close a dialog)
+      await onSave(data, currentUserProfile.uid, currentUserProfile.displayName); // Use Auth displayName primarily
+      onSubmitSuccess(); 
     } catch (error) {
-      // onSave should handle its own toasts for specific Firestore errors
       console.error("Failed to save announcement:", error);
-      // Generic toast if onSave doesn't handle it or for other errors
-      // toast({ title: "Save Failed", description: "Could not save the announcement.", variant: "destructive" });
     }
   };
 

@@ -50,6 +50,7 @@
   }
 
   .light {
+    /* Keeping light theme as-is for now, can be updated later if needed */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;

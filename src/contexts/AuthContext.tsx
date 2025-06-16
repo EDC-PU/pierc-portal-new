@@ -17,7 +17,7 @@ interface AuthContextType {
   initialLoadComplete: boolean; 
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  setRoleAndCompleteProfile: (role: Role, additionalData: Partial<UserProfile>) => Promise<void>;
+  setRoleAndCompleteProfile: (role: Role, additionalData: Partial<Omit<UserProfile, 'role' | 'uid' | 'email' | 'displayName' | 'photoURL' | 'createdAt' | 'updatedAt'>>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -36,16 +36,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (firebaseUser) {
         setUser(firebaseUser);
         try {
-          const profile = await getUserProfile(firebaseUser.uid);
+          let profile = await getUserProfile(firebaseUser.uid);
           if (profile) {
+             // Ensure superAdmin status is reflected
+            if (firebaseUser.email === 'pranavrathi07@gmail.com' && !profile.isSuperAdmin) {
+                profile.isSuperAdmin = true; 
+                // Optionally update Firestore if it's missing, but for client-side logic this is fine.
+            }
             setUserProfile(profile);
-            // If user is on login or profile setup, but already has profile, redirect to dashboard
             if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
               router.push('/dashboard');
             }
           } else {
-            // No profile, user needs to set it up
             setUserProfile(null); 
+            // If no profile, user needs to set it up.
+            // The profile setup page itself will handle pre-filling role for Parul emails.
             if (router && window.location.pathname !== '/profile-setup') {
                router.push('/profile-setup');
             }
@@ -73,22 +78,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const result = await signInWithPopup(auth, provider);
       const firebaseUser = result.user;
       if (firebaseUser) {
-        const profile = await getUserProfile(firebaseUser.uid);
-        if (profile) {
-          setUserProfile(profile);
-          router.push('/dashboard');
-        } else {
-          // New user or profile not found, redirect to profile setup
-          router.push('/profile-setup');
-        }
+        // Auth state change listener will handle profile fetching and redirection
       }
     } catch (error: any) {
-      console.error("Error during Google sign-in:", error); // This line logs the error to the console.
-      if (error.code === 'auth/popup-closed-by-user') {
-        toast({ title: "Sign-in Cancelled", description: "The sign-in popup was closed before completion.", variant: "default" });
-      } else if (error.code === 'auth/cancelled-popup-request') {
-         toast({ title: "Sign-in Interrupted", description: "The sign-in process was interrupted. Please try again.", variant: "default" });
-      } else {
+      console.error("Error during Google sign-in:", error);
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+        toast({ title: "Sign-in Cancelled", description: "The Google Sign-In popup was closed before completion.", variant: "default" });
+      } else if (error.code === 'auth/unauthorized-domain') {
+        toast({ title: "Sign-in Error", description: "This domain is not authorized for Firebase sign-in. Please contact support.", variant: "destructive" });
+      }
+      else {
         toast({ title: "Sign-in Error", description: error.message || "Failed to sign in with Google.", variant: "destructive" });
       }
     } finally {
@@ -96,7 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const setRoleAndCompleteProfile = async (role: Role, additionalData: Partial<UserProfile>) => {
+  const setRoleAndCompleteProfile = async (role: Role, additionalData: Partial<Omit<UserProfile, 'role' | 'uid' | 'email' | 'displayName' | 'photoURL' | 'createdAt' | 'updatedAt'>>) => {
     if (!user) {
       toast({ title: "Error", description: "No user logged in.", variant: "destructive" });
       return;
@@ -106,10 +105,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const newProfileData: Partial<UserProfile> = {
         uid: user.uid,
         email: user.email,
-        displayName: user.displayName,
+        displayName: user.displayName, // This is Firebase Auth display name
         photoURL: user.photoURL,
-        role,
-        ...additionalData,
+        role, // The role determined by the form logic (e.g., 'STUDENT' if Parul email, or selected)
+        isSuperAdmin: user.email === 'pranavrathi07@gmail.com', // Set super admin status
+        ...additionalData, // This includes all other form fields like fullName, contactNumber, etc.
       };
       const createdProfile = await createUserProfileFS(user.uid, newProfileData);
       setUserProfile(createdProfile);
@@ -118,6 +118,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } catch (error: any) {
       console.error("Error setting role and profile:", error);
       toast({ title: "Profile Setup Error", description: error.message || "Failed to set up profile.", variant: "destructive" });
+      throw error; // Re-throw to allow form to handle its state
     } finally {
       setLoading(false);
     }
@@ -131,8 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUserProfile(null);
       router.push('/login');
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
-    } catch (error: any)
-       {
+    } catch (error: any) {
       console.error("Error signing out:", error);
       toast({ title: "Sign-out Error", description: error.message || "Failed to sign out.", variant: "destructive" });
     } finally {
