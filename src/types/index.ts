@@ -8,13 +8,12 @@ export type CurrentStage = 'IDEA' | 'PROTOTYPE_STAGE' | 'STARTUP_STAGE';
 
 export interface UserProfile {
   uid: string;
-  email: string | null; // Firebase Auth email
-  displayName: string | null; // Firebase Auth display name (used as a fallback for fullName if not provided)
-  photoURL: string | null; // Firebase Auth photo URL
+  email: string | null; 
+  displayName: string | null; 
+  photoURL: string | null; 
   role: Role;
 
-  // Fields from PRD for profile setup
-  fullName: string; // User-entered full name
+  fullName: string; 
   contactNumber: string;
   applicantCategory: ApplicantCategory;
   currentStage: CurrentStage;
@@ -23,40 +22,39 @@ export interface UserProfile {
   solutionDescription: string;
   uniqueness: string;
   
-  teamMembers: string; // Comma-separated names, can be empty if no team members. Zod handles optionality display.
+  teamMembers: string;
 
-  // Conditional fields
-  enrollmentNumber?: string; // Mandatory if applicantCategory is 'PARUL_STUDENT'
-  college?: string; // Mandatory if applicantCategory is 'PARUL_STUDENT', 'PARUL_STAFF', or 'PARUL_ALUMNI'
-  instituteName?: string; // Mandatory if applicantCategory is 'OTHERS'
+  enrollmentNumber?: string; 
+  college?: string; 
+  instituteName?: string; 
   
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  isSuperAdmin?: boolean; // True if email is pranavrathi07@gmail.com
+  isSuperAdmin?: boolean;
 }
 
 export interface IdeaSubmission {
   id?: string;
   userId: string;
   title: string;
-  category: string; // Example: 'Tech', 'Social Impact', etc. - needs definition
+  category: string; 
   problem: string;
   solution: string;
-  developmentStage: CurrentStage; // Re-use CurrentStage or define specific stages for ideas
-  fileURL?: string; // Path to uploaded file in Firebase Storage
+  developmentStage: CurrentStage; 
+  fileURL?: string; 
   fileName?: string;
-  studioLocation?: 'SURAT' | 'RAJKOT' | 'BARODA' | 'AHMEDABAD'; // Optional, for admin filtering
-  applicantType?: ApplicantCategory; // For admin filtering, denormalized from UserProfile
+  studioLocation?: 'SURAT' | 'RAJKOT' | 'BARODA' | 'AHMEDABAD'; 
+  applicantType?: ApplicantCategory;
   status: 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
   submittedAt: Timestamp;
   updatedAt: Timestamp;
-  cohortId?: string; // If assigned to a cohort
+  cohortId?: string; 
 }
 
 export interface Cohort {
   id?: string;
   name: string;
-  ideaIds: string[]; // Array of IdeaSubmission IDs
+  ideaIds: string[]; 
   startDate: Timestamp;
   endDate: Timestamp;
   createdAt: Timestamp;
@@ -64,17 +62,28 @@ export interface Cohort {
 }
 
 export interface Announcement {
-  id?: string; // Firestore document ID
+  id?: string; 
   title: string;
   content: string;
   isUrgent: boolean;
-  targetAudience: 'ALL' | 'SPECIFIC_COHORT'; // Default to ALL, admin can specify cohort
-  cohortId?: string; // if targetAudience is 'SPECIFIC_COHORT'
+  targetAudience: 'ALL' | 'SPECIFIC_COHORT'; 
+  cohortId?: string; 
   attachmentURL?: string;
   attachmentName?: string;
   createdByUid: string; 
   creatorDisplayName: string | null; 
   createdAt: Timestamp;
   updatedAt: Timestamp;
+}
+
+export interface SystemSettings {
+  id?: string; // Typically a single 'config' document
+  portalName: string;
+  maintenanceMode: boolean;
+  allowNewRegistrations: boolean;
+  defaultCohortSize: number;
+  // Add other global settings here
+  updatedAt?: Timestamp;
+  updatedByUid?: string;
 }
 

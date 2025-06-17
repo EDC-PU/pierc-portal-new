@@ -12,52 +12,34 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
-import type { UserProfile } from '@/types';
-// import { updateSystemSettings, getSystemSettings } from '@/lib/firebase/firestore'; // To be implemented
+import type { UserProfile, SystemSettings } from '@/types';
+import { updateSystemSettings as updateSettingsFS, getSystemSettings as getSettingsFS } from '@/lib/firebase/firestore';
 
-// Define a schema for system settings
 const systemSettingsSchema = z.object({
   portalName: z.string().min(3, 'Portal name must be at least 3 characters').max(50),
   maintenanceMode: z.boolean().default(false),
-  defaultCohortSize: z.number().min(1).max(100).optional(),
-  // Add more settings as needed
+  allowNewRegistrations: z.boolean().default(true),
+  defaultCohortSize: z.coerce.number().min(1, 'Cohort size must be at least 1').max(100, 'Cohort size cannot exceed 100'),
 });
 
 export type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 
 interface SystemSettingsFormProps {
-  currentUserProfile: UserProfile;
+  currentUserProfile: UserProfile; // Assuming this is passed and verified to be an admin
 }
-
-// Placeholder for actual settings fetching and updating
-const getSystemSettings = async (): Promise<SystemSettingsFormData | null> => {
-  console.log("Fetching system settings...");
-  // Simulate API call
-  await new Promise(resolve => setTimeout(resolve, 500));
-  // Return dummy data or null if not found
-  return {
-    portalName: "PIERC Portal Default",
-    maintenanceMode: false,
-    defaultCohortSize: 20,
-  };
-};
-
-const updateSystemSettings = async (data: SystemSettingsFormData): Promise<void> => {
-  console.log("Updating system settings with:", data);
-  // Simulate API call
-  await new Promise(resolve => setTimeout(resolve, 1000));
-};
-
 
 export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormProps) {
   const { toast } = useToast();
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [isSubmitting, setIsSubmittingState] = useState(false); // Local submitting state
 
-  const { control, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<SystemSettingsFormData>({
+  const { control, handleSubmit, reset, formState: { errors } } = useForm<SystemSettingsFormData>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
-      portalName: '',
+      portalName: 'PIERC Portal', // Default initial value
       maintenanceMode: false,
+      allowNewRegistrations: true,
+      defaultCohortSize: 15,
     }
   });
 
@@ -65,19 +47,18 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
     const loadSettings = async () => {
       setIsLoadingSettings(true);
       try {
-        const settings = await getSystemSettings(); // Replace with actual Firestore call
+        const settings = await getSettingsFS();
         if (settings) {
-          reset(settings);
+          reset(settings); // Populate form with fetched settings
         } else {
-          // Initialize with defaults if no settings found
-          reset({
-            portalName: 'PIERC Portal',
-            maintenanceMode: false,
-            defaultCohortSize: 15,
-          });
+          // If no settings document exists, the form will keep its defaultValues.
+          // Optionally, create a default settings document here if desired.
+          // For now, we'll assume defaults are fine if nothing is in Firestore.
+          toast({ title: "Default Settings Loaded", description: "No existing settings found, using defaults. Save to create.", variant: "default"});
         }
       } catch (error) {
-        toast({ title: "Error", description: "Could not load system settings.", variant: "destructive" });
+        console.error("Error loading system settings:", error);
+        toast({ title: "Load Error", description: "Could not load system settings.", variant: "destructive" });
       } finally {
         setIsLoadingSettings(false);
       }
@@ -86,11 +67,18 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
   }, [reset, toast]);
 
   const onSubmit = async (data: SystemSettingsFormData) => {
+    setIsSubmittingState(true);
     try {
-      await updateSystemSettings(data); // Replace with actual Firestore call
+      if (!currentUserProfile.uid) {
+        throw new Error("Admin user ID not found.");
+      }
+      await updateSettingsFS(data, currentUserProfile.uid);
       toast({ title: "Settings Saved", description: "System settings have been updated successfully." });
     } catch (error) {
-      toast({ title: "Save Error", description: "Could not save system settings.", variant: "destructive" });
+      console.error("Error saving system settings:", error);
+      toast({ title: "Save Error", description: (error as Error).message || "Could not save system settings.", variant: "destructive" });
+    } finally {
+      setIsSubmittingState(false);
     }
   };
 
@@ -106,7 +94,6 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Column 1: Portal Configuration */}
         <Card className="md:col-span-2 shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl">Portal Configuration</CardTitle>
@@ -134,11 +121,34 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
                     id="maintenanceMode"
                     checked={field.value}
                     onCheckedChange={field.onChange}
+                    disabled={isSubmitting}
                   />
                 )}
               />
             </div>
              {errors.maintenanceMode && <p className="text-sm text-destructive mt-1">{errors.maintenanceMode.message}</p>}
+
+            <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+              <div className="space-y-0.5">
+                <Label htmlFor="allowNewRegistrations" className="text-base">Allow New Registrations</Label>
+                <p className="text-sm text-muted-foreground">
+                  Control whether new users can sign up for the portal.
+                </p>
+              </div>
+              <Controller
+                name="allowNewRegistrations"
+                control={control}
+                render={({ field }) => (
+                  <Switch
+                    id="allowNewRegistrations"
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    disabled={isSubmitting}
+                  />
+                )}
+              />
+            </div>
+            {errors.allowNewRegistrations && <p className="text-sm text-destructive mt-1">{errors.allowNewRegistrations.message}</p>}
             
             <div>
               <Label htmlFor="defaultCohortSize">Default Cohort Size</Label>
@@ -150,19 +160,17 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
                     id="defaultCohortSize" 
                     type="number" 
                     {...field} 
-                    onChange={e => field.onChange(parseInt(e.target.value,10) || 0)}
+                    onChange={e => field.onChange(parseInt(e.target.value,10) || 0)} // Ensure number
                     value={field.value || ''}
+                    disabled={isSubmitting}
                   />
                 )} 
               />
               {errors.defaultCohortSize && <p className="text-sm text-destructive mt-1">{errors.defaultCohortSize.message}</p>}
             </div>
-
-            {/* Add more configuration settings here */}
           </CardContent>
         </Card>
 
-        {/* Column 2: Access Control & Save Button */}
         <div className="space-y-8">
           <Card className="shadow-lg">
             <CardHeader>
@@ -185,7 +193,7 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
                 <CardTitle className="font-headline text-xl">Save Changes</CardTitle>
              </CardHeader>
             <CardContent>
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
+                <Button type="submit" className="w-full" disabled={isSubmitting || isLoadingSettings}>
                 {isSubmitting ? <LoadingSpinner className="mr-2" /> : null}
                 Save System Settings
                 </Button>
