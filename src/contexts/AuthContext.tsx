@@ -5,8 +5,14 @@ import type { User } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth } from '@/lib/firebase/config';
 import { getUserProfile, createUserProfileFS } from '@/lib/firebase/firestore';
-import type { UserProfile, Role } from '@/types'; // UserProfile type now includes all new fields
-import { GoogleAuthProvider, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import type { UserProfile, Role } from '@/types';
+import { 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signOut as firebaseSignOut,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword as firebaseSignInWithEmailPassword
+} from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
@@ -16,8 +22,9 @@ interface AuthContextType {
   loading: boolean;
   initialLoadComplete: boolean; 
   signInWithGoogle: () => Promise<void>;
+  signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
+  signInWithEmailPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  // The additionalData type should now reflect the more comprehensive UserProfile structure
   setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'>) => Promise<void>;
 }
 
@@ -39,18 +46,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           let profile = await getUserProfile(firebaseUser.uid);
           if (profile) {
-            // Ensure superAdmin status is reflected correctly
             if (firebaseUser.email === 'pranavrathi07@gmail.com' && !profile.isSuperAdmin) {
                 profile.isSuperAdmin = true; 
             }
             setUserProfile(profile);
-            // If user is logged in and has a profile, but is on login/setup page, redirect to dashboard
             if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
               router.push('/dashboard');
             }
           } else {
             setUserProfile(null); 
-            // No profile exists, redirect to profile setup page if not already there.
             if (router && window.location.pathname !== '/profile-setup') {
                router.push('/profile-setup');
             }
@@ -63,9 +67,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       } else {
         setUser(null);
         setUserProfile(null);
-        // If user logs out or session expires, and they are on a protected route, redirect to login.
-        // DashboardLayout handles this for /dashboard/* routes.
-        // For other potential protected routes, this logic might need expansion or be handled at page/layout level.
       }
       setLoading(false);
       setInitialLoadComplete(true);
@@ -74,26 +75,70 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   }, [router, toast]);
 
+  const handleAuthError = (error: any, action: string) => {
+    console.error(`Error during ${action}:`, error);
+    let message = error.message || `Failed to ${action}.`;
+    if (error.code) {
+      switch (error.code) {
+        case 'auth/popup-closed-by-user':
+        case 'auth/cancelled-popup-request':
+          message = `The ${action} popup was closed before completion.`;
+          break;
+        case 'auth/unauthorized-domain':
+          message = `This domain is not authorized for Firebase ${action}. Please contact support.`;
+          break;
+        case 'auth/email-already-in-use':
+          message = 'This email address is already in use. Please try signing in or use a different email.';
+          break;
+        case 'auth/weak-password':
+          message = 'The password is too weak. Please use a stronger password.';
+          break;
+        case 'auth/invalid-credential': // Covers wrong password, user not found for email sign-in
+        case 'auth/user-not-found': // More specific, often for password reset or email link sign-in
+        case 'auth/wrong-password': // Older SDKs might use this
+          message = 'Invalid email or password. Please check your credentials and try again.';
+          break;
+        default:
+          message = `An error occurred during ${action}. Code: ${error.code}`;
+      }
+    }
+    toast({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} Error`, description: message, variant: "destructive" });
+    setLoading(false);
+    throw error; // Re-throw for form handling if needed
+  };
+
   const signInWithGoogle = async () => {
     setLoading(true);
     const provider = new GoogleAuthProvider();
     try {
-      const result = await signInWithPopup(auth, provider);
-      // const firebaseUser = result.user;
+      await signInWithPopup(auth, provider);
       // Auth state change listener (useEffect above) will handle fetching/creating profile and redirection.
     } catch (error: any) {
-      console.error("Error during Google sign-in:", error);
-      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
-        toast({ title: "Sign-in Cancelled", description: "The Google Sign-In popup was closed before completion.", variant: "default" });
-      } else if (error.code === 'auth/unauthorized-domain') {
-        toast({ title: "Sign-in Error", description: "This domain is not authorized for Firebase sign-in. Please contact support.", variant: "destructive" });
-      }
-      else {
-        toast({ title: "Sign-in Error", description: error.message || "Failed to sign in with Google.", variant: "destructive" });
-      }
-    } finally {
-      // Loading will be set to false by the onAuthStateChanged listener
+      handleAuthError(error, "Google sign-in");
+    } 
+    // setLoading will be handled by onAuthStateChanged
+  };
+
+  const signUpWithEmailPassword = async (email: string, password: string) => {
+    setLoading(true);
+    try {
+      await createUserWithEmailAndPassword(auth, email, password);
+      // Auth state change listener will handle next steps (profile setup)
+    } catch (error: any) {
+      handleAuthError(error, "sign-up");
     }
+    // setLoading will be handled by onAuthStateChanged
+  };
+
+  const signInWithEmailPassword = async (email: string, password: string) => {
+    setLoading(true);
+    try {
+      await firebaseSignInWithEmailPassword(auth, email, password);
+      // Auth state change listener will handle next steps (dashboard or profile setup)
+    } catch (error: any) {
+      handleAuthError(error, "sign-in");
+    }
+    // setLoading will be handled by onAuthStateChanged
   };
 
   const setRoleAndCompleteProfile = async (
@@ -108,21 +153,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const profileDataForCreation: Partial<UserProfile> = {
         uid: user.uid,
-        email: user.email,
-        displayName: user.displayName, // Firebase Auth display name
+        email: user.email, // From Firebase Auth user object
+        displayName: user.displayName || additionalData.fullName, // Prefer user-entered fullName if auth displayName is null
         photoURL: user.photoURL,
         role,
         isSuperAdmin: user.email === 'pranavrathi07@gmail.com',
-        ...additionalData, // This now includes all new fields from the form
+        ...additionalData,
       };
       const createdProfile = await createUserProfileFS(user.uid, profileDataForCreation);
-      setUserProfile(createdProfile); // Update local state with the full profile from Firestore
+      setUserProfile(createdProfile); 
       router.push('/dashboard');
       toast({ title: "Profile Updated", description: "Your profile has been successfully set up." });
     } catch (error: any) {
       console.error("Error setting role and profile:", error);
       toast({ title: "Profile Setup Error", description: error.message || "Failed to set up profile.", variant: "destructive" });
-      throw error; // Re-throw to allow form to handle its state (e.g., stop loading spinner)
+      throw error; 
     } finally {
       setLoading(false);
     }
@@ -134,18 +179,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await firebaseSignOut(auth);
       setUser(null);
       setUserProfile(null);
-      router.push('/login'); // Redirect to login after sign out
+      router.push('/login'); 
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
-      console.error("Error signing out:", error);
-      toast({ title: "Sign-out Error", description: error.message || "Failed to sign out.", variant: "destructive" });
+      handleAuthError(error, "sign-out");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, initialLoadComplete, signInWithGoogle, signOut, setRoleAndCompleteProfile }}>
+    <AuthContext.Provider value={{ user, userProfile, loading, initialLoadComplete, signInWithGoogle, signUpWithEmailPassword, signInWithEmailPassword, signOut, setRoleAndCompleteProfile }}>
       {children}
     </AuthContext.Provider>
   );
@@ -158,4 +202,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
