@@ -32,6 +32,7 @@ import type { Timestamp } from 'firebase/firestore';
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
+const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED"; // Constant for "Not Assigned" phase value
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
   if (!phase) return 'N/A';
@@ -85,15 +86,19 @@ export default function ViewApplicationsPage() {
   const handleStatusOrPhaseChange = async (
     ideaId: string,
     newStatus: IdeaStatus,
-    newPhase: ProgramPhase | null = null // Default to null if only status changes
+    newPhaseInputValue: ProgramPhase | string | null = null 
   ) => {
+    let actualNewPhase: ProgramPhase | null = null;
+    if (newPhaseInputValue && newPhaseInputValue !== NO_PHASE_VALUE) {
+        actualNewPhase = newPhaseInputValue as ProgramPhase;
+    }
+
     try {
-      await updateIdeaStatusAndPhase(ideaId, newStatus, newPhase);
-      // Optimistically update local state or re-fetch
+      await updateIdeaStatusAndPhase(ideaId, newStatus, actualNewPhase);
       setApplications(prevApps =>
         prevApps.map(app => 
           app.id === ideaId 
-            ? { ...app, status: newStatus, programPhase: newStatus === 'SELECTED' ? newPhase : null, updatedAt: new Date() } 
+            ? { ...app, status: newStatus, programPhase: newStatus === 'SELECTED' ? actualNewPhase : null, updatedAt: new Date() } 
             : app
         )
       );
@@ -101,7 +106,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
       console.error("Error updating status/phase:", error);
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-      fetchApplications(); // Re-fetch on error to ensure data consistency
+      fetchApplications(); 
     }
   };
 
@@ -279,7 +284,7 @@ export default function ViewApplicationsPage() {
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                        {formatDate(app.submittedAt)}
+                        {app.submittedAt instanceof Date ? format(app.submittedAt, 'MMM d, yyyy, HH:mm') : (app.submittedAt as Timestamp)?.toDate ? format((app.submittedAt as Timestamp).toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -306,14 +311,14 @@ export default function ViewApplicationsPage() {
                        <TableCell>
                         {app.status === 'SELECTED' ? (
                           <Select
-                            value={app.programPhase || ''} // Ensure value is not null for Select
-                            onValueChange={(value) => handleStatusOrPhaseChange(app.id!, 'SELECTED', value as ProgramPhase)}
+                            value={app.programPhase || NO_PHASE_VALUE}
+                            onValueChange={(value) => handleStatusOrPhaseChange(app.id!, 'SELECTED', value as ProgramPhase | typeof NO_PHASE_VALUE)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Assign Phase" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="" className="text-xs italic">Not Assigned</SelectItem>
+                              <SelectItem value={NO_PHASE_VALUE} className="text-xs italic">Not Assigned</SelectItem>
                               {programPhases.map(phaseVal => (
                                 <SelectItem key={phaseVal} value={phaseVal} className="text-xs">
                                   {getProgramPhaseLabel(phaseVal)}
@@ -409,11 +414,11 @@ export default function ViewApplicationsPage() {
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Submitted At</h4>
-                   <p>{formatDate(selectedApplication.submittedAt)}</p>
+                   <p>{selectedApplication.submittedAt instanceof Date ? format(selectedApplication.submittedAt, 'MMM d, yyyy, HH:mm') : (selectedApplication.submittedAt as Timestamp)?.toDate ? format((selectedApplication.submittedAt as Timestamp).toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Last Updated At</h4>
-                  <p>{formatDate(selectedApplication.updatedAt)}</p>
+                  <p>{selectedApplication.updatedAt instanceof Date ? format(selectedApplication.updatedAt, 'MMM d, yyyy, HH:mm') : (selectedApplication.updatedAt as Timestamp)?.toDate ? format((selectedApplication.updatedAt as Timestamp).toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
                 </div>
               </div>
               <div className="space-y-3 pt-2">
