@@ -171,9 +171,9 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-6">
           <Card className="shadow-md">
             <CardHeader>
-              <div className="flex justify-between items-center">
+              <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                 <CardTitle className="flex items-center font-headline"><Megaphone className="mr-2 h-5 w-5 text-primary" />ANNOUNCEMENT</CardTitle>
-                <div className="flex space-x-1">
+                <div className="flex space-x-1 self-start sm:self-center">
                   <Button variant="ghost" size="sm" className="text-primary p-1 h-auto text-xs underline">Notification</Button>
                   <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary p-1 h-auto text-xs">Circular</Button>
                   <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary p-1 h-auto text-xs">Useful Website</Button>
@@ -266,9 +266,9 @@ export default function DashboardPage() {
           
           <Card className="shadow-md">
             <CardHeader>
-                <div className="flex justify-between items-center">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                     <CardTitle className="flex items-center font-headline"><Activity className="mr-2 h-5 w-5 text-primary"/>ACTIVITIES</CardTitle>
-                     <div className="flex space-x-1">
+                     <div className="flex space-x-1 self-start sm:self-center">
                         <Button variant="ghost" size="sm" className="text-primary p-1 h-auto text-xs underline">Today</Button>
                         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary p-1 h-auto text-xs">Yesterday</Button>
                         <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary p-1 h-auto text-xs">Tomorrow</Button>
@@ -288,7 +288,7 @@ export default function DashboardPage() {
                 <AvatarFallback>{getInitials(userProfile.displayName)}</AvatarFallback>
               </Avatar>
               <h3 className="text-lg font-semibold font-headline">{userProfile.displayName || userProfile.fullName}</h3>
-              <p className="text-xs text-muted-foreground mb-2">{userProfile.role === 'ADMIN_FACULTY' ? (userProfile.email === 'pranavrathi07@gmail.com' ? 'PIERC Super Admin' : 'PIERC Administrator') : (userProfile.applicantCategory && userProfile.startupTitle ? `${userProfile.startupTitle.substring(0,25)}...` : 'Innovator')}</p>
+              <p className="text-xs text-muted-foreground mb-2">{userProfile.role === 'ADMIN_FACULTY' ? (userProfile.isSuperAdmin ? 'PIERC Super Admin' : 'PIERC Administrator') : (userProfile.applicantCategory && userProfile.startupTitle ? `${userProfile.startupTitle.substring(0,25)}...` : 'Innovator')}</p>
               
               <Button variant="outline" size="sm" onClick={() => router.push('/profile-setup')} className="w-full text-sm mt-3">My Profile</Button>
             </CardContent>
@@ -298,4 +298,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
