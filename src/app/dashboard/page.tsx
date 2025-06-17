@@ -290,42 +290,7 @@ export default function DashboardPage() {
               <h3 className="text-lg font-semibold font-headline">{userProfile.displayName || userProfile.fullName}</h3>
               <p className="text-xs text-muted-foreground mb-2">{userProfile.role === 'ADMIN_FACULTY' ? (userProfile.email === 'pranavrathi07@gmail.com' ? 'PIERC Super Admin' : 'PIERC Administrator') : (userProfile.applicantCategory && userProfile.startupTitle ? `${userProfile.startupTitle.substring(0,25)}...` : 'Innovator')}</p>
               
-              <div className="text-left text-xs my-3 px-2">
-                <span className="text-muted-foreground">Profile Filled</span>
-                <span className="float-right font-medium text-primary">97.56%</span>
-              </div>
-              <div className="w-full bg-muted rounded-full h-1.5 mb-3">
-                <div className="bg-primary h-1.5 rounded-full" style={{ width: '97.56%' }}></div>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => router.push('/profile-setup')} className="w-full text-sm">My Profile</Button>
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-md">
-            <CardHeader className="pb-2 pt-4 px-4">
-                <CardTitle className="text-sm font-medium font-headline flex justify-between items-center">
-                PAY SLIP
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary"><Download className="h-4 w-4" /></Button>
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 px-4 pb-4">
-                <p className="text-xs text-muted-foreground text-center py-2">This feature is not applicable to PIERC Portal.</p>
-            </CardContent>
-          </Card>
-          
-          <Card className="shadow-md">
-            <CardHeader className="pb-2 pt-4 px-4">
-                <div className="flex justify-between items-center">
-                    <CardTitle className="text-sm font-medium font-headline">QUICK LINKS</CardTitle>
-                    <div className="flex space-x-1">
-                        <Button variant="ghost" size="sm" className="text-primary p-1 h-auto text-xs underline">General</Button>
-                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary p-1 h-auto text-xs">TTM</Button>
-                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-primary p-1 h-auto text-xs">LMS</Button>
-                    </div>
-                </div>
-            </CardHeader>
-            <CardContent className="px-4 pb-4">
-                <p className="text-xs text-muted-foreground text-center py-2">No PIERC-specific quick links configured.</p>
+              <Button variant="outline" size="sm" onClick={() => router.push('/profile-setup')} className="w-full text-sm mt-3">My Profile</Button>
             </CardContent>
           </Card>
         </div>
