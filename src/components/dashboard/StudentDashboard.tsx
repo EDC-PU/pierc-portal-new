@@ -4,15 +4,20 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { getUserIdeaSubmissionsWithStatus, type IdeaSubmission } from '@/lib/firebase/firestore';
+import { getUserIdeaSubmissionsWithStatus, type IdeaSubmission, updateIdeaPhase2PptDetails } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import type { ProgramPhase } from '@/types';
+import { Input } from '../ui/input';
+// Note: Firebase Storage import and upload logic will be part of a future update.
+// import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// import { app as firebaseApp } from '@/lib/firebase/config'; // To get storage instance
+
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
   if (!phase) return ''; 
@@ -30,6 +35,8 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
   const [loadingIdeas, setLoadingIdeas] = useState(true);
+  const [selectedPptFile, setSelectedPptFile] = useState<File | null>(null);
+  const [uploadingPptIdeaId, setUploadingPptIdeaId] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUserIdeas = async () => {
@@ -78,7 +85,57 @@ export default function StudentDashboard() {
     } else {
         return 'Invalid Date';
     }
-    return dateToFormat.toLocaleDateString();
+    return dateToFormat.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const handlePptFileChange = (event: React.ChangeEvent<HTMLInputElement>, ideaId: string) => {
+    if (event.target.files && event.target.files[0]) {
+      const file = event.target.files[0];
+      if (file.type === "application/vnd.ms-powerpoint" || file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+        setSelectedPptFile(file);
+        setUploadingPptIdeaId(ideaId); // Keep track of which idea this file is for
+      } else {
+        toast({ title: "Invalid File Type", description: "Please upload a PPT or PPTX file.", variant: "destructive" });
+        setSelectedPptFile(null);
+        setUploadingPptIdeaId(null);
+        event.target.value = ''; // Clear the input
+      }
+    }
+  };
+
+  const handlePptUpload = async () => {
+    if (!selectedPptFile || !uploadingPptIdeaId || !user?.uid) {
+      toast({ title: "Upload Error", description: "No file selected or idea context missing.", variant: "destructive" });
+      return;
+    }
+
+    toast({ title: "PPT Upload", description: "PPT upload functionality is currently a placeholder. This feature will be fully implemented soon.", variant: "default" });
+    
+    // Placeholder for actual Firebase Storage upload logic:
+    // For now, we'll simulate updating Firestore with dummy data.
+    // In a real implementation, you would:
+    // 1. Initialize Firebase Storage: const storage = getStorage(firebaseApp);
+    // 2. Create a storage reference: const storageRef = ref(storage, `ideas/${uploadingPptIdeaId}/phase2_presentations/${selectedPptFile.name}`);
+    // 3. Upload the file: await uploadBytes(storageRef, selectedPptFile);
+    // 4. Get the download URL: const downloadURL = await getDownloadURL(storageRef);
+    // 5. Call updateIdeaPhase2PptDetails with the actual URL and file name.
+    
+    const dummyFileUrl = `https://example.com/uploads/ideas/${uploadingPptIdeaId}/${selectedPptFile.name}`;
+    try {
+      setLoadingIdeas(true); // Show loading indicator
+      await updateIdeaPhase2PptDetails(uploadingPptIdeaId, dummyFileUrl, selectedPptFile.name);
+      toast({ title: "PPT Info Updated (Simulation)", description: `${selectedPptFile.name} details recorded.` });
+      setSelectedPptFile(null);
+      setUploadingPptIdeaId(null);
+      // Re-fetch ideas to show the updated PPT info
+      const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
+      setUserIdeas(ideas);
+    } catch (error) {
+      console.error("Error updating PPT details (simulation):", error);
+      toast({ title: "Update Error", description: "Could not update PPT details.", variant: "destructive" });
+    } finally {
+      setLoadingIdeas(false);
+    }
   };
 
 
@@ -110,32 +167,87 @@ export default function StudentDashboard() {
           ) : userIdeas.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
           ) : (
-            <ScrollArea className="h-[200px] pr-3"> 
-              <ul className="space-y-3">
+            <ScrollArea className="h-auto max-h-[400px] pr-3"> 
+              <ul className="space-y-4">
                 {userIdeas.map((idea) => (
-                  <li key={idea.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div className="mb-2 sm:mb-0">
-                      <p className="font-semibold text-foreground">{idea.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Submitted: {formatDate(idea.submittedAt)}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                        <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs">
-                        {idea.status.replace(/_/g, ' ').toLowerCase()}
-                        </Badge>
-                        {idea.status === 'SELECTED' && idea.programPhase && (
-                             <Badge variant="outline" className="capitalize text-xs flex items-center">
-                                <ChevronsRight className="h-3 w-3 mr-1" />
-                                {getProgramPhaseLabel(idea.programPhase)}
+                  <li key={idea.id} className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors shadow-sm">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-2">
+                        <div>
+                            <p className="font-semibold text-foreground text-lg">{idea.title}</p>
+                            <p className="text-xs text-muted-foreground">
+                                Submitted: {formatDate(idea.submittedAt)} | Last Updated: {formatDate(idea.updatedAt)}
+                            </p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
+                            <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs py-1 px-2.5">
+                            {idea.status.replace(/_/g, ' ').toLowerCase()}
                             </Badge>
-                        )}
-                         {idea.programPhase === 'PHASE_2' && idea.phase2Marks && (
-                           <Badge variant="outline" className="text-xs">
-                                {Object.keys(idea.phase2Marks).length > 0 ? `Marked` : 'Awaiting Marks'}
-                           </Badge>
-                        )}
+                            {idea.status === 'SELECTED' && idea.programPhase && (
+                                <Badge variant="outline" className="capitalize text-xs py-1 px-2.5 flex items-center">
+                                    <ChevronsRight className="h-3 w-3 mr-1" />
+                                    {getProgramPhaseLabel(idea.programPhase)}
+                                </Badge>
+                            )}
+                            {idea.programPhase === 'PHASE_2' && idea.phase2Marks && (
+                            <Badge variant="outline" className="text-xs py-1 px-2.5">
+                                    {Object.keys(idea.phase2Marks).length > 0 ? `Marked` : 'Awaiting Marks'}
+                            </Badge>
+                            )}
+                        </div>
                     </div>
+                    {idea.status === 'NOT_SELECTED' && idea.rejectionRemarks && (
+                        <Card className="mt-3 bg-destructive/10 border-destructive/30">
+                            <CardHeader className="pb-2 pt-3 px-4">
+                                <CardTitle className="text-sm font-semibold text-destructive-foreground/90 flex items-center">
+                                    <AlertCircle className="h-4 w-4 mr-2"/> Feedback & Guidance
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-xs text-destructive-foreground/80 px-4 pb-3 whitespace-pre-wrap">
+                                {idea.rejectionRemarks}
+                                {idea.rejectedAt && <p className="mt-1 text-destructive-foreground/60">Provided on: {formatDate(idea.rejectedAt)}</p>}
+                            </CardContent>
+                        </Card>
+                    )}
+                    {idea.programPhase === 'PHASE_2' && (
+                        <Card className="mt-3 border-primary/30">
+                            <CardHeader className="pb-2 pt-3 px-4">
+                                <CardTitle className="text-sm font-semibold text-primary flex items-center">
+                                  <UploadCloud className="h-4 w-4 mr-2"/> Phase 2 Presentation
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-xs px-4 pb-3 space-y-2">
+                                {idea.phase2PptUrl && idea.phase2PptFileName ? (
+                                    <div className="flex items-center justify-between">
+                                        <p>Uploaded: <span className="font-medium">{idea.phase2PptFileName}</span></p>
+                                        {/* <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                            <Button variant="link" size="sm" className="p-0 h-auto"><Download className="h-3 w-3 mr-1"/>Download</Button>
+                                        </a> */}
+                                        <p className="text-muted-foreground">(Download via Admin Details for now)</p>
+                                    </div>
+                                ) : (
+                                    <p className="text-muted-foreground">No presentation uploaded yet.</p>
+                                )}
+                                <div className="flex items-center gap-2 pt-1">
+                                    <Input 
+                                        type="file" 
+                                        accept=".ppt, .pptx" 
+                                        onChange={(e) => handlePptFileChange(e, idea.id!)}
+                                        className="text-xs h-8 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                                    />
+                                    <Button 
+                                        size="sm" 
+                                        onClick={handlePptUpload} 
+                                        disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || loadingIdeas}
+                                        className="h-8"
+                                    >
+                                        {loadingIdeas && uploadingPptIdeaId === idea.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <UploadCloud className="h-4 w-4 mr-1"/>}
+                                        Upload
+                                    </Button>
+                                </div>
+                                <p className="text-muted-foreground text-xs italic">Upload functionality is currently simulated. Full feature coming soon.</p>
+                            </CardContent>
+                        </Card>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -23,7 +23,7 @@ export default function HomePage() {
       <header className="mb-12">
         <Zap className="h-24 w-24 text-primary mx-auto mb-6" />
         <h1 className="text-5xl md:text-6xl font-headline font-bold mb-4">
-          Welcome to <span className="text-primary">PIERC Portal</span>
+          Welcome to <span className="text-primary">Parul Innovation & Entrepreneurship Research Centre</span>
         </h1>
         <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto">
           Your central hub for incubation, research, announcements, and innovation at PIERC.

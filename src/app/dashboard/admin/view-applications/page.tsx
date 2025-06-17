@@ -19,8 +19,9 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,7 +33,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning } from 'lucide-react';
 import { format, formatISO } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore'; 
@@ -65,6 +66,10 @@ export default function ViewApplicationsPage() {
   const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
   const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
   const [isSavingMark, setIsSavingMark] = useState(false);
+
+  const [isRejectionDialogVisible, setIsRejectionDialogVisible] = useState(false);
+  const [currentIdeaForRejection, setCurrentIdeaForRejection] = useState<IdeaSubmission | null>(null);
+  const [rejectionRemarksInput, setRejectionRemarksInput] = useState('');
 
 
   useEffect(() => {
@@ -107,15 +112,21 @@ export default function ViewApplicationsPage() {
   const handleStatusOrPhaseChange = async (
     ideaId: string,
     newStatus: IdeaStatus,
-    newPhaseInputValue: ProgramPhase | typeof NO_PHASE_VALUE | null = null 
+    newPhaseInputValue: ProgramPhase | typeof NO_PHASE_VALUE | null = null,
+    remarks?: string // Optional remarks for rejection
   ) => {
+    if (!userProfile) {
+        toast({ title: "Error", description: "Admin profile not found.", variant: "destructive" });
+        return;
+    }
+
     let actualNewPhase: ProgramPhase | null = null;
     if (newPhaseInputValue && newPhaseInputValue !== NO_PHASE_VALUE) {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
 
     try {
-      await updateIdeaStatusAndPhase(ideaId, newStatus, actualNewPhase);
+      await updateIdeaStatusAndPhase(ideaId, newStatus, actualNewPhase, remarks, userProfile.uid);
       toast({ title: "Update Successful", description: `Application updated.` });
       fetchApplications(); 
     } catch (error) {
@@ -123,6 +134,34 @@ export default function ViewApplicationsPage() {
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
       fetchApplications(); 
     }
+  };
+
+  const triggerStatusChange = (idea: IdeaSubmission, newStatus: IdeaStatus) => {
+    if (newStatus === 'NOT_SELECTED') {
+        setCurrentIdeaForRejection(idea);
+        setRejectionRemarksInput(idea.rejectionRemarks || ''); // Pre-fill if editing
+        setIsRejectionDialogVisible(true);
+    } else {
+        // For other statuses, or if changing from NOT_SELECTED to something else, clear remarks potentially
+        handleStatusOrPhaseChange(idea.id!, newStatus, idea.programPhase);
+    }
+  };
+
+  const handleSubmitRejection = async () => {
+    if (!currentIdeaForRejection || !userProfile) return;
+    if (!rejectionRemarksInput.trim()) {
+        toast({ title: "Remarks Required", description: "Please provide rejection remarks or guidance.", variant: "destructive" });
+        return;
+    }
+    await handleStatusOrPhaseChange(
+        currentIdeaForRejection.id!, 
+        'NOT_SELECTED', 
+        null, 
+        rejectionRemarksInput,
+    );
+    setIsRejectionDialogVisible(false);
+    setCurrentIdeaForRejection(null);
+    setRejectionRemarksInput('');
   };
 
 
@@ -237,7 +276,8 @@ export default function ViewApplicationsPage() {
     const headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Program Phase', 'Studio Location', 'Attachment URL', 'Attachment Name', 
+      'Status', 'Program Phase', 'Rejection Remarks', 'Studio Location', 
+      'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Submitted At', 'Last Updated At', 
     ];
     
@@ -278,9 +318,12 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.uniqueness),
         escapeCsvField(app.status.replace(/_/g, ' ')),
         escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
+        escapeCsvField(app.rejectionRemarks),
         escapeCsvField(app.studioLocation),
         escapeCsvField(app.fileURL),
         escapeCsvField(app.fileName),
+        escapeCsvField(app.phase2PptFileName),
+        escapeCsvField(app.phase2PptUrl),
         escapeCsvField(formatDateISO(app.submittedAt)),
         escapeCsvField(formatDateISO(app.updatedAt)),
       ];
@@ -338,7 +381,9 @@ export default function ViewApplicationsPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>All Submitted Applications</CardTitle>
-          <CardDescription>Overview of applications. If status is 'Selected', assign a Program Phase. For 'Phase 2' ideas, provide marks in the details dialog.</CardDescription>
+          <CardDescription>
+            Set status for applications. If 'Selected', assign a Program Phase. If 'Not Selected', provide remarks. For 'Phase 2' ideas, provide marks in the details dialog.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {applications.length === 0 ? (
@@ -370,7 +415,7 @@ export default function ViewApplicationsPage() {
                         <div className="flex items-center gap-2">
                           <Select
                             value={app.status}
-                            onValueChange={(value) => handleStatusOrPhaseChange(app.id!, value as IdeaStatus, app.programPhase)}
+                            onValueChange={(value) => triggerStatusChange(app, value as IdeaStatus)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Set status" />
@@ -407,7 +452,9 @@ export default function ViewApplicationsPage() {
                             </SelectContent>
                           </Select>
                         ) : (
-                          <span className="text-xs text-muted-foreground italic">N/A (Status not 'Selected')</span>
+                          <span className="text-xs text-muted-foreground italic">
+                            {app.status === 'NOT_SELECTED' ? 'N/A (Rejected)' : "N/A (Status not 'Selected')"}
+                          </span>
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
@@ -516,7 +563,7 @@ export default function ViewApplicationsPage() {
                 </div>
                  {selectedApplication.fileURL && (
                     <div>
-                        <h4 className="font-semibold text-muted-foreground">Attachment</h4>
+                        <h4 className="font-semibold text-muted-foreground">Attachment (Pitch Deck)</h4>
                         <a href={selectedApplication.fileURL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                             {selectedApplication.fileName || 'View Attachment'}
                         </a>
@@ -528,6 +575,22 @@ export default function ViewApplicationsPage() {
                         <p>{selectedApplication.studioLocation}</p>
                     </div>
                 )}
+                {selectedApplication.status === 'NOT_SELECTED' && selectedApplication.rejectionRemarks && (
+                    <div>
+                        <h4 className="font-semibold text-muted-foreground text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4>
+                        <p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90">{selectedApplication.rejectionRemarks}</p>
+                        {selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByUid.substring(0,5)}... on {formatDate(selectedApplication.rejectedAt)}</p>}
+                    </div>
+                )}
+                 {selectedApplication.programPhase === 'PHASE_2' && selectedApplication.phase2PptUrl && (
+                    <div>
+                        <h4 className="font-semibold text-muted-foreground">Phase 2 Presentation</h4>
+                        <a href={selectedApplication.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                            {selectedApplication.phase2PptFileName || 'View Phase 2 Presentation'}
+                        </a>
+                         {selectedApplication.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-1">Uploaded on {formatDate(selectedApplication.phase2PptUploadedAt)}</p>}
+                    </div>
+                 )}
               </div>
 
               {selectedApplication.programPhase === 'PHASE_2' && (
@@ -540,19 +603,26 @@ export default function ViewApplicationsPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
-                      if (!userProfile.isSuperAdmin && adminUid === userProfile.uid) {
-                        return null; 
+                      const displayName = markEntry.adminDisplayName || 'Admin';
+                      const isCurrentUserMark = adminUid === userProfile.uid;
+                      
+                      if (!userProfile.isSuperAdmin && isCurrentUserMark && !selectedApplication.phase2Marks?.[userProfile.uid]) {
+                         return null; // Regular admin: don't show their own mark in the list if they haven't submitted yet (it's in the input)
                       }
-                      return (
-                        <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
-                          <span className="flex items-center">
-                            <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" /> 
-                            {markEntry.adminDisplayName || 'Admin'}
-                            {userProfile.isSuperAdmin && adminUid === userProfile.uid && <span className="text-xs text-primary ml-1">(Your Mark)</span>}
-                          </span>
-                          <Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge>
-                        </div>
-                      );
+                      // Show all marks for SuperAdmin, or other admins' marks for regular admin
+                      if (userProfile.isSuperAdmin || !isCurrentUserMark) {
+                        return (
+                            <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
+                            <span className="flex items-center">
+                                <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" /> 
+                                {displayName}
+                                {userProfile.isSuperAdmin && isCurrentUserMark && <span className="text-xs text-primary ml-1">(Your Mark)</span>}
+                            </span>
+                            <Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge>
+                            </div>
+                        );
+                      }
+                      return null;
                     })}
                     {(() => {
                         const marksObject = selectedApplication.phase2Marks || {};
@@ -562,9 +632,16 @@ export default function ViewApplicationsPage() {
                             if (totalMarksCount === 0) {
                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
                             }
-                        } else { // Regular Admin
+                        } else { 
                             const otherAdminMarksCount = Object.keys(marksObject).filter(uid => uid !== userProfile.uid).length;
-                            if (totalMarksCount === 0 || otherAdminMarksCount === 0) {
+                            if (otherAdminMarksCount === 0 && totalMarksCount > 0 && selectedApplication.phase2Marks?.[userProfile.uid]) {
+                               // Current user is the only one who marked
+                               return <p className="text-sm text-muted-foreground text-center py-2">You are the only admin who has submitted a mark.</p>;
+                            }
+                            if (otherAdminMarksCount === 0 && totalMarksCount === 0) {
+                                return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
+                            }
+                             if (otherAdminMarksCount === 0 && totalMarksCount > 0 && !selectedApplication.phase2Marks?.[userProfile.uid]) {
                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by other admins yet.</p>;
                             }
                         }
@@ -607,6 +684,49 @@ export default function ViewApplicationsPage() {
                 <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>Close</Button>
             </div>
           </DialogContent>
+        </Dialog>
+      )}
+
+      {isRejectionDialogVisible && currentIdeaForRejection && (
+        <Dialog open={isRejectionDialogVisible} onOpenChange={(isOpen) => {
+            if(!isOpen) {
+                setIsRejectionDialogVisible(false);
+                setCurrentIdeaForRejection(null);
+                setRejectionRemarksInput('');
+                 // Important: Re-fetch applications to revert optimistic UI change of status dropdown if dialog is cancelled
+                fetchApplications();
+            } else {
+                setIsRejectionDialogVisible(isOpen);
+            }
+        }}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle className="flex items-center"><MessageSquareWarning className="h-5 w-5 mr-2 text-destructive"/> Provide Rejection Remarks</DialogTitle>
+                    <DialogDescription>
+                        For idea: <span className="font-semibold">{currentIdeaForRejection.title}</span>. 
+                        Please provide constructive feedback or reasons for not selecting this idea.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4 space-y-2">
+                    <Label htmlFor="rejectionRemarks">Remarks/Guidance</Label>
+                    <Textarea 
+                        id="rejectionRemarks"
+                        value={rejectionRemarksInput}
+                        onChange={(e) => setRejectionRemarksInput(e.target.value)}
+                        placeholder="Explain why the idea was not selected and suggest areas for improvement..."
+                        rows={5}
+                    />
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => {
+                        setIsRejectionDialogVisible(false); 
+                        setCurrentIdeaForRejection(null); 
+                        setRejectionRemarksInput('');
+                        fetchApplications(); // Revert status dropdown if cancelled
+                    }}>Cancel</Button>
+                    <Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button>
+                </DialogFooter>
+            </DialogContent>
         </Dialog>
       )}
     </div>

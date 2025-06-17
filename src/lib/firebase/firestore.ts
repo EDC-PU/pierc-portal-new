@@ -26,7 +26,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     enrollmentNumber: data.enrollmentNumber,
     college: data.college,
     instituteName: data.instituteName,
-    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false), // Ensures boolean
+    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false), 
     createdAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -39,7 +39,6 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
-    // Re-construct to ensure type alignment, especially for isSuperAdmin
     const rawData = docSnap.data();
     return {
         uid: docSnap.id,
@@ -61,7 +60,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         instituteName: rawData.instituteName,
         createdAt: rawData.createdAt,
         updatedAt: rawData.updatedAt,
-        isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true) // Ensure boolean
+        isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true) 
     } as UserProfile;
   }
   throw new Error("Failed to create or retrieve user profile after creation.");
@@ -72,7 +71,6 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const data = docSnap.data();
-    // Construct UserProfile object ensuring all fields, especially isSuperAdmin, are correctly typed
     const profile: UserProfile = {
         uid: docSnap.id,
         email: data.email ?? null,
@@ -81,8 +79,8 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         role: data.role ?? null,
         fullName: data.fullName ?? '',
         contactNumber: data.contactNumber ?? '',
-        applicantCategory: data.applicantCategory, // Assuming this is always present if user exists
-        currentStage: data.currentStage, // Assuming this is always present
+        applicantCategory: data.applicantCategory, 
+        currentStage: data.currentStage, 
         startupTitle: data.startupTitle ?? '',
         problemDefinition: data.problemDefinition ?? '',
         solutionDescription: data.solutionDescription ?? '',
@@ -91,18 +89,17 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
-        createdAt: data.createdAt, // Assuming this is always present
-        updatedAt: data.updatedAt, // Assuming this is always present
-        isSuperAdmin: false // Default to false
+        createdAt: data.createdAt, 
+        updatedAt: data.updatedAt, 
+        isSuperAdmin: false 
     };
 
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true; 
         if (profile.role !== 'ADMIN_FACULTY') { 
-            profile.role = 'ADMIN_FACULTY'; // Ensure primary admin has correct role
+            profile.role = 'ADMIN_FACULTY'; 
         }
     } else {
-        // For other users, explicitly check the stored value
         if (data.isSuperAdmin === true) {
              profile.isSuperAdmin = true;
         }
@@ -127,7 +124,6 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   const querySnapshot = await getDocs(q);
   const users: UserProfile[] = [];
   querySnapshot.forEach((doc) => {
-    // Use getUserProfile to ensure consistent data structure, especially for isSuperAdmin
     const data = doc.data();
      users.push({ 
         uid: doc.id,
@@ -174,8 +170,8 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   
   const userDocSnap = await getDoc(userProfileRef);
   if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
-    updates.role = 'ADMIN_FACULTY'; // Ensure primary super admin role cannot be demoted
-    updates.isSuperAdmin = true;  // Ensure primary super admin status cannot be revoked
+    updates.role = 'ADMIN_FACULTY'; 
+    updates.isSuperAdmin = true;  
   }
 
   await updateDoc(userProfileRef, updates);
@@ -294,7 +290,7 @@ export const createIdeaFromProfile = async (
   }
 
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks'> = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt'> = {
     userId: userId,
     title: profileData.startupTitle,
     category: 'General Profile Submission', 
@@ -305,7 +301,6 @@ export const createIdeaFromProfile = async (
     applicantType: profileData.applicantCategory,
     status: 'SUBMITTED',
     programPhase: null,
-    phase2Marks: {}, // Initialize phase2Marks
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -328,7 +323,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
     let applicantEmail = 'N/A';
 
     if (ideaData.userId) {
-      const userProfile = await getUserProfile(ideaData.userId); // This now returns profile with isSuperAdmin as boolean
+      const userProfile = await getUserProfile(ideaData.userId); 
       if (userProfile) {
         applicantDisplayName = userProfile.displayName || userProfile.fullName || 'Unknown User';
         applicantEmail = userProfile.email || 'No Email';
@@ -346,6 +341,12 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       updatedAt,
       applicantDisplayName,
       applicantEmail,
+      rejectionRemarks: ideaData.rejectionRemarks,
+      rejectedByUid: ideaData.rejectedByUid,
+      rejectedAt: ideaData.rejectedAt,
+      phase2PptUrl: ideaData.phase2PptUrl,
+      phase2PptFileName: ideaData.phase2PptFileName,
+      phase2PptUploadedAt: ideaData.phase2PptUploadedAt,
     } as IdeaSubmission);
   }
   return ideaSubmissions;
@@ -354,7 +355,9 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 export const updateIdeaStatusAndPhase = async (
   ideaId: string, 
   newStatus: IdeaStatus, 
-  newPhase: ProgramPhase | null = null
+  newPhase: ProgramPhase | null = null,
+  rejectionRemarks?: string,
+  adminUid?: string
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const updates: Partial<IdeaSubmission> = {
@@ -364,6 +367,9 @@ export const updateIdeaStatusAndPhase = async (
 
   if (newStatus === 'SELECTED') {
     updates.programPhase = newPhase;
+    updates.rejectionRemarks = undefined; // Clear rejection remarks if selected
+    updates.rejectedByUid = undefined;
+    updates.rejectedAt = undefined;
     if (newPhase === 'PHASE_2') {
       const currentDoc = await getDoc(ideaRef);
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
@@ -372,6 +378,15 @@ export const updateIdeaStatusAndPhase = async (
     }
   } else {
     updates.programPhase = null; 
+    if (newStatus === 'NOT_SELECTED') {
+      updates.rejectionRemarks = rejectionRemarks || 'No specific remarks provided.';
+      updates.rejectedByUid = adminUid;
+      updates.rejectedAt = serverTimestamp() as Timestamp;
+    } else {
+      updates.rejectionRemarks = undefined; 
+      updates.rejectedByUid = undefined;
+      updates.rejectedAt = undefined;
+    }
   }
   await updateDoc(ideaRef, updates);
 };
@@ -420,7 +435,13 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         programPhase: data.programPhase || null,
         phase2Marks: data.phase2Marks || {},
         submittedAt, 
-        updatedAt 
+        updatedAt,
+        rejectionRemarks: data.rejectionRemarks,
+        rejectedByUid: data.rejectedByUid,
+        rejectedAt: data.rejectedAt,
+        phase2PptUrl: data.phase2PptUrl,
+        phase2PptFileName: data.phase2PptFileName,
+        phase2PptUploadedAt: data.phase2PptUploadedAt,
     } as IdeaSubmission);
   });
   return userIdeas;
@@ -493,7 +514,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks'>): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt'>): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
@@ -507,5 +528,15 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
+};
+
+export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string, fileName: string): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  await updateDoc(ideaRef, {
+    phase2PptUrl: fileUrl,
+    phase2PptFileName: fileName,
+    phase2PptUploadedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 };
 

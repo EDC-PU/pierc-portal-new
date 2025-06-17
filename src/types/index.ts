@@ -30,28 +30,28 @@ export interface UserProfile {
   
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  isSuperAdmin: boolean; // Changed from optional
+  isSuperAdmin: boolean;
 }
 
 export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
 export type ProgramPhase = 'PHASE_1' | 'PHASE_2' | 'COHORT';
 
 export interface AdminMark {
-  mark: number | null; // Allow null if admin wants to clear their mark
+  mark: number | null; 
   adminDisplayName: string;
   markedAt: Timestamp;
 }
 
 export interface IdeaSubmission {
   id?: string;
-  userId: string; // UID of the user who submitted
+  userId: string; 
   title: string;
-  category: string; // e.g., "General Profile Submission", "Specific Call for Ideas"
+  category: string; 
   problem: string;
   solution: string;
   uniqueness: string;
   developmentStage: CurrentStage;
-  applicantType?: ApplicantCategory; // From user's profile
+  applicantType?: ApplicantCategory; 
   
   fileURL?: string; 
   fileName?: string;
@@ -59,7 +59,15 @@ export interface IdeaSubmission {
   
   status: IdeaStatus;
   programPhase: ProgramPhase | null; 
-  phase2Marks?: { [adminUid: string]: AdminMark }; // Marks given by admins for phase 2
+  phase2Marks?: { [adminUid: string]: AdminMark }; 
+
+  rejectionRemarks?: string;
+  rejectedByUid?: string; // UID of admin who rejected
+  rejectedAt?: Timestamp;
+
+  phase2PptUrl?: string;
+  phase2PptFileName?: string;
+  phase2PptUploadedAt?: Timestamp;
 
   submittedAt: Timestamp;
   updatedAt: Timestamp;
@@ -95,7 +103,7 @@ export interface Announcement {
 }
 
 export interface SystemSettings {
-  id?: string; // Typically a single 'config' document
+  id?: string; 
   portalName: string;
   maintenanceMode: boolean;
   allowNewRegistrations: boolean;
