@@ -1,16 +1,14 @@
 
 import type { Metadata } from 'next';
 import './globals.css';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { Toaster } from '@/components/ui/toaster';
-import { Navbar } from '@/components/common/Navbar';
-import { Footer } from '@/components/common/Footer';
-import { AuthInitializer } from '@/components/AuthInitializer';
+import { AuthProvider } from '@/contexts/AuthContext'; // Client Component
+import { Toaster } from '@/components/ui/toaster';   // Client Component
+import { AuthInitializer } from '@/components/AuthInitializer'; // Client Component
+import { AppShell } from '@/components/AppShell'; // New Client Component wrapper
 
 export const metadata: Metadata = {
   title: 'PIERC Portal',
   description: 'Portal for PIERC Incubation and Research',
-  // The 'icons' key has been removed.
 };
 
 export default function RootLayout({
@@ -29,11 +27,8 @@ export default function RootLayout({
       <body className="font-body antialiased flex flex-col min-h-screen bg-background text-foreground">
         <AuthProvider>
           <AuthInitializer>
-            <Navbar />
-            <main className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-              {children}
-            </main>
-            <Footer />
+            {/* AppShell now wraps the main structural elements that need SidebarContext */}
+            <AppShell>{children}</AppShell>
             <Toaster />
           </AuthInitializer>
         </AuthProvider>

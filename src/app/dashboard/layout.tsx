@@ -3,29 +3,29 @@
 
 import { useEffect, type ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter, usePathname } from 'next/navigation'; 
+import { useRouter, usePathname } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import { 
-  SidebarProvider, 
-  Sidebar, 
-  SidebarHeader, 
-  SidebarContent, 
-  SidebarFooter, 
-  SidebarTrigger, 
-  SidebarMenu, 
-  SidebarMenuItem, 
-  SidebarMenuButton, 
+import {
+  // SidebarProvider, // Removed: SidebarProvider is now in AppShell
+  Sidebar,
+  SidebarHeader,
+  SidebarContent,
+  SidebarFooter,
+  SidebarTrigger,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarSeparator,
-} from '@/components/ui/sidebar'; 
+} from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIcon, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon } from 'lucide-react'; 
+import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIcon, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon } from 'lucide-react';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, userProfile, loading, initialLoadComplete, signOut } = useAuth();
   const router = useRouter();
-  const pathname = usePathname(); 
+  const pathname = usePathname();
 
   useEffect(() => {
     if (initialLoadComplete) {
@@ -39,7 +39,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (loading || !initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-5rem)]"> 
+      <div className="flex items-center justify-center h-[calc(100vh-5rem)]"> {/* Adjusted based on Navbar height */}
         <LoadingSpinner size={48} />
       </div>
     );
@@ -70,72 +70,72 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <SidebarProvider defaultOpen={true}> {/* Ensure SidebarProvider wraps content that uses useSidebar */}
-      <div className="flex min-h-[calc(100vh-5rem)]"> {/* Adjusted min-height to account for navbar */}
-        <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full fixed"> {/* Make sidebar fixed and full height of its container */}
-          <SidebarHeader className="flex items-center justify-between p-2 md:justify-center">
-             {/* Desktop toggle - visible on md and up, hidden on mobile */}
-             <SidebarTrigger className="hidden md:flex" />
-             {/* Mobile: empty or a small logo if Navbar doesn't handle sidebar trigger */}
-          </SidebarHeader>
-          <SidebarContent>
-            <SidebarMenu>
-              {menuItems.filter(item => item.roles.includes(userProfile.role || '')).map((item) => (
-                <SidebarMenuItem key={item.label}>
-                  <SidebarMenuButton
-                    onClick={() => router.push(item.href)}
-                    isActive={pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/(main)'))} // Adjust active state for grouped routes
-                    tooltip={item.label}
-                  >
-                    <item.icon />
-                    <span>{item.label}</span>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-
-              {userProfile.role === 'ADMIN_FACULTY' && (
-                <>
-                  <SidebarSeparator />
-                  <SidebarGroup>
-                    <SidebarGroupLabel className="flex items-center"><ShieldCheck className="mr-2" />Admin Tools</SidebarGroupLabel>
-                    <SidebarMenu> {/* Removed SidebarGroupContent as SidebarMenu should be direct child of SidebarGroup or SidebarContent */}
-                      {adminMenuItems.filter(item => !item.superAdminOnly || userProfile.isSuperAdmin).map((item) => (
-                        <SidebarMenuItem key={item.label}>
-                          <SidebarMenuButton
-                            onClick={() => router.push(item.href)}
-                            isActive={pathname === item.href}
-                            tooltip={item.label}
-                          >
-                            <item.icon />
-                            <span>{item.label}</span>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroup>
-                </>
-              )}
-            </SidebarMenu>
-          </SidebarContent>
-          <SidebarFooter className="p-2">
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton onClick={signOut} tooltip="Logout">
-                  <LogOut />
-                  <span>Logout</span>
+    // SidebarProvider removed from here
+    // The outer div now needs to handle the overall layout with the sidebar.
+    // The `AppShell` handles the Navbar and Footer. This component is now for the dashboard's main content area + its own sidebar.
+    <div className="flex flex-1"> {/* flex-1 to take remaining height within AppShell's flex-grow area */}
+      <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full fixed"> {/* `fixed` might need adjustment depending on AppShell structure */}
+        <SidebarHeader className="flex items-center justify-between p-2 md:justify-center">
+           <SidebarTrigger className="hidden md:flex" />
+        </SidebarHeader>
+        <SidebarContent>
+          <SidebarMenu>
+            {menuItems.filter(item => item.roles.includes(userProfile.role || '')).map((item) => (
+              <SidebarMenuItem key={item.label}>
+                <SidebarMenuButton
+                  onClick={() => router.push(item.href)}
+                  isActive={pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/(main)'))}
+                  tooltip={item.label}
+                >
+                  <item.icon />
+                  <span>{item.label}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarFooter>
-        </Sidebar>
-        
-        <div className="flex-1 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] group-data-[state=expanded]/sidebar-wrapper:md:ml-[var(--sidebar-width)]">
-           {/* This div correctly uses sidebar variables for margin based on sidebar.tsx structure */}
-          <div className="py-6 px-4 sm:px-6 lg:px-8"> {/* Add padding around the main content area */}
-             {children}
-          </div>
+            ))}
+
+            {userProfile.role === 'ADMIN_FACULTY' && (
+              <>
+                <SidebarSeparator />
+                <SidebarGroup>
+                  <SidebarGroupLabel className="flex items-center"><ShieldCheck className="mr-2" />Admin Tools</SidebarGroupLabel>
+                  <SidebarMenu>
+                    {adminMenuItems.filter(item => !item.superAdminOnly || userProfile.isSuperAdmin).map((item) => (
+                      <SidebarMenuItem key={item.label}>
+                        <SidebarMenuButton
+                          onClick={() => router.push(item.href)}
+                          isActive={pathname === item.href}
+                          tooltip={item.label}
+                        >
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+              </>
+            )}
+          </SidebarMenu>
+        </SidebarContent>
+        <SidebarFooter className="p-2">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton onClick={signOut} tooltip="Logout">
+                <LogOut />
+                <span>Logout</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </Sidebar>
+      
+      {/* Main content area for the dashboard pages */}
+      <div className="flex-1 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] group-data-[state=expanded]/sidebar-wrapper:md:ml-[var(--sidebar-width)]">
+         {/* The container and padding for dashboard pages go here now */}
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+           {children}
         </div>
       </div>
-    </SidebarProvider>
+    </div>
   );
 }

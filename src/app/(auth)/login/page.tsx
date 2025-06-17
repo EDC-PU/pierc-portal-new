@@ -60,7 +60,7 @@ export default function LoginPage() {
 
   if (loading && !initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]"> {/* Adjusted for Navbar height (h-20) */}
         <LoadingSpinner size={48} />
       </div>
     );
@@ -71,7 +71,7 @@ export default function LoginPage() {
   // For an existing user with profile, the useEffect above will redirect to /dashboard.
   if (user && initialLoadComplete) {
      return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]">
         <p>Redirecting...</p>
         <LoadingSpinner size={32} />
       </div>
@@ -101,7 +101,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-[calc(100vh-10rem)] bg-gradient-to-br from-background to-secondary/30 animate-fade-in">
+    // Adjusted min-h to ensure it fills space below Navbar if AppShell causes flex-grow issues for this page.
+    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] bg-gradient-to-br from-background to-secondary/30 animate-fade-in">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-headline">
@@ -173,4 +174,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

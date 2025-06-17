@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -19,7 +20,8 @@ export default function HomePage() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-10rem)] text-center animate-fade-in">
+    // Removed min-h-[calc(100vh-10rem)] as AppShell and DashboardLayout now manage flex growth
+    <div className="flex flex-col items-center justify-center text-center animate-fade-in py-8"> 
       <header className="mb-12">
         <Zap className="h-24 w-24 text-primary mx-auto mb-6" />
         <h1 className="text-5xl md:text-6xl font-headline font-bold mb-4">
@@ -36,7 +38,8 @@ export default function HomePage() {
           alt="Innovation Hub" 
           width={800} 
           height={400} 
-          className="rounded-lg shadow-xl object-cover data-ai-hint='innovation tech'"
+          className="rounded-lg shadow-xl object-cover"
+          data-ai-hint='innovation tech'
           priority
         />
       </div>
