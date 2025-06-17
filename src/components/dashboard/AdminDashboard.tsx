@@ -1,15 +1,70 @@
 
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Users, Settings, BarChart3, Megaphone, UserCog } from 'lucide-react'; // Added UserCog for Manage Users
-import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
+import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { getTotalUsersCount, getTotalIdeasCount, getPendingIdeasCount } from '@/lib/firebase/firestore';
+import { useToast } from '@/hooks/use-toast';
+
+interface DashboardStats {
+  totalUsers: number | null;
+  activeProjects: number | null;
+  pendingProjects: number | null;
+}
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { userProfile } = useAuth(); // Get userProfile for super admin check
+  const { userProfile } = useAuth();
+  const { toast } = useToast();
+  const [stats, setStats] = useState<DashboardStats>({
+    totalUsers: null,
+    activeProjects: null,
+    pendingProjects: null,
+  });
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      setLoadingStats(true);
+      try {
+        const [usersCount, ideasCount, pendingIdeas] = await Promise.all([
+          getTotalUsersCount(),
+          getTotalIdeasCount(),
+          getPendingIdeasCount()
+        ]);
+        setStats({
+          totalUsers: usersCount,
+          activeProjects: ideasCount, // Representing total ideas as active projects for now
+          pendingProjects: pendingIdeas,
+        });
+      } catch (error) {
+        console.error("Error fetching dashboard stats:", error);
+        toast({
+          title: "Error Loading Stats",
+          description: "Could not load dashboard statistics.",
+          variant: "destructive",
+        });
+        setStats({ totalUsers: 0, activeProjects: 0, pendingProjects: 0 }); // Set to 0 on error
+      } finally {
+        setLoadingStats(false);
+      }
+    };
+
+    if (userProfile?.role === 'ADMIN_FACULTY') {
+      fetchStats();
+    }
+  }, [userProfile, toast]);
+
+  const StatDisplay = ({ value }: { value: number | null }) => {
+    if (loadingStats) return <Loader2 className="h-6 w-6 animate-spin text-primary" />;
+    if (value === null) return <span className="text-muted-foreground">N/A</span>;
+    return <>{value}</>;
+  };
+
 
   return (
     <div className="space-y-6">
@@ -30,22 +85,28 @@ export default function AdminDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">150</div> {/* Placeholder */}
-            <p className="text-xs text-muted-foreground">
-              +10 this week
-            </p>
+            <div className="text-2xl font-bold">
+              <StatDisplay value={stats.totalUsers} />
+            </div>
+            {/* <p className="text-xs text-muted-foreground">
+              +10 this week 
+            </p> */}
           </CardContent>
         </Card>
          <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
+            <CardTitle className="text-sm font-medium">Submitted Ideas</CardTitle>
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">25</div> {/* Placeholder */}
-            <p className="text-xs text-muted-foreground">
-              5 pending approval
-            </p>
+            <div className="text-2xl font-bold">
+              <StatDisplay value={stats.activeProjects} />
+            </div>
+            {stats.pendingProjects !== null && !loadingStats && (
+                <p className="text-xs text-muted-foreground">
+                    <StatDisplay value={stats.pendingProjects} /> pending submission review
+                </p>
+            )}
           </CardContent>
         </Card>
         <Card className="hover:shadow-lg transition-shadow">
@@ -54,8 +115,9 @@ export default function AdminDashboard() {
             <Megaphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">5 Active</div> {/* Placeholder */}
-             <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/manage-announcements')}>Manage</Button>
+            {/* Placeholder, real count would need another fetch or stream */}
+            <div className="text-2xl font-bold">Manage</div> 
+             <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/manage-announcements')}>Access</Button>
           </CardContent>
         </Card>
          <Card className="hover:shadow-lg transition-shadow">
@@ -65,7 +127,7 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
              <div className="text-2xl font-bold">Configuration</div>
-            <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/system-settings')}>Access Settings</Button>
+            <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/system-settings')}>Access</Button>
           </CardContent>
         </Card>
       </div>
@@ -93,3 +155,4 @@ export default function AdminDashboard() {
     </div>
   );
 }
+

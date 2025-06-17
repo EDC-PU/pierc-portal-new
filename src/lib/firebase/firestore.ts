@@ -1,6 +1,6 @@
 
 import { db } from './config';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings } from '@/types';
 
 // User Profile Functions
@@ -79,6 +79,13 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   });
   return users;
 };
+
+export const getTotalUsersCount = async (): Promise<number> => {
+  const usersCol = collection(db, 'users');
+  const snapshot = await getCountFromServer(usersCol);
+  return snapshot.data().count;
+};
+
 
 // IMPORTANT: This function performs client-side updates.
 // For production, this logic should be moved to a Firebase Cloud Function for security.
@@ -190,15 +197,29 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
-    status: 'SUBMITTED',
+    status: 'SUBMITTED', // Default status
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  } as const;
+  } as const; // Ensure status is treated as a literal type
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
 };
+
+export const getTotalIdeasCount = async (): Promise<number> => {
+  const ideasCol = collection(db, 'ideas');
+  const snapshot = await getCountFromServer(ideasCol);
+  return snapshot.data().count;
+};
+
+export const getPendingIdeasCount = async (): Promise<number> => {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('status', '==', 'SUBMITTED'));
+  const snapshot = await getCountFromServer(q);
+  return snapshot.data().count;
+};
+
 
 // Cohort functions
 export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>): Promise<Cohort> => {
@@ -248,3 +269,4 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
     throw error;
   }
 };
+
