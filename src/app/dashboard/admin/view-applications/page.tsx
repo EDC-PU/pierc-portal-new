@@ -35,15 +35,15 @@ import {
 import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck } from 'lucide-react';
 import { format, formatISO } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
-import { getDoc, doc } from 'firebase/firestore'; // Imported getDoc and doc
-import { db } from '@/lib/firebase/config'; // Imported db
+import { getDoc, doc } from 'firebase/firestore'; 
+import { db } from '@/lib/firebase/config'; 
 
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
 
-const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
+const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null | undefined): string => {
   if (!phase || phase === NO_PHASE_VALUE) return 'N/A';
   switch (phase) {
     case 'PHASE_1': return 'Phase 1';
@@ -107,7 +107,7 @@ export default function ViewApplicationsPage() {
   const handleStatusOrPhaseChange = async (
     ideaId: string,
     newStatus: IdeaStatus,
-    newPhaseInputValue: ProgramPhase | string | null = null 
+    newPhaseInputValue: ProgramPhase | typeof NO_PHASE_VALUE | null = null 
   ) => {
     let actualNewPhase: ProgramPhase | null = null;
     if (newPhaseInputValue && newPhaseInputValue !== NO_PHASE_VALUE) {
@@ -243,7 +243,6 @@ export default function ViewApplicationsPage() {
     
     const adminMarkAdminUIDs: string[] = [];
     if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications[0]?.phase2Marks) {
-        // Collect all unique admin UIDs from the first application as a sample, or from all applications
         const allAdminUIDsInMarks = new Set<string>();
         applications.forEach(app => {
             if (app.phase2Marks) {
@@ -252,8 +251,7 @@ export default function ViewApplicationsPage() {
         });
         adminMarkAdminUIDs.push(...Array.from(allAdminUIDsInMarks).sort());
         adminMarkAdminUIDs.forEach(uid => {
-            // Try to find a display name for the header
-            let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`; // Default if name not found
+            let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`; 
             for (const app of applications) {
                 if (app.phase2Marks?.[uid]?.adminDisplayName) {
                     adminDisplayName = `Mark by ${app.phase2Marks[uid].adminDisplayName}`;
@@ -542,24 +540,44 @@ export default function ViewApplicationsPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
-                      if (adminUid === userProfile.uid) return null; 
+                      if (!userProfile.isSuperAdmin && adminUid === userProfile.uid) {
+                        return null; 
+                      }
                       return (
                         <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
                           <span className="flex items-center">
-                            <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" /> {markEntry.adminDisplayName || 'Admin'}
+                            <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" /> 
+                            {markEntry.adminDisplayName || 'Admin'}
+                            {userProfile.isSuperAdmin && adminUid === userProfile.uid && <span className="text-xs text-primary ml-1">(Your Mark)</span>}
                           </span>
                           <Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge>
                         </div>
                       );
                     })}
-                    {(!selectedApplication.phase2Marks || Object.keys(selectedApplication.phase2Marks).length === 0 || (Object.keys(selectedApplication.phase2Marks).length === 1 && selectedApplication.phase2Marks[userProfile.uid])) &&  (
-                        (!selectedApplication.phase2Marks || !selectedApplication.phase2Marks[userProfile.uid] || Object.keys(selectedApplication.phase2Marks).filter(uid => uid !== userProfile.uid).length === 0  ) &&
-                         <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by other admins yet.</p>
-                    )}
+                    {(() => {
+                        const marksObject = selectedApplication.phase2Marks || {};
+                        const totalMarksCount = Object.keys(marksObject).length;
+                        
+                        if (userProfile.isSuperAdmin) {
+                            if (totalMarksCount === 0) {
+                                return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
+                            }
+                        } else { // Regular Admin
+                            const otherAdminMarksCount = Object.keys(marksObject).filter(uid => uid !== userProfile.uid).length;
+                            if (totalMarksCount === 0 || otherAdminMarksCount === 0) {
+                                return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by other admins yet.</p>;
+                            }
+                        }
+                        return null;
+                    })()}
 
 
                     <div className="pt-3 space-y-2">
-                        <Label htmlFor="adminMarkInput" className="font-semibold">Your Mark (0-100):</Label>
+                        <Label htmlFor="adminMarkInput" className="font-semibold">
+                           {userProfile.isSuperAdmin && Object.keys(selectedApplication.phase2Marks || {}).some(uid => uid === userProfile.uid) 
+                             ? "Your Mark (Super Admin View - Update if needed)" 
+                             : "Your Mark"} (0-100):
+                        </Label>
                         <div className="flex items-center gap-2">
                         <Input
                             id="adminMarkInput"
