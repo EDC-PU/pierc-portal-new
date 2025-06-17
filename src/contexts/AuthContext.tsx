@@ -12,12 +12,13 @@ import {
   signOut as firebaseSignOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword as firebaseSignInWithEmailPassword,
-  sendPasswordResetEmail // Added for completeness, though used directly in page
+  sendPasswordResetEmail
 } from 'firebase/auth';
-import { doc, deleteDoc } from 'firebase/firestore'; // Added for deleting user profile
-import { httpsCallable } from 'firebase/functions'; // Added for calling delete auth function
+import { doc, deleteDoc } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
+import { LoadingSpinner } from '@/components/common/LoadingSpinner'; // For potential use if returning a loader
 
 interface AuthContextType {
   user: User | null;
@@ -29,12 +30,13 @@ interface AuthContextType {
   signInWithEmailPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  deleteCurrentUserAccount: () => Promise<void>; // New function
+  deleteCurrentUserAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
+  const [isMounted, setIsMounted] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -43,6 +45,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const { toast } = useToast();
 
   useEffect(() => {
+    setIsMounted(true); // Component has mounted on the client
+
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setLoading(true);
       if (firebaseUser) {
@@ -89,7 +93,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => unsubscribe();
-  }, [router, toast]);
+  // router and toast are stable, so they usually don't need to be in deps, 
+  // but including them if their instances could change in some advanced scenarios.
+  // For this specific `isMounted` pattern, the empty array is key for on-mount behavior.
+  // The auth subscription logic itself might depend on router/toast, so they remain in its deps.
+  }, [router, toast]); // Keep router and toast for the auth subscription effect
 
   const handleAuthError = (error: any, action: string) => {
     console.error(`Error during ${action}:`, error);
@@ -216,23 +224,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     setLoading(true);
     try {
-      // 1. Delete Firestore profile
       const userProfileRef = doc(db, 'users', user.uid);
       await deleteDoc(userProfileRef);
       toast({ title: "Profile Data Deleted", description: "Your profile information has been removed."});
 
-      // 2. Call Cloud Function to delete Firebase Auth user
       const deleteAuthFn = httpsCallable(firebaseFunctions, 'deleteMyAuthAccountCallable');
-      await deleteAuthFn(); // No data needed as function uses caller's UID
+      await deleteAuthFn(); 
 
-      // 3. Sign out (onAuthStateChanged will handle UI updates)
       await firebaseSignOut(auth); 
-      // User will be null, onAuthStateChanged will redirect to /login
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted. You have been signed out." });
       
     } catch (error: any) {
       console.error("Error deleting user account:", error);
-      // Attempt to sign out even if parts of deletion failed
       await firebaseSignOut(auth).catch(e => console.error("Sign out failed after delete error:", e));
       toast({ title: "Account Deletion Failed", description: error.message || "Could not fully delete your account. Please contact support.", variant: "destructive" });
       throw error;
@@ -240,7 +243,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     }
   };
-
 
   const signOut = async () => {
     setLoading(true);
@@ -257,6 +259,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Until the component is mounted on the client, return null or a loader.
+  // This prevents useState and other client hooks from running during SSR.
+  if (!isMounted) {
+    // Optionally, return a global loader here, but `null` is often safer for diagnosing.
+    // If you return a loader, ensure it doesn't use client hooks itself.
+    return (
+        <div className="fixed inset-0 flex items-center justify-center bg-background z-[9999]">
+            <LoadingSpinner size={32} /> 
+            <p className="ml-2 text-muted-foreground">Initializing Authentication...</p>
+        </div>
+    );
+  }
+
   return (
     <AuthContext.Provider value={{ 
       user, 
@@ -268,7 +283,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signInWithEmailPassword, 
       signOut, 
       setRoleAndCompleteProfile,
-      deleteCurrentUserAccount // Added
+      deleteCurrentUserAccount
     }}>
       {children}
     </AuthContext.Provider>
@@ -283,3 +298,4 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
+    

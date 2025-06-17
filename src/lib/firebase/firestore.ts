@@ -309,7 +309,6 @@ export const createIdeaFromProfile = async (
     applicantType: profileData.applicantCategory,
     status: 'SUBMITTED',
     programPhase: null,
-    // phase2Marks is intentionally omitted here, will be initialized when idea moves to PHASE_2 if needed
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -383,7 +382,7 @@ export const updateIdeaStatusAndPhase = async (
   }
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
-  const updates: {[key: string]: any} = { // Using a more generic type for updates to accommodate deleteField
+  const updates: {[key: string]: any} = {
     status: newStatus,
     updatedAt: serverTimestamp(),
   };
@@ -394,11 +393,6 @@ export const updateIdeaStatusAndPhase = async (
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
     if (newPhase === 'PHASE_2') {
-      // Ensure phase2Marks is initialized if it doesn't exist.
-      // This should be handled carefully to avoid overwriting existing marks with an empty object
-      // if not already structured. A read-then-write might be safer if atomicity isn't paramount here,
-      // or rely on the client to have fetched the latest doc for `phase2Marks` initialization.
-      // For now, we assume phase2Marks is an object or needs to be one.
       const currentDoc = await getDoc(ideaRef);
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
@@ -426,7 +420,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseGuidelines = null;
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
-      updates.rejectedByUid = adminUid; // Can be undefined, Firestore handles this by not setting/deleting
+      updates.rejectedByUid = adminUid;
       updates.rejectedAt = serverTimestamp() as Timestamp;
     } else { 
       updates.rejectionRemarks = deleteField();
@@ -454,14 +448,13 @@ export const submitOrUpdatePhase2Mark = async (
   }
 
   const markData: AdminMark = {
-    mark: mark, // mark can be null to clear
+    mark: mark,
     adminDisplayName: adminProfile.displayName || adminProfile.fullName || 'Admin',
     markedAt: serverTimestamp() as Timestamp,
   };
   
-  // Using dot notation to update a specific field within the phase2Marks map
   await updateDoc(ideaRef, {
-    [`phase2Marks.${adminProfile.uid}`]: mark !== null ? markData : deleteField(), // Use deleteField if mark is null
+    [`phase2Marks.${adminProfile.uid}`]: mark !== null ? markData : deleteField(),
     updatedAt: serverTimestamp(),
   });
 };
@@ -525,6 +518,33 @@ export const getUserIdeaSubmissionsCount = async (userId: string): Promise<numbe
 export const deleteIdeaSubmission = async (ideaId: string): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   await deleteDoc(ideaRef);
+};
+
+export const getIdeasCountByStatus = async (status: IdeaStatus): Promise<number> => {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('status', '==', status));
+  const snapshot = await getCountFromServer(q);
+  return snapshot.data().count;
+};
+
+export const getIdeasCountByApplicantCategory = async (): Promise<Record<ApplicantCategory, number>> => {
+  const categories: ApplicantCategory[] = ['PARUL_STUDENT', 'PARUL_STAFF', 'PARUL_ALUMNI', 'OTHERS'];
+  const counts: Record<ApplicantCategory, number> = {
+    PARUL_STUDENT: 0,
+    PARUL_STAFF: 0,
+    PARUL_ALUMNI: 0,
+    OTHERS: 0,
+  };
+  const ideasCol = collection(db, 'ideas');
+
+  for (const category of categories) {
+    // Note: Firestore queries on fields that might not exist on all documents (like applicantType if ideas can be created without it)
+    // will not return documents lacking that field. Assuming 'applicantType' is consistently set.
+    const q = query(ideasCol, where('applicantType', '==', category));
+    const snapshot = await getCountFromServer(q);
+    counts[category] = snapshot.data().count;
+  }
+  return counts;
 };
 
 

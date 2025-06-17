@@ -34,7 +34,7 @@ export default function HomePage() {
 
       <div className="mb-12 max-w-3xl w-full">
         <Image 
-          src="https://placehold.co/800x400.png" 
+          src="https://www.pierc.org/_next/image?url=%2F_next%2Fstatic%2Fmedia%2FmainBgImage.05039c52.png&w=1920&q=75" 
           alt="Innovation Hub" 
           width={800} 
           height={400} 
