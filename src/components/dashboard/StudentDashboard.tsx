@@ -15,6 +15,7 @@ import type { Timestamp } from 'firebase/firestore';
 import type { ProgramPhase } from '@/types';
 import { Input } from '../ui/input';
 import { format, isValid } from 'date-fns';
+import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -35,6 +36,8 @@ export default function StudentDashboard() {
   const [loadingIdeas, setLoadingIdeas] = useState(true);
   const [selectedPptFile, setSelectedPptFile] = useState<File | null>(null);
   const [uploadingPptIdeaId, setUploadingPptIdeaId] = useState<string | null>(null);
+  const [isUploadingPpt, setIsUploadingPpt] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUserIdeas = async () => {
@@ -101,6 +104,13 @@ export default function StudentDashboard() {
     return format(dateToFormat, 'MMM d, yyyy');
   };
 
+  const fileToDataUri = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
 
   const handlePptFileChange = (event: React.ChangeEvent<HTMLInputElement>, ideaId: string) => {
     if (event.target.files && event.target.files[0]) {
@@ -108,10 +118,12 @@ export default function StudentDashboard() {
       if (file.type === "application/vnd.ms-powerpoint" || file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
         setSelectedPptFile(file);
         setUploadingPptIdeaId(ideaId); 
+        setUploadError(null);
       } else {
         toast({ title: "Invalid File Type", description: "Please upload a PPT or PPTX file.", variant: "destructive" });
         setSelectedPptFile(null);
         setUploadingPptIdeaId(null);
+        setUploadError("Invalid file type. Please upload PPT or PPTX.");
         event.target.value = ''; 
       }
     }
@@ -123,23 +135,36 @@ export default function StudentDashboard() {
       return;
     }
 
-    toast({ title: "PPT Upload Simulation", description: "PPT upload functionality is currently a placeholder. This feature will be fully implemented soon.", variant: "default" });
-    
-    const dummyFileUrl = `https://example.com/uploads/ideas/${uploadingPptIdeaId}/${selectedPptFile.name}`;
+    setIsUploadingPpt(true);
+    setUploadError(null);
+
     try {
-      setLoadingIdeas(true); 
-      await updateIdeaPhase2PptDetails(uploadingPptIdeaId, dummyFileUrl, selectedPptFile.name);
-      toast({ title: "PPT Info Updated (Simulation)", description: `${selectedPptFile.name} details recorded.` });
-      setSelectedPptFile(null);
-      setUploadingPptIdeaId(null);
+      const fileDataUri = await fileToDataUri(selectedPptFile);
+      const flowResult = await uploadPresentation({
+        ideaId: uploadingPptIdeaId,
+        fileName: selectedPptFile.name,
+        fileDataUri: fileDataUri,
+      });
+
+      await updateIdeaPhase2PptDetails(uploadingPptIdeaId, flowResult.pptUrl, flowResult.pptFileName);
+      toast({ title: "Presentation Info Saved", description: `${flowResult.pptFileName} details recorded (Simulated Upload).` });
       
+      // Refresh ideas list
       const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
       setUserIdeas(ideas);
+
     } catch (error) {
-      console.error("Error updating PPT details (simulation):", error);
-      toast({ title: "Update Error", description: "Could not update PPT details.", variant: "destructive" });
+      console.error("Error during PPT upload process:", error);
+      const errorMessage = (error instanceof Error) ? error.message : "Could not process PPT upload.";
+      setUploadError(errorMessage);
+      toast({ title: "Upload Process Error", description: errorMessage, variant: "destructive" });
     } finally {
-      setLoadingIdeas(false);
+      setIsUploadingPpt(false);
+      setSelectedPptFile(null);
+      setUploadingPptIdeaId(null);
+      // Clear the file input visually
+      const fileInput = document.getElementById(`ppt-upload-${uploadingPptIdeaId}`) as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
     }
   };
 
@@ -164,7 +189,7 @@ export default function StudentDashboard() {
           <CardDescription>Track the status and phase of your innovative ideas submitted to PIERC.</CardDescription>
         </CardHeader>
         <CardContent>
-          {loadingIdeas ? (
+          {loadingIdeas && !isUploadingPpt ? (
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
               <p className="ml-2 text-muted-foreground">Loading your submissions...</p>
@@ -214,7 +239,7 @@ export default function StudentDashboard() {
                         </Card>
                     )}
                     {idea.status === 'SELECTED' && idea.programPhase && idea.nextPhaseDate && (
-                        <Card className="mt-3 border-primary/20 bg-primary/5">
+                        <Card className="mt-3 border-primary/30 bg-primary/5">
                             <CardHeader className="pb-2 pt-3 px-4">
                                 <CardTitle className="text-base font-semibold text-primary flex items-center">
                                   <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
@@ -247,29 +272,35 @@ export default function StudentDashboard() {
                                 {idea.phase2PptUrl && idea.phase2PptFileName ? (
                                     <div className="flex items-center justify-between">
                                         <p>Uploaded: <span className="font-medium">{idea.phase2PptFileName}</span></p>
-                                        <p className="text-muted-foreground">(Download from Admin Portal Details)</p>
+                                        {/* Actual download link for admins might be in admin panel */}
+                                         <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs flex items-center">
+                                            <Download className="h-3 w-3 mr-1" /> View (Simulated Link)
+                                        </a>
                                     </div>
                                 ) : (
                                     <p className="text-muted-foreground">No presentation uploaded yet.</p>
                                 )}
                                 <div className="flex items-center gap-2 pt-1">
                                     <Input 
+                                        id={`ppt-upload-${idea.id}`}
                                         type="file" 
                                         accept=".ppt, .pptx" 
                                         onChange={(e) => handlePptFileChange(e, idea.id!)}
                                         className="text-xs h-8 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
+                                        disabled={isUploadingPpt}
                                     />
                                     <Button 
                                         size="sm" 
                                         onClick={handlePptUpload} 
-                                        disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || loadingIdeas}
+                                        disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || isUploadingPpt}
                                         className="h-8"
                                     >
-                                        {loadingIdeas && uploadingPptIdeaId === idea.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <UploadCloud className="h-4 w-4 mr-1"/>}
+                                        {isUploadingPpt && uploadingPptIdeaId === idea.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <UploadCloud className="h-4 w-4 mr-1"/>}
                                         Upload
                                     </Button>
                                 </div>
-                                <p className="text-muted-foreground text-xs italic">Upload functionality is currently simulated. Full feature coming soon.</p>
+                                {uploadError && uploadingPptIdeaId === idea.id && <p className="text-destructive text-xs mt-1">{uploadError}</p>}
+                                <p className="text-muted-foreground text-xs italic">Upload uses a simulated flow. Actual storage integration is a future step.</p>
                             </CardContent>
                         </Card>
                     )}
@@ -334,4 +365,3 @@ export default function StudentDashboard() {
     </div>
   );
 }
-
