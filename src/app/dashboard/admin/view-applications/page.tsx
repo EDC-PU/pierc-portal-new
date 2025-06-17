@@ -92,7 +92,6 @@ export default function ViewApplicationsPage() {
       return '';
     }
     const stringField = String(field);
-    // Replace quotes with double quotes, and if it contains comma, newline or quote, enclose in double quotes
     if (stringField.includes(',') || stringField.includes('\n') || stringField.includes('"')) {
       return `"${stringField.replace(/"/g, '""')}"`;
     }
@@ -125,8 +124,8 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.solution),
         escapeCsvField(app.uniqueness),
         escapeCsvField(app.status.replace(/_/g, ' ')),
-        escapeCsvField(app.submittedAt ? formatISO(app.submittedAt.toDate()) : 'N/A'),
-        escapeCsvField(app.updatedAt ? formatISO(app.updatedAt.toDate()) : 'N/A'),
+        escapeCsvField(app.submittedAt ? formatISO(app.submittedAt.toDate ? app.submittedAt.toDate() : app.submittedAt) : 'N/A'),
+        escapeCsvField(app.updatedAt ? formatISO(app.updatedAt.toDate ? app.updatedAt.toDate() : app.updatedAt) : 'N/A'),
         escapeCsvField(app.fileURL),
         escapeCsvField(app.fileName),
         escapeCsvField(app.studioLocation)
@@ -206,7 +205,7 @@ export default function ViewApplicationsPage() {
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{app.applicantEmail}</TableCell>
                       <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                        {app.submittedAt ? format(app.submittedAt.toDate(), 'MMM d, yyyy') : 'N/A'}
+                        {app.submittedAt ? format(app.submittedAt.toDate ? app.submittedAt.toDate() : app.submittedAt, 'MMM d, yyyy') : 'N/A'}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -285,11 +284,11 @@ export default function ViewApplicationsPage() {
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Submitted At</h4>
-                  <p>{selectedApplication.submittedAt ? format(selectedApplication.submittedAt.toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
+                  <p>{selectedApplication.submittedAt ? format(selectedApplication.submittedAt.toDate ? selectedApplication.submittedAt.toDate() : selectedApplication.submittedAt, 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Last Updated At</h4>
-                  <p>{selectedApplication.updatedAt ? format(selectedApplication.updatedAt.toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
+                  <p>{selectedApplication.updatedAt ? format(selectedApplication.updatedAt.toDate ? selectedApplication.updatedAt.toDate() : selectedApplication.updatedAt, 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
                 </div>
               </div>
               <div className="space-y-3 pt-2">
