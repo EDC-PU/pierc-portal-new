@@ -265,6 +265,13 @@ export const getPendingIdeasCount = async (): Promise<number> => {
   return snapshot.data().count;
 };
 
+export const getUserIdeaSubmissionsCount = async (userId: string): Promise<number> => {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('userId', '==', userId));
+  const snapshot = await getCountFromServer(q);
+  return snapshot.data().count;
+};
+
 
 // Cohort functions
 export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>): Promise<Cohort> => {
@@ -328,3 +335,4 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
 };
+
