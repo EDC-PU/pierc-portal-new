@@ -36,6 +36,12 @@ export interface UserProfile {
 export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
 export type ProgramPhase = 'PHASE_1' | 'PHASE_2' | 'COHORT';
 
+export interface AdminMark {
+  mark: number | null; // Allow null if admin wants to clear their mark
+  adminDisplayName: string;
+  markedAt: Timestamp;
+}
+
 export interface IdeaSubmission {
   id?: string;
   userId: string; // UID of the user who submitted
@@ -52,12 +58,13 @@ export interface IdeaSubmission {
   studioLocation?: 'SURAT' | 'RAJKOT' | 'BARODA' | 'AHMEDABAD'; 
   
   status: IdeaStatus;
-  programPhase: ProgramPhase | null; // New field for selected ideas
+  programPhase: ProgramPhase | null; 
+  phase2Marks?: { [adminUid: string]: AdminMark }; // Marks given by admins for phase 2
+
   submittedAt: Timestamp;
   updatedAt: Timestamp;
   cohortId?: string; 
   
-  // Fields to be populated after fetching user details for display in admin view
   applicantDisplayName?: string;
   applicantEmail?: string;
 }
@@ -93,7 +100,6 @@ export interface SystemSettings {
   maintenanceMode: boolean;
   allowNewRegistrations: boolean;
   defaultCohortSize: number;
-  // Add other global settings here
   updatedAt?: Timestamp;
   updatedByUid?: string;
 }

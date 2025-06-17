@@ -15,7 +15,7 @@ import type { Timestamp } from 'firebase/firestore';
 import type { ProgramPhase } from '@/types';
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
-  if (!phase) return ''; // Return empty or some placeholder if not assigned
+  if (!phase) return ''; 
   switch (phase) {
     case 'PHASE_1': return 'Phase 1';
     case 'PHASE_2': return 'Phase 2';
@@ -51,7 +51,9 @@ export default function StudentDashboard() {
       }
     };
 
-    fetchUserIdeas();
+    if (user?.uid) {
+      fetchUserIdeas();
+    }
   }, [user?.uid, toast]); 
   
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
@@ -127,6 +129,11 @@ export default function StudentDashboard() {
                                 <ChevronsRight className="h-3 w-3 mr-1" />
                                 {getProgramPhaseLabel(idea.programPhase)}
                             </Badge>
+                        )}
+                         {idea.programPhase === 'PHASE_2' && idea.phase2Marks && (
+                           <Badge variant="outline" className="text-xs">
+                                {Object.keys(idea.phase2Marks).length > 0 ? `Marked` : 'Awaiting Marks'}
+                           </Badge>
                         )}
                     </div>
                   </li>

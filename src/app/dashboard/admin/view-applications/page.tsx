@@ -4,14 +4,21 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getAllIdeaSubmissionsWithDetails, updateIdeaStatusAndPhase, deleteIdeaSubmission as deleteIdeaSubmissionFS } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile } from '@/types';
+import { 
+    getAllIdeaSubmissionsWithDetails, 
+    updateIdeaStatusAndPhase, 
+    deleteIdeaSubmission as deleteIdeaSubmissionFS,
+    submitOrUpdatePhase2Mark 
+} from '@/lib/firebase/firestore';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -25,17 +32,17 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck } from 'lucide-react';
 import { format, formatISO } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
 
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
-const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED"; // Constant for "Not Assigned" phase value
+const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
-  if (!phase) return 'N/A';
+  if (!phase || phase === NO_PHASE_VALUE) return 'N/A';
   switch (phase) {
     case 'PHASE_1': return 'Phase 1';
     case 'PHASE_2': return 'Phase 2';
@@ -54,6 +61,9 @@ export default function ViewApplicationsPage() {
   const [selectedApplication, setSelectedApplication] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
+  const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
+  const [isSavingMark, setIsSavingMark] = useState(false);
+
 
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
@@ -69,6 +79,15 @@ export default function ViewApplicationsPage() {
       }
     }
   }, [userProfile, authLoading, initialLoadComplete, router, toast]);
+
+  useEffect(() => {
+    if (selectedApplication && userProfile && selectedApplication.programPhase === 'PHASE_2') {
+      const markEntry = selectedApplication.phase2Marks?.[userProfile.uid];
+      setCurrentAdminMark(markEntry?.mark?.toString() || '');
+    } else {
+      setCurrentAdminMark('');
+    }
+  }, [selectedApplication, userProfile]);
 
   const fetchApplications = async () => {
     setLoadingApplications(true);
@@ -95,14 +114,8 @@ export default function ViewApplicationsPage() {
 
     try {
       await updateIdeaStatusAndPhase(ideaId, newStatus, actualNewPhase);
-      setApplications(prevApps =>
-        prevApps.map(app => 
-          app.id === ideaId 
-            ? { ...app, status: newStatus, programPhase: newStatus === 'SELECTED' ? actualNewPhase : null, updatedAt: new Date() } 
-            : app
-        )
-      );
       toast({ title: "Update Successful", description: `Application updated.` });
+      fetchApplications(); // Refresh all applications to reflect changes
     } catch (error) {
       console.error("Error updating status/phase:", error);
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
@@ -121,6 +134,40 @@ export default function ViewApplicationsPage() {
       toast({ title: "Delete Error", description: "Could not delete the idea submission.", variant: "destructive" });
     }
     setApplicationToDelete(null); 
+  };
+
+  const handleSaveMark = async () => {
+    if (!selectedApplication || !selectedApplication.id || !userProfile) return;
+    if (selectedApplication.programPhase !== 'PHASE_2') {
+        toast({ title: "Marking Not Allowed", description: "Marks can only be submitted for ideas in Phase 2.", variant: "destructive" });
+        return;
+    }
+
+    const markValue = currentAdminMark === '' ? null : parseInt(currentAdminMark, 10);
+    if (markValue !== null && (isNaN(markValue) || markValue < 0 || markValue > 100)) {
+        toast({ title: "Invalid Mark", description: "Mark must be a number between 0 and 100, or empty to clear.", variant: "destructive" });
+        return;
+    }
+
+    setIsSavingMark(true);
+    try {
+        await submitOrUpdatePhase2Mark(selectedApplication.id, userProfile, markValue);
+        toast({ title: "Mark Saved", description: "Your mark has been successfully submitted." });
+        // Refresh data to show updated marks in dialog and potentially in list
+        const updatedApp = await getDoc(doc(db, 'ideas', selectedApplication.id)).then(snap => snap.exists() ? ({ id: snap.id, ...snap.data() } as IdeaSubmission) : null);
+        if (updatedApp) {
+          setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedApp.phase2Marks, updatedAt: updatedApp.updatedAt} : null);
+          // also update in the main list
+          setApplications(prevApps => prevApps.map(app => app.id === updatedApp.id ? {...app, phase2Marks: updatedApp.phase2Marks, updatedAt: updatedApp.updatedAt} : app));
+        } else {
+          fetchApplications(); // Fallback to full refresh
+        }
+    } catch (error) {
+        console.error("Error saving mark:", error);
+        toast({ title: "Save Mark Error", description: (error as Error).message || "Could not save your mark.", variant: "destructive" });
+    } finally {
+        setIsSavingMark(false);
+    }
   };
 
   const getStatusBadgeVariant = (status: IdeaStatus) => {
@@ -186,8 +233,14 @@ export default function ViewApplicationsPage() {
     const headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Program Phase', 'Submitted At', 'Last Updated At', 'Attachment URL', 'Attachment Name', 'Studio Location'
+      'Status', 'Program Phase', 'Studio Location', 'Attachment URL', 'Attachment Name', 
+      'Submitted At', 'Last Updated At', 
+      // Dynamically add headers for admin marks
+      ...(userProfile?.role === 'ADMIN_FACULTY' ? Object.keys(applications[0]?.phase2Marks || {}).map(adminUid => `Mark by ${applications[0]?.phase2Marks?.[adminUid]?.adminDisplayName || adminUid }`) : [])
     ];
+    
+    const adminMarkHeaders = userProfile?.role === 'ADMIN_FACULTY' ? Object.keys(applications[0]?.phase2Marks || {}).sort() : [];
+
 
     const csvRows = [headers.join(',')];
 
@@ -204,12 +257,18 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.uniqueness),
         escapeCsvField(app.status.replace(/_/g, ' ')),
         escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
-        escapeCsvField(formatDateISO(app.submittedAt)),
-        escapeCsvField(formatDateISO(app.updatedAt)),
+        escapeCsvField(app.studioLocation),
         escapeCsvField(app.fileURL),
         escapeCsvField(app.fileName),
-        escapeCsvField(app.studioLocation)
+        escapeCsvField(formatDateISO(app.submittedAt)),
+        escapeCsvField(formatDateISO(app.updatedAt)),
       ];
+
+      if (userProfile?.role === 'ADMIN_FACULTY') {
+         adminMarkHeaders.forEach(adminUid => {
+            row.push(escapeCsvField(app.phase2Marks?.[adminUid]?.mark ?? 'N/A'));
+         });
+      }
       csvRows.push(row.join(','));
     });
 
@@ -258,7 +317,7 @@ export default function ViewApplicationsPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>All Submitted Applications</CardTitle>
-          <CardDescription>Overview of applications. If status is 'Selected', assign a Program Phase.</CardDescription>
+          <CardDescription>Overview of applications. If status is 'Selected', assign a Program Phase. For 'Phase 2' ideas, provide marks in the details dialog.</CardDescription>
         </CardHeader>
         <CardContent>
           {applications.length === 0 ? (
@@ -284,7 +343,7 @@ export default function ViewApplicationsPage() {
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                        {app.submittedAt instanceof Date ? format(app.submittedAt, 'MMM d, yyyy, HH:mm') : (app.submittedAt as Timestamp)?.toDate ? format((app.submittedAt as Timestamp).toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}
+                        {formatDate(app.submittedAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -367,7 +426,7 @@ export default function ViewApplicationsPage() {
         </CardContent>
       </Card>
 
-      {selectedApplication && (
+      {selectedApplication && userProfile && (
         <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
@@ -414,11 +473,11 @@ export default function ViewApplicationsPage() {
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Submitted At</h4>
-                   <p>{selectedApplication.submittedAt instanceof Date ? format(selectedApplication.submittedAt, 'MMM d, yyyy, HH:mm') : (selectedApplication.submittedAt as Timestamp)?.toDate ? format((selectedApplication.submittedAt as Timestamp).toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
+                   <p>{formatDate(selectedApplication.submittedAt)}</p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Last Updated At</h4>
-                  <p>{selectedApplication.updatedAt instanceof Date ? format(selectedApplication.updatedAt, 'MMM d, yyyy, HH:mm') : (selectedApplication.updatedAt as Timestamp)?.toDate ? format((selectedApplication.updatedAt as Timestamp).toDate(), 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
+                  <p>{formatDate(selectedApplication.updatedAt)}</p>
                 </div>
               </div>
               <div className="space-y-3 pt-2">
@@ -449,6 +508,58 @@ export default function ViewApplicationsPage() {
                     </div>
                 )}
               </div>
+
+              {/* Phase 2 Marking Section */}
+              {selectedApplication.programPhase === 'PHASE_2' && (
+                <Card className="mt-4 pt-0">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-lg font-headline flex items-center">
+                        <Star className="h-5 w-5 mr-2 text-amber-500" /> Phase 2 Presentation Marks
+                    </CardTitle>
+                    <CardDescription>Marks submitted by administrators for this idea.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
+                      if (adminUid === userProfile.uid) return null; // Current admin's mark is handled by the input below
+                      return (
+                        <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
+                          <span className="flex items-center">
+                            <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" /> {markEntry.adminDisplayName || 'Admin'}
+                          </span>
+                          <Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge>
+                        </div>
+                      );
+                    })}
+                    {Object.keys(selectedApplication.phase2Marks || {}).length === 0 && (!selectedApplication.phase2Marks || !selectedApplication.phase2Marks[userProfile.uid]) && (
+                        <p className="text-sm text-muted-foreground text-center py-2">No marks submitted yet.</p>
+                    )}
+
+                    <div className="pt-3 space-y-2">
+                        <Label htmlFor="adminMarkInput" className="font-semibold">Your Mark (0-100):</Label>
+                        <div className="flex items-center gap-2">
+                        <Input
+                            id="adminMarkInput"
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={currentAdminMark}
+                            onChange={(e) => setCurrentAdminMark(e.target.value)}
+                            placeholder="Enter your mark"
+                            className="max-w-[150px]"
+                            disabled={isSavingMark}
+                        />
+                        <Button onClick={handleSaveMark} disabled={isSavingMark}>
+                            {isSavingMark ? <LoadingSpinner size={16} className="mr-2"/> : null}
+                            Save My Mark
+                        </Button>
+                        </div>
+                    </div>
+                  </CardContent>
+                   <CardFooter>
+                        <p className="text-xs text-muted-foreground">Leave the mark empty and save to clear your previously submitted mark.</p>
+                   </CardFooter>
+                </Card>
+              )}
             </div>
              <div className="pt-4 flex justify-end">
                 <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>Close</Button>

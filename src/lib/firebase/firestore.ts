@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 
 // User Profile Functions
@@ -218,7 +218,7 @@ export const createIdeaFromProfile = async (
   }
 
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt'> = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks'> = {
     userId: userId,
     title: profileData.startupTitle,
     category: 'General Profile Submission', 
@@ -228,7 +228,8 @@ export const createIdeaFromProfile = async (
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
     status: 'SUBMITTED',
-    programPhase: null, // Initialize programPhase
+    programPhase: null,
+    phase2Marks: {}, // Initialize phase2Marks
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -264,6 +265,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       id: ideaDoc.id, 
       ...ideaData,
       programPhase: ideaData.programPhase || null,
+      phase2Marks: ideaData.phase2Marks || {}, // Ensure phase2Marks is at least an empty object
       submittedAt,
       updatedAt,
       applicantDisplayName,
@@ -285,12 +287,51 @@ export const updateIdeaStatusAndPhase = async (
   };
 
   if (newStatus === 'SELECTED') {
-    updates.programPhase = newPhase; // Assign the new phase if status is SELECTED
+    updates.programPhase = newPhase;
+    if (newPhase === 'PHASE_2') {
+      // Initialize phase2Marks if moving to PHASE_2 and it doesn't exist
+      const currentDoc = await getDoc(ideaRef);
+      if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
+        updates.phase2Marks = {};
+      }
+    }
   } else {
-    updates.programPhase = null; // Clear the phase if status is not SELECTED
+    updates.programPhase = null; 
+    // Optionally clear phase2Marks if not selected or not in phase 2, though this might remove valuable data.
+    // For now, we only clear programPhase. Admins can clear individual marks.
   }
   await updateDoc(ideaRef, updates);
 };
+
+export const submitOrUpdatePhase2Mark = async (
+  ideaId: string,
+  adminProfile: UserProfile,
+  mark: number | null // Allow null to clear mark
+): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaDoc = await getDoc(ideaRef);
+
+  if (!ideaDoc.exists()) {
+    throw new Error("Idea submission not found.");
+  }
+  const ideaData = ideaDoc.data() as IdeaSubmission;
+  if (ideaData.programPhase !== 'PHASE_2') {
+    throw new Error("Marking is only allowed for ideas in Phase 2.");
+  }
+
+  const markData: AdminMark = {
+    mark: mark,
+    adminDisplayName: adminProfile.displayName || adminProfile.fullName || 'Admin',
+    markedAt: serverTimestamp() as Timestamp,
+  };
+  
+  // Use dot notation to update a specific admin's mark within the map
+  await updateDoc(ideaRef, {
+    [`phase2Marks.${adminProfile.uid}`]: markData,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 
 export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
   const ideasCol = collection(db, 'ideas');
@@ -305,6 +346,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         id: doc.id, 
         ...data, 
         programPhase: data.programPhase || null,
+        phase2Marks: data.phase2Marks || {},
         submittedAt, 
         updatedAt 
     } as IdeaSubmission);
@@ -379,12 +421,13 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase'>): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks'>): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
     status: 'SUBMITTED',
-    programPhase: null, // Initialize programPhase
+    programPhase: null,
+    phase2Marks: {}, // Initialize phase2Marks
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const; 
