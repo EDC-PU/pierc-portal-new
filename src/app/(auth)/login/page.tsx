@@ -105,7 +105,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-headline">
-            {isSignUpMode ? 'Create Account' : 'Welcome to PIERC Portal'}
+            {isSignUpMode ? 'Create Account' : 'Welcome to Parul Innovation & Entrepreneurship Research Centre'}
           </CardTitle>
           <CardDescription>
             {isSignUpMode ? 'Sign up to access your dashboard and resources.' : 'Sign in to access your dashboard and resources.'}
