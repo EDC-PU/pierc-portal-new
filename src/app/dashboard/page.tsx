@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { format, isValid } from 'date-fns';
-import { FileCheck2, ChevronsRight, AlertCircle, Users, BarChart3, Megaphone, Settings, UserCog, BarChartBig, FileText, Loader2, Activity, BookOpen, CalendarDays, ListChecks, MapPin, Clock } from 'lucide-react';
+import { FileCheck2, ChevronsRight, AlertCircle, Users, BarChart3, Megaphone, Settings, UserCog, BarChartBig, FileText, Loader2, Activity, BookOpen, CalendarDays, ListChecks, MapPin, Clock, Download } from 'lucide-react';
 
 interface DashboardStats {
   totalUsers: number | null;
@@ -333,3 +333,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
