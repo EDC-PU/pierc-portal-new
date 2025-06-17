@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'; // Added CardFooter
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -64,8 +64,10 @@ const parulUserSchema = profileBaseSchema.extend({
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'College name is required for Parul staff/alumni.', path: ['college'] });
     }
   } else if (data.applicantCategory === 'OTHERS') {
-    // No specific validation for 'OTHERS' for STUDENT role, as this combination implies an error in role assignment logic.
-    // External users (non-Parul emails) will handle 'OTHERS' with instituteName.
+    // This case should not be reachable if role is STUDENT and category is OTHERS,
+    // as @paruluniversity.ac.in emails get STUDENT role.
+    // If a non-Parul email user somehow got STUDENT role and selected OTHERS, it's an edge case.
+    // For now, schema implies student role is tied to Parul categories.
   }
 });
 
@@ -73,20 +75,18 @@ const otherUserSchema = profileBaseSchema.extend({
   role: z.enum(['EXTERNAL_USER', 'ADMIN_FACULTY']),
 }).superRefine((data, ctx) => {
   if (data.role === 'ADMIN_FACULTY') {
-    // For admin, most fields are not relevant in the same way.
-    // We will auto-populate them. Schema still needs to be satisfied.
-    // ApplicantCategory is 'OTHERS', InstituteName 'PIERC Admin'
     if (data.applicantCategory !== 'OTHERS') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Admin category should be OTHERS.', path: ['applicantCategory'] });
     }
-    if (!data.instituteName && data.applicantCategory === 'OTHERS') {
-         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Institute name is required.', path: ['instituteName']});
+    if (!data.instituteName && data.applicantCategory === 'OTHERS') { // Admins are categorized as 'OTHERS' with an institute.
+         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Institute name is required for Admin role (e.g., PIERC Administration).', path: ['instituteName']});
     }
-    return; // Skip other checks for admin as they are auto-filled
+    return; // Skip other non-admin specific checks
   }
 
+  // For EXTERNAL_USER role
   if (data.applicantCategory === 'PARUL_STUDENT') {
-     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Parul Student category only for @paruluniversity.ac.in emails.', path: ['applicantCategory'] });
+     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Parul Student category is only for @paruluniversity.ac.in emails.', path: ['applicantCategory'] });
   } else if (data.applicantCategory === 'PARUL_STAFF' || data.applicantCategory === 'PARUL_ALUMNI') {
     if (!data.college || data.college.trim() === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'College name is required for Parul staff/alumni.', path: ['college'] });
@@ -121,15 +121,15 @@ export default function ProfileSetupPage() {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       fullName: user?.displayName || '',
-      role: determinedRole,
+      role: determinedRole, // Set role based on email
       contactNumber: '',
-      applicantCategory: undefined,
+      applicantCategory: undefined, // User must select
       teamMembers: '',
       startupTitle: '',
       problemDefinition: '',
       solutionDescription: '',
       uniqueness: '',
-      currentStage: undefined,
+      currentStage: undefined, // User must select
       enrollmentNumber: '',
       college: '',
       instituteName: '',
@@ -148,44 +148,49 @@ export default function ProfileSetupPage() {
   }, [user, userProfile, initialLoadComplete, router, determinedRole]);
   
   useEffect(() => {
-    if (user && determinedRole === 'ADMIN_FACULTY' && !userProfile && !isAutoSubmittingAdmin && initialLoadComplete) {
+    // Auto-submit profile for admin if not already done and auth is fully initialized.
+    if (initialLoadComplete && user && determinedRole === 'ADMIN_FACULTY' && !userProfile && !isAutoSubmittingAdmin) {
       const autoSubmitAdminProfile = async () => {
         setIsAutoSubmittingAdmin(true);
         toast({ title: "Setting up Admin Account", description: "Please wait..." });
+        
+        // Default data for admin profile that satisfies the schema
         const adminDefaults: ProfileFormData = {
           role: 'ADMIN_FACULTY',
           fullName: user?.displayName || 'Admin User',
-          contactNumber: '0000000000', 
-          applicantCategory: 'OTHERS',
-          instituteName: 'PIERC Administration',
+          contactNumber: '0000000000', // Placeholder, admin can update later if needed
+          applicantCategory: 'OTHERS', // Admin is categorized as 'OTHERS'
+          instituteName: 'PIERC Administration', // Specific institute for admin
           teamMembers: 'N/A',
           startupTitle: 'Administrative Account',
           problemDefinition: 'This is an administrative account, not applicable for startup details.',
           solutionDescription: 'This is an administrative account, not applicable for startup details.',
           uniqueness: 'This is an administrative account, not applicable for startup details.',
-          currentStage: 'IDEA', 
+          currentStage: 'IDEA', // Placeholder, not relevant for admin application
         };
         try {
           await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
+          // AuthContext will handle redirection to dashboard upon successful profile creation.
         } catch (error) {
           console.error("Admin profile auto-setup failed", error);
-          toast({ title: "Admin Setup Error", description: "Could not auto-setup admin profile.", variant: "destructive" });
+          toast({ title: "Admin Setup Error", description: "Could not auto-setup admin profile. Please try again or contact support.", variant: "destructive" });
           setIsAutoSubmittingAdmin(false); 
         }
       };
       autoSubmitAdminProfile();
     }
-  }, [user, determinedRole, userProfile, setRoleAndCompleteProfile, toast, router, initialLoadComplete, isAutoSubmittingAdmin]);
+  }, [initialLoadComplete, user, determinedRole, userProfile, setRoleAndCompleteProfile, toast, router, isAutoSubmittingAdmin]);
 
 
   useEffect(() => {
     if (user && !control._formValues.fullName && user.displayName) {
        setValue('fullName', user.displayName);
     }
-    setValue('role', determinedRole);
+    setValue('role', determinedRole); // Ensure role is set based on email
   }, [user, control, determinedRole, setValue]);
 
   useEffect(() => {
+    // Trigger validation for conditional fields when applicantCategory changes
     if (selectedApplicantCategory) {
         trigger(['enrollmentNumber', 'college', 'instituteName']);
     }
@@ -197,9 +202,13 @@ export default function ProfileSetupPage() {
       return;
     }
     try {
+      // The 'role' in 'data' should already be correctly set by `determinedRole` and form state.
+      // `setRoleAndCompleteProfile` will use this role.
       await setRoleAndCompleteProfile(data.role as Role, data);
+      // Redirection is handled by AuthContext or useEffect hooks upon profile creation
     } catch (error) {
-      console.error("Profile setup failed", error);
+      // Error is usually toasted by setRoleAndCompleteProfile or AuthContext methods
+      console.error("Profile setup failed on submit", error);
     }
   };
   
@@ -213,11 +222,32 @@ export default function ProfileSetupPage() {
   }
 
   if (!user) {
+    // Should be caught by the first useEffect, but as a fallback:
     return <div className="flex items-center justify-center min-h-screen"><p>Redirecting to login...</p><LoadingSpinner size={32}/></div>;
   }
 
-  if (determinedRole === 'ADMIN_FACULTY' && userProfile) {
-     router.push('/dashboard');
+  // If admin role was determined, profile auto-setup was attempted.
+  // If profile now exists, AuthContext or other useEffects will redirect to dashboard.
+  // If profile *still* doesn't exist (e.g. auto-submit failed and isAutoSubmittingAdmin is false),
+  // then we might fall through. This state should ideally not be reached if auto-submit error handling is robust.
+  // However, if it *is* reached, we don't want to show the form to an admin.
+  if (determinedRole === 'ADMIN_FACULTY') {
+     // If profile exists, router.push happens from other effects.
+     // If it doesn't exist and auto-submit failed, show a message or allow retry.
+     // For now, assume redirection or the loading spinner for auto-submit covers this.
+     // If `isAutoSubmittingAdmin` is false but `userProfile` is still null for an admin, it means an error occurred.
+     if (!userProfile && !isAutoSubmittingAdmin) {
+        return (
+             <div className="flex flex-col items-center justify-center min-h-screen">
+                <p className="text-destructive mb-4">Administrator account setup encountered an issue.</p>
+                <p className="text-muted-foreground mb-4">Please ensure your Firestore permissions are correctly set.</p>
+                <Button onClick={() => window.location.reload()}>Try Again</Button>
+                <Button variant="link" onClick={signOut} className="mt-2">Logout</Button>
+            </div>
+        );
+     }
+     // If userProfile exists for admin, redirection to dashboard is handled by other useEffects.
+     // This return is a safety net during the brief period before redirection.
      return (
         <div className="flex items-center justify-center min-h-screen">
             <p>Redirecting to dashboard...</p>
@@ -243,9 +273,9 @@ export default function ProfileSetupPage() {
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
             <div>
-              <Label>Your Role</Label>
+              <Label>Your Role (auto-assigned)</Label>
               <Input value={getRoleDisplayString(determinedRole)} readOnly className="bg-muted/50"/>
-              <Controller name="role" control={control} render={({ field }) => <input type="hidden" {...field} />} />
+              <Controller name="role" control={control} render={({ field }) => <input type="hidden" {...field} value={determinedRole} />} />
               {errors.role && <p className="text-sm text-destructive mt-1">{(errors.role as any).message}</p>}
             </div>
 
@@ -361,6 +391,5 @@ export default function ProfileSetupPage() {
     </div>
   );
 }
-
 
     
