@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -760,4 +761,6 @@ export {
   SidebarSeparator,
   SidebarTrigger,
   useSidebar,
+  SidebarContext, // Added SidebarContext to exports
 }
+
