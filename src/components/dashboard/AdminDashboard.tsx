@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2, FileText } from 'lucide-react';
+import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2, FileText, BarChartBig } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTotalUsersCount, getTotalIdeasCount, getPendingIdeasCount } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -150,10 +150,11 @@ export default function AdminDashboard() {
           <Button variant="outline" onClick={() => router.push('/dashboard/admin/view-applications')}>
             <FileText className="mr-2 h-4 w-4" /> View Incubation Applications
           </Button>
-          <Button variant="outline" disabled>Platform Analytics (Coming Soon)</Button>
+          <Button variant="outline" onClick={() => router.push('/dashboard/admin/platform-analytics')}>
+            <BarChartBig className="mr-2 h-4 w-4" /> Platform Analytics
+          </Button>
         </CardContent>
       </Card>
     </div>
   );
 }
-
