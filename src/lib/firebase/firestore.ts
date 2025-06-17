@@ -106,50 +106,21 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
 };
 
 export const deleteUserAccountAndProfile = async (userId: string): Promise<void> => {
-  // 1. Delete Firestore Profile
   const userProfileRef = doc(db, 'users', userId);
   const userDocSnap = await getDoc(userProfileRef);
 
   if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
     throw new Error("The primary super admin's profile and account cannot be deleted through this interface.");
   }
-  await deleteDoc(userProfileRef);
+  
+  await deleteDoc(userProfileRef); // Delete Firestore profile first
 
-  // 2. Call a Firebase Function to delete the Auth user
-  // IMPORTANT: You need to create a Firebase Cloud Function named 'deleteAuthUserCallable'
-  // This function will use the Firebase Admin SDK to delete the user.
-  // Example Cloud Function (Node.js):
-  //
-  // const functions = require('firebase-functions');
-  // const admin = require('firebase-admin');
-  // admin.initializeApp();
-  //
-  // exports.deleteAuthUserCallable = functions.https.onCall(async (data, context) => {
-  //   // Check if the requester is an admin (you might have more specific checks)
-  //   if (!context.auth || !context.auth.token.admin) { // or check custom claim
-  //     throw new functions.https.HttpsError('permission-denied', 'Must be an administrative user to initiate delete.');
-  //   }
-  //   const uid = data.uid;
-  //   if (!uid) {
-  //     throw new functions.https.HttpsError('invalid-argument', 'The function must be called with a "uid" argument.');
-  //   }
-  //   try {
-  //     await admin.auth().deleteUser(uid);
-  //     return { message: `Successfully deleted user ${uid}` };
-  //   } catch (error) {
-  //     console.error('Error deleting user:', error);
-  //     throw new functions.https.HttpsError('internal', 'Unable to delete user', error);
-  //   }
-  // });
   try {
     const deleteAuthUserFn = httpsCallable(firebaseFunctions, 'deleteAuthUserCallable');
     await deleteAuthUserFn({ uid: userId });
-    // If successful, the auth user is deleted.
   } catch (error) {
     console.error("Error calling Firebase Function to delete auth user:", error);
-    // The Firestore profile was already deleted.
-    // You might want to log this or inform the admin that the auth account might still exist.
-    throw new Error(`Firestore profile deleted, but an error occurred attempting to delete the Firebase Auth account: ${(error as Error).message}. Please check the Cloud Function logs.`);
+    throw new Error(`Firestore profile deleted, but an error occurred attempting to delete the Firebase Auth account: ${(error as Error).message}. Please check the Cloud Function logs, or manually delete the auth account if necessary.`);
   }
 };
 
@@ -345,6 +316,11 @@ export const getUserIdeaSubmissionsCount = async (userId: string): Promise<numbe
   return snapshot.data().count;
 };
 
+export const deleteIdeaSubmission = async (ideaId: string): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  await deleteDoc(ideaRef);
+};
+
 
 // Cohort functions
 export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>): Promise<Cohort> => {
@@ -401,3 +377,4 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
 };
+

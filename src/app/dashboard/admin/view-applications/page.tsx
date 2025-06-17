@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getAllIdeaSubmissionsWithDetails, updateIdeaStatus } from '@/lib/firebase/firestore';
+import { getAllIdeaSubmissionsWithDetails, updateIdeaStatus, deleteIdeaSubmission as deleteIdeaSubmissionFS } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, IdeaStatus } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -13,8 +13,19 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { FileText, Eye, Info, Download } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { FileText, Eye, Info, Download, Trash2 } from 'lucide-react';
 import { format, formatISO } from 'date-fns';
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
@@ -28,6 +39,7 @@ export default function ViewApplicationsPage() {
   const [loadingApplications, setLoadingApplications] = useState(true);
   const [selectedApplication, setSelectedApplication] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
 
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
@@ -71,6 +83,18 @@ export default function ViewApplicationsPage() {
     }
   };
 
+  const handleDeleteIdea = async (ideaId: string) => {
+    try {
+      await deleteIdeaSubmissionFS(ideaId);
+      toast({ title: "Idea Deleted", description: "The idea submission has been successfully deleted." });
+      fetchApplications(); // Refresh the list
+    } catch (error) {
+      console.error("Error deleting idea:", error);
+      toast({ title: "Delete Error", description: "Could not delete the idea submission.", variant: "destructive" });
+    }
+    setApplicationToDelete(null); // Close confirmation dialog
+  };
+
   const getStatusBadgeVariant = (status: IdeaStatus) => {
     switch (status) {
       case 'SELECTED': return 'default';
@@ -86,6 +110,23 @@ export default function ViewApplicationsPage() {
     setSelectedApplication(application);
     setIsDetailModalOpen(true);
   };
+  
+  const formatDate = (dateValue: Date | Timestamp | undefined | null): string => {
+    if (!dateValue) return 'N/A';
+    if (typeof (dateValue as any).toDate === 'function') { // Firestore Timestamp
+      return format((dateValue as Timestamp).toDate(), 'MMM d, yyyy, HH:mm');
+    }
+    return format(dateValue as Date, 'MMM d, yyyy, HH:mm'); // JavaScript Date
+  };
+  
+  const formatDateISO = (dateValue: Date | Timestamp | undefined | null): string => {
+    if (!dateValue) return 'N/A';
+    if (typeof (dateValue as any).toDate === 'function') { // Firestore Timestamp
+      return formatISO((dateValue as Timestamp).toDate());
+    }
+    return formatISO(dateValue as Date); // JavaScript Date
+  };
+
 
   const escapeCsvField = (field: string | number | null | undefined): string => {
     if (field === null || field === undefined) {
@@ -124,8 +165,8 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.solution),
         escapeCsvField(app.uniqueness),
         escapeCsvField(app.status.replace(/_/g, ' ')),
-        escapeCsvField(app.submittedAt ? formatISO(app.submittedAt.toDate ? app.submittedAt.toDate() : app.submittedAt) : 'N/A'),
-        escapeCsvField(app.updatedAt ? formatISO(app.updatedAt.toDate ? app.updatedAt.toDate() : app.updatedAt) : 'N/A'),
+        escapeCsvField(formatDateISO(app.submittedAt)),
+        escapeCsvField(formatDateISO(app.updatedAt)),
         escapeCsvField(app.fileURL),
         escapeCsvField(app.fileName),
         escapeCsvField(app.studioLocation)
@@ -205,7 +246,7 @@ export default function ViewApplicationsPage() {
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{app.applicantEmail}</TableCell>
                       <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-                        {app.submittedAt ? format(app.submittedAt.toDate ? app.submittedAt.toDate() : app.submittedAt, 'MMM d, yyyy') : 'N/A'}
+                        {formatDate(app.submittedAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
@@ -229,10 +270,33 @@ export default function ViewApplicationsPage() {
                           </Badge>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right">
+                      <TableCell className="text-right space-x-1 sm:space-x-2">
                         <Button variant="outline" size="sm" onClick={() => openDetailModal(app)}>
                           <Eye className="mr-1 h-3.5 w-3.5" /> Details
                         </Button>
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm" onClick={() => setApplicationToDelete(app)}>
+                               <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                           {applicationToDelete && applicationToDelete.id === app.id && (
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This action cannot be undone. This will permanently delete the idea submission titled "{applicationToDelete.title}".
+                                </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setApplicationToDelete(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteIdea(applicationToDelete.id!)} className="bg-destructive hover:bg-destructive/90">
+                                    Delete
+                                </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                           )}
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -284,11 +348,11 @@ export default function ViewApplicationsPage() {
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Submitted At</h4>
-                  <p>{selectedApplication.submittedAt ? format(selectedApplication.submittedAt.toDate ? selectedApplication.submittedAt.toDate() : selectedApplication.submittedAt, 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
+                   <p>{formatDate(selectedApplication.submittedAt)}</p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Last Updated At</h4>
-                  <p>{selectedApplication.updatedAt ? format(selectedApplication.updatedAt.toDate ? selectedApplication.updatedAt.toDate() : selectedApplication.updatedAt, 'MMM d, yyyy, HH:mm') : 'N/A'}</p>
+                  <p>{formatDate(selectedApplication.updatedAt)}</p>
                 </div>
               </div>
               <div className="space-y-3 pt-2">
