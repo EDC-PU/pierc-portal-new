@@ -1,10 +1,10 @@
 
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -30,7 +30,6 @@ const currentStages: { value: CurrentStage; label: string }[] = [
   { value: 'STARTUP_STAGE', label: 'Startup Stage' },
 ];
 
-// Base schema for all profile fields required by PRD
 const profileBaseSchema = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
   contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long'),
@@ -50,7 +49,6 @@ const profileBaseSchema = z.object({
   instituteName: z.string().optional(),
 });
 
-// Schema for Parul University email users (role is 'STUDENT')
 const parulUserSchema = profileBaseSchema.extend({
   role: z.literal('STUDENT'),
 }).superRefine((data, ctx) => {
@@ -66,17 +64,27 @@ const parulUserSchema = profileBaseSchema.extend({
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'College name is required for Parul staff/alumni.', path: ['college'] });
     }
   } else if (data.applicantCategory === 'OTHERS') {
-    if (!data.instituteName || data.instituteName.trim() === '') {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Institute name is required for "Others".', path: ['instituteName'] });
-    }
+    // No specific validation for 'OTHERS' for STUDENT role, as this combination implies an error in role assignment logic.
+    // External users (non-Parul emails) will handle 'OTHERS' with instituteName.
   }
 });
 
-// Schema for other users (role can be 'EXTERNAL_USER' or 'ADMIN_FACULTY')
-// ADMIN_FACULTY is allowed here for pranavrathi07@gmail.com, others will be EXTERNAL_USER
 const otherUserSchema = profileBaseSchema.extend({
   role: z.enum(['EXTERNAL_USER', 'ADMIN_FACULTY']),
 }).superRefine((data, ctx) => {
+  if (data.role === 'ADMIN_FACULTY') {
+    // For admin, most fields are not relevant in the same way.
+    // We will auto-populate them. Schema still needs to be satisfied.
+    // ApplicantCategory is 'OTHERS', InstituteName 'PIERC Admin'
+    if (data.applicantCategory !== 'OTHERS') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Admin category should be OTHERS.', path: ['applicantCategory'] });
+    }
+    if (!data.instituteName && data.applicantCategory === 'OTHERS') {
+         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Institute name is required.', path: ['instituteName']});
+    }
+    return; // Skip other checks for admin as they are auto-filled
+  }
+
   if (data.applicantCategory === 'PARUL_STUDENT') {
      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Parul Student category only for @paruluniversity.ac.in emails.', path: ['applicantCategory'] });
   } else if (data.applicantCategory === 'PARUL_STAFF' || data.applicantCategory === 'PARUL_ALUMNI') {
@@ -96,6 +104,7 @@ export default function ProfileSetupPage() {
   const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
+  const [isAutoSubmittingAdmin, setIsAutoSubmittingAdmin] = useState(false);
 
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user]);
   const isAdminEmail = useMemo(() => user?.email === 'pranavrathi07@gmail.com', [user]);
@@ -106,7 +115,7 @@ export default function ProfileSetupPage() {
     return 'EXTERNAL_USER';
   }, [isAdminEmail, isParulEmail]);
   
-  const profileSchema = isParulEmail ? parulUserSchema : otherUserSchema;
+  const profileSchema = determinedRole === 'STUDENT' ? parulUserSchema : otherUserSchema;
 
   const { control, handleSubmit, watch, formState: { errors, isSubmitting }, setValue, trigger } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -133,16 +142,47 @@ export default function ProfileSetupPage() {
     if (initialLoadComplete && !user) {
       router.push('/login');
     }
-    if (initialLoadComplete && user && userProfile) {
+    if (initialLoadComplete && user && userProfile && determinedRole !== 'ADMIN_FACULTY') { // Don't redirect admin if auto-submitting
       router.push('/dashboard');
     }
-  }, [user, userProfile, initialLoadComplete, router]);
+  }, [user, userProfile, initialLoadComplete, router, determinedRole]);
+  
+  useEffect(() => {
+    if (user && determinedRole === 'ADMIN_FACULTY' && !userProfile && !isAutoSubmittingAdmin && initialLoadComplete) {
+      const autoSubmitAdminProfile = async () => {
+        setIsAutoSubmittingAdmin(true);
+        toast({ title: "Setting up Admin Account", description: "Please wait..." });
+        const adminDefaults: ProfileFormData = {
+          role: 'ADMIN_FACULTY',
+          fullName: user?.displayName || 'Admin User',
+          contactNumber: '0000000000', // Placeholder
+          applicantCategory: 'OTHERS',
+          instituteName: 'PIERC Administration',
+          teamMembers: 'N/A',
+          startupTitle: 'Administrative Account',
+          problemDefinition: 'This is an administrative account, not applicable for startup details.',
+          solutionDescription: 'This is an administrative account, not applicable for startup details.',
+          uniqueness: 'This is an administrative account, not applicable for startup details.',
+          currentStage: 'IDEA', // Default, not relevant for admin
+        };
+        try {
+          await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
+          // AuthContext will handle redirect to dashboard upon profile update
+        } catch (error) {
+          console.error("Admin profile auto-setup failed", error);
+          toast({ title: "Admin Setup Error", description: "Could not auto-setup admin profile.", variant: "destructive" });
+          setIsAutoSubmittingAdmin(false); 
+        }
+      };
+      autoSubmitAdminProfile();
+    }
+  }, [user, determinedRole, userProfile, setRoleAndCompleteProfile, toast, router, initialLoadComplete, isAutoSubmittingAdmin]);
+
 
   useEffect(() => {
     if (user && !control._formValues.fullName && user.displayName) {
        setValue('fullName', user.displayName);
     }
-    // Set determined role when user or role logic changes
     setValue('role', determinedRole);
   }, [user, control, determinedRole, setValue]);
 
@@ -158,24 +198,35 @@ export default function ProfileSetupPage() {
       return;
     }
     try {
-      // The `data.role` here will be the programmatically determined role.
-      // AuthContext will also apply its own check for the admin email.
       await setRoleAndCompleteProfile(data.role as Role, data);
     } catch (error) {
       console.error("Profile setup failed", error);
+      // Toast is handled in AuthContext or setRoleAndCompleteProfile
     }
   };
   
-  if (!initialLoadComplete || loading && !userProfile) {
+  if (!initialLoadComplete || (loading && !userProfile) || isAutoSubmittingAdmin) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size={48} />
+        {isAutoSubmittingAdmin && <p className="ml-4">Setting up Administrator account...</p>}
       </div>
     );
   }
 
   if (!user) {
     return <div className="flex items-center justify-center min-h-screen"><p>Redirecting to login...</p><LoadingSpinner size={32}/></div>;
+  }
+
+  // If admin role and profile setup is complete (or was just completed by auto-submit), redirect to dashboard
+  if (determinedRole === 'ADMIN_FACULTY' && userProfile) {
+     router.push('/dashboard');
+     return (
+        <div className="flex items-center justify-center min-h-screen">
+            <p>Redirecting to dashboard...</p>
+            <LoadingSpinner size={32} />
+        </div>
+     );
   }
   
   const getRoleDisplayString = (role: Role) => {
@@ -197,7 +248,6 @@ export default function ProfileSetupPage() {
             <div>
               <Label>Your Role</Label>
               <Input value={getRoleDisplayString(determinedRole)} readOnly className="bg-muted/50"/>
-              {/* Hidden input to ensure react-hook-form has the role value */}
               <Controller name="role" control={control} render={({ field }) => <input type="hidden" {...field} />} />
               {errors.role && <p className="text-sm text-destructive mt-1">{(errors.role as any).message}</p>}
             </div>
