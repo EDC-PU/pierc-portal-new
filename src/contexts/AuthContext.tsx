@@ -43,29 +43,40 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
+        let profileExists = false; 
         try {
           let profile = await getUserProfile(firebaseUser.uid);
           if (profile) {
-            // Ensure superAdmin status and role are correctly assigned for the admin email
             if (firebaseUser.email === 'pranavrathi07@gmail.com') {
                 profile.isSuperAdmin = true;
-                profile.role = 'ADMIN_FACULTY'; // Ensure role is ADMIN_FACULTY
+                profile.role = 'ADMIN_FACULTY';
             }
             setUserProfile(profile);
+            profileExists = true;
             if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
               router.push('/dashboard');
             }
           } else {
             setUserProfile(null); 
-            if (router && window.location.pathname !== '/profile-setup') {
-               router.push('/profile-setup');
-            }
+            profileExists = false;
           }
         } catch (error) {
           console.error("Error fetching user profile:", error);
           setUserProfile(null);
-          toast({ title: "Error", description: "Could not fetch user profile.", variant: "destructive" });
+          profileExists = false; // Assume no profile if error occurs
+          // Avoid toasting for expected "profile not found" for new users if it's a specific error type
+          // For now, generic error toast remains.
+          if ((error as any)?.code !== 'permission-denied' && (error as any)?.message?.includes('firestore/permission-denied')) {
+            // Only toast if it's not a typical "not found" scenario disguised as permission error initially
+             toast({ title: "Profile Check Error", description: "Could not verify user profile.", variant: "destructive" });
+          }
         }
+
+        // Unified redirect logic: if no profile, go to setup (unless already there)
+        if (!profileExists && router && window.location.pathname !== '/profile-setup') {
+          router.push('/profile-setup');
+        }
+
       } else {
         setUser(null);
         setUserProfile(null);
@@ -89,7 +100,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           message = `The ${action} request was cancelled. Please try again.`;
           break;
         case 'auth/unauthorized-domain':
-          message = `This domain is not authorized for Firebase ${action}. Please contact support.`;
+          message = `This domain is not authorized for Firebase ${action}. Please check Firebase console settings.`;
           break;
         case 'auth/email-already-in-use':
           message = 'This email address is already in use. Please try signing in or use a different email.';
@@ -116,6 +127,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
+      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
     } 
@@ -125,6 +137,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     }
@@ -134,6 +147,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await firebaseSignInWithEmailPassword(auth, email, password);
+      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "sign-in");
     }
@@ -152,7 +166,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let actualRole = roleFromForm;
     const isSuperAdminEmail = user.email === 'pranavrathi07@gmail.com';
     if (isSuperAdminEmail) {
-      actualRole = 'ADMIN_FACULTY'; // Ensure admin email always gets ADMIN_FACULTY role
+      actualRole = 'ADMIN_FACULTY'; 
     }
 
     try {
@@ -170,7 +184,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       router.push('/dashboard');
       toast({ title: "Profile Updated", description: "Your profile has been successfully set up." });
     } catch (error: any) {
-      console.error("Error setting role and profile:", error);
+      console.error("Profile setup failed", error);
       toast({ title: "Profile Setup Error", description: error.message || "Failed to set up profile.", variant: "destructive" });
       throw error; 
     } finally {

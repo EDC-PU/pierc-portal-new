@@ -26,7 +26,7 @@ const signUpSchema = z.object({
   confirmPassword: z.string().min(6, { message: 'Password must be at least 6 characters' }),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "Passwords don't match",
-  path: ['confirmPassword'], // path of error
+  path: ['confirmPassword'], 
 });
 
 
@@ -34,7 +34,7 @@ type LoginFormInputs = z.infer<typeof loginSchema>;
 type SignUpFormInputs = z.infer<typeof signUpSchema>;
 
 export default function LoginPage() {
-  const { user, signInWithGoogle, signUpWithEmailPassword, signInWithEmailPassword, loading, initialLoadComplete } = useAuth();
+  const { user, userProfile, signInWithGoogle, signUpWithEmailPassword, signInWithEmailPassword, loading, initialLoadComplete } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [isSignUpMode, setIsSignUpMode] = useState(false);
@@ -47,10 +47,16 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (initialLoadComplete && user) {
-      // AuthContext handles redirection to /dashboard or /profile-setup
-      // If they land here while logged in and profile complete, redirect.
+      if (userProfile) {
+        // If user is authenticated and has a profile, redirect to dashboard.
+        // AuthContext usually handles this, but this is a safeguard if they land here.
+        router.push('/dashboard');
+      }
+      // If user is authenticated but no profile, AuthContext is responsible for
+      // redirecting to /profile-setup. The "Redirecting..." message (below)
+      // will show during this brief period.
     }
-  }, [user, initialLoadComplete, router]);
+  }, [user, userProfile, initialLoadComplete, router]);
 
   if (loading && !initialLoadComplete) {
     return (
@@ -60,6 +66,9 @@ export default function LoginPage() {
     );
   }
   
+  // This screen shows if auth is complete, user exists, but redirection (by AuthContext or above useEffect) is pending.
+  // For a new user, AuthContext will redirect to /profile-setup.
+  // For an existing user with profile, the useEffect above will redirect to /dashboard.
   if (user && initialLoadComplete) {
      return (
       <div className="flex items-center justify-center min-h-screen">
@@ -69,6 +78,7 @@ export default function LoginPage() {
     );
   }
 
+  // If not loading, and no user, render the login/signup form.
   const onSubmit: SubmitHandler<LoginFormInputs | SignUpFormInputs> = async (data) => {
     try {
       if (isSignUpMode) {
@@ -81,13 +91,13 @@ export default function LoginPage() {
          // AuthContext will redirect to dashboard or profile-setup
       }
     } catch (error: any) {
-      // Errors are handled by toast in AuthContext methods
+      // Errors are handled by toast in AuthContext methods, no need to re-toast here
     }
   };
 
   const toggleMode = () => {
     setIsSignUpMode(!isSignUpMode);
-    reset(); // Reset form fields and errors when toggling mode
+    reset(); 
   }
 
   return (
@@ -143,7 +153,7 @@ export default function LoginPage() {
             variant="outline"
             className="w-full text-base py-5 bg-card hover:bg-muted border border-border shadow-sm"
           >
-            {loading && !isSignUpMode ? ( // Show spinner only if this button caused loading
+            {loading && !isSignUpMode ? ( 
               <LoadingSpinner size={24} className="mr-2" />
             ) : (
               <FcGoogle className="mr-3 h-5 w-5" />
@@ -163,3 +173,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
