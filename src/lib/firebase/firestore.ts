@@ -26,7 +26,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     enrollmentNumber: data.enrollmentNumber,
     college: data.college,
     instituteName: data.instituteName,
-    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
+    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false), // Ensures boolean
     createdAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -39,7 +39,30 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
-    return docSnap.data() as UserProfile;
+    // Re-construct to ensure type alignment, especially for isSuperAdmin
+    const rawData = docSnap.data();
+    return {
+        uid: docSnap.id,
+        email: rawData.email ?? null,
+        displayName: rawData.displayName ?? null,
+        photoURL: rawData.photoURL ?? null,
+        role: rawData.role ?? null,
+        fullName: rawData.fullName ?? '',
+        contactNumber: rawData.contactNumber ?? '',
+        applicantCategory: rawData.applicantCategory,
+        currentStage: rawData.currentStage,
+        startupTitle: rawData.startupTitle ?? '',
+        problemDefinition: rawData.problemDefinition ?? '',
+        solutionDescription: rawData.solutionDescription ?? '',
+        uniqueness: rawData.uniqueness ?? '',
+        teamMembers: rawData.teamMembers ?? '',
+        enrollmentNumber: rawData.enrollmentNumber,
+        college: rawData.college,
+        instituteName: rawData.instituteName,
+        createdAt: rawData.createdAt,
+        updatedAt: rawData.updatedAt,
+        isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true) // Ensure boolean
+    } as UserProfile;
   }
   throw new Error("Failed to create or retrieve user profile after creation.");
 };
@@ -48,11 +71,40 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const userProfileRef = doc(db, 'users', userId);
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
-    const profile = docSnap.data() as UserProfile;
+    const data = docSnap.data();
+    // Construct UserProfile object ensuring all fields, especially isSuperAdmin, are correctly typed
+    const profile: UserProfile = {
+        uid: docSnap.id,
+        email: data.email ?? null,
+        displayName: data.displayName ?? null,
+        photoURL: data.photoURL ?? null,
+        role: data.role ?? null,
+        fullName: data.fullName ?? '',
+        contactNumber: data.contactNumber ?? '',
+        applicantCategory: data.applicantCategory, // Assuming this is always present if user exists
+        currentStage: data.currentStage, // Assuming this is always present
+        startupTitle: data.startupTitle ?? '',
+        problemDefinition: data.problemDefinition ?? '',
+        solutionDescription: data.solutionDescription ?? '',
+        uniqueness: data.uniqueness ?? '',
+        teamMembers: data.teamMembers ?? '',
+        enrollmentNumber: data.enrollmentNumber,
+        college: data.college,
+        instituteName: data.instituteName,
+        createdAt: data.createdAt, // Assuming this is always present
+        updatedAt: data.updatedAt, // Assuming this is always present
+        isSuperAdmin: false // Default to false
+    };
+
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true; 
         if (profile.role !== 'ADMIN_FACULTY') { 
-            profile.role = 'ADMIN_FACULTY';
+            profile.role = 'ADMIN_FACULTY'; // Ensure primary admin has correct role
+        }
+    } else {
+        // For other users, explicitly check the stored value
+        if (data.isSuperAdmin === true) {
+             profile.isSuperAdmin = true;
         }
     }
     return profile;
@@ -75,7 +127,30 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   const querySnapshot = await getDocs(q);
   const users: UserProfile[] = [];
   querySnapshot.forEach((doc) => {
-    users.push({ uid: doc.id, ...doc.data() } as UserProfile);
+    // Use getUserProfile to ensure consistent data structure, especially for isSuperAdmin
+    const data = doc.data();
+     users.push({ 
+        uid: doc.id,
+        email: data.email ?? null,
+        displayName: data.displayName ?? null,
+        photoURL: data.photoURL ?? null,
+        role: data.role ?? null,
+        fullName: data.fullName ?? '',
+        contactNumber: data.contactNumber ?? '',
+        applicantCategory: data.applicantCategory,
+        currentStage: data.currentStage,
+        startupTitle: data.startupTitle ?? '',
+        problemDefinition: data.problemDefinition ?? '',
+        solutionDescription: data.solutionDescription ?? '',
+        uniqueness: data.uniqueness ?? '',
+        teamMembers: data.teamMembers ?? '',
+        enrollmentNumber: data.enrollmentNumber,
+        college: data.college,
+        instituteName: data.instituteName,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin === true)
+    } as UserProfile);
   });
   return users;
 };
@@ -96,10 +171,11 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   if (newIsSuperAdmin !== undefined) {
     updates.isSuperAdmin = newIsSuperAdmin;
   }
-  const userDoc = await getDoc(userProfileRef);
-  if (userDoc.exists() && userDoc.data().email === 'pranavrathi07@gmail.com') {
-    updates.role = 'ADMIN_FACULTY';
-    updates.isSuperAdmin = true;
+  
+  const userDocSnap = await getDoc(userProfileRef);
+  if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
+    updates.role = 'ADMIN_FACULTY'; // Ensure primary super admin role cannot be demoted
+    updates.isSuperAdmin = true;  // Ensure primary super admin status cannot be revoked
   }
 
   await updateDoc(userProfileRef, updates);
@@ -252,7 +328,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
     let applicantEmail = 'N/A';
 
     if (ideaData.userId) {
-      const userProfile = await getUserProfile(ideaData.userId);
+      const userProfile = await getUserProfile(ideaData.userId); // This now returns profile with isSuperAdmin as boolean
       if (userProfile) {
         applicantDisplayName = userProfile.displayName || userProfile.fullName || 'Unknown User';
         applicantEmail = userProfile.email || 'No Email';
@@ -265,7 +341,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       id: ideaDoc.id, 
       ...ideaData,
       programPhase: ideaData.programPhase || null,
-      phase2Marks: ideaData.phase2Marks || {}, // Ensure phase2Marks is at least an empty object
+      phase2Marks: ideaData.phase2Marks || {}, 
       submittedAt,
       updatedAt,
       applicantDisplayName,
@@ -289,7 +365,6 @@ export const updateIdeaStatusAndPhase = async (
   if (newStatus === 'SELECTED') {
     updates.programPhase = newPhase;
     if (newPhase === 'PHASE_2') {
-      // Initialize phase2Marks if moving to PHASE_2 and it doesn't exist
       const currentDoc = await getDoc(ideaRef);
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
@@ -297,8 +372,6 @@ export const updateIdeaStatusAndPhase = async (
     }
   } else {
     updates.programPhase = null; 
-    // Optionally clear phase2Marks if not selected or not in phase 2, though this might remove valuable data.
-    // For now, we only clear programPhase. Admins can clear individual marks.
   }
   await updateDoc(ideaRef, updates);
 };
@@ -306,7 +379,7 @@ export const updateIdeaStatusAndPhase = async (
 export const submitOrUpdatePhase2Mark = async (
   ideaId: string,
   adminProfile: UserProfile,
-  mark: number | null // Allow null to clear mark
+  mark: number | null 
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
@@ -325,7 +398,6 @@ export const submitOrUpdatePhase2Mark = async (
     markedAt: serverTimestamp() as Timestamp,
   };
   
-  // Use dot notation to update a specific admin's mark within the map
   await updateDoc(ideaRef, {
     [`phase2Marks.${adminProfile.uid}`]: markData,
     updatedAt: serverTimestamp(),
@@ -427,7 +499,7 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
     ...ideaData,
     status: 'SUBMITTED',
     programPhase: null,
-    phase2Marks: {}, // Initialize phase2Marks
+    phase2Marks: {}, 
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const; 

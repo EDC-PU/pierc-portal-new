@@ -30,7 +30,7 @@ export interface UserProfile {
   
   createdAt: Timestamp;
   updatedAt: Timestamp;
-  isSuperAdmin?: boolean;
+  isSuperAdmin: boolean; // Changed from optional
 }
 
 export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
