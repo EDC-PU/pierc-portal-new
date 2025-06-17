@@ -35,6 +35,8 @@ import {
 import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck } from 'lucide-react';
 import { format, formatISO } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
+import { getDoc, doc } from 'firebase/firestore'; // Imported getDoc and doc
+import { db } from '@/lib/firebase/config'; // Imported db
 
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
@@ -115,7 +117,7 @@ export default function ViewApplicationsPage() {
     try {
       await updateIdeaStatusAndPhase(ideaId, newStatus, actualNewPhase);
       toast({ title: "Update Successful", description: `Application updated.` });
-      fetchApplications(); // Refresh all applications to reflect changes
+      fetchApplications(); 
     } catch (error) {
       console.error("Error updating status/phase:", error);
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
@@ -153,14 +155,16 @@ export default function ViewApplicationsPage() {
     try {
         await submitOrUpdatePhase2Mark(selectedApplication.id, userProfile, markValue);
         toast({ title: "Mark Saved", description: "Your mark has been successfully submitted." });
-        // Refresh data to show updated marks in dialog and potentially in list
-        const updatedApp = await getDoc(doc(db, 'ideas', selectedApplication.id)).then(snap => snap.exists() ? ({ id: snap.id, ...snap.data() } as IdeaSubmission) : null);
-        if (updatedApp) {
-          setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedApp.phase2Marks, updatedAt: updatedApp.updatedAt} : null);
-          // also update in the main list
-          setApplications(prevApps => prevApps.map(app => app.id === updatedApp.id ? {...app, phase2Marks: updatedApp.phase2Marks, updatedAt: updatedApp.updatedAt} : app));
+        
+        const appDocRef = doc(db, 'ideas', selectedApplication.id);
+        const updatedAppSnap = await getDoc(appDocRef);
+        const updatedAppData = updatedAppSnap.exists() ? ({ id: updatedAppSnap.id, ...updatedAppSnap.data() } as IdeaSubmission) : null;
+
+        if (updatedAppData) {
+          setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedAppData.phase2Marks, updatedAt: updatedAppData.updatedAt} : null);
+          setApplications(prevApps => prevApps.map(app => app.id === updatedAppData.id ? {...app, phase2Marks: updatedAppData.phase2Marks, updatedAt: updatedAppData.updatedAt} : app));
         } else {
-          fetchApplications(); // Fallback to full refresh
+          fetchApplications(); 
         }
     } catch (error) {
         console.error("Error saving mark:", error);
@@ -235,11 +239,30 @@ export default function ViewApplicationsPage() {
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
       'Status', 'Program Phase', 'Studio Location', 'Attachment URL', 'Attachment Name', 
       'Submitted At', 'Last Updated At', 
-      // Dynamically add headers for admin marks
-      ...(userProfile?.role === 'ADMIN_FACULTY' ? Object.keys(applications[0]?.phase2Marks || {}).map(adminUid => `Mark by ${applications[0]?.phase2Marks?.[adminUid]?.adminDisplayName || adminUid }`) : [])
     ];
     
-    const adminMarkHeaders = userProfile?.role === 'ADMIN_FACULTY' ? Object.keys(applications[0]?.phase2Marks || {}).sort() : [];
+    const adminMarkAdminUIDs: string[] = [];
+    if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications[0]?.phase2Marks) {
+        // Collect all unique admin UIDs from the first application as a sample, or from all applications
+        const allAdminUIDsInMarks = new Set<string>();
+        applications.forEach(app => {
+            if (app.phase2Marks) {
+                Object.keys(app.phase2Marks).forEach(uid => allAdminUIDsInMarks.add(uid));
+            }
+        });
+        adminMarkAdminUIDs.push(...Array.from(allAdminUIDsInMarks).sort());
+        adminMarkAdminUIDs.forEach(uid => {
+            // Try to find a display name for the header
+            let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`; // Default if name not found
+            for (const app of applications) {
+                if (app.phase2Marks?.[uid]?.adminDisplayName) {
+                    adminDisplayName = `Mark by ${app.phase2Marks[uid].adminDisplayName}`;
+                    break;
+                }
+            }
+            headers.push(adminDisplayName);
+        });
+    }
 
 
     const csvRows = [headers.join(',')];
@@ -265,7 +288,7 @@ export default function ViewApplicationsPage() {
       ];
 
       if (userProfile?.role === 'ADMIN_FACULTY') {
-         adminMarkHeaders.forEach(adminUid => {
+         adminMarkAdminUIDs.forEach(adminUid => {
             row.push(escapeCsvField(app.phase2Marks?.[adminUid]?.mark ?? 'N/A'));
          });
       }
@@ -509,7 +532,6 @@ export default function ViewApplicationsPage() {
                 )}
               </div>
 
-              {/* Phase 2 Marking Section */}
               {selectedApplication.programPhase === 'PHASE_2' && (
                 <Card className="mt-4 pt-0">
                   <CardHeader className="pb-2">
@@ -520,7 +542,7 @@ export default function ViewApplicationsPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
-                      if (adminUid === userProfile.uid) return null; // Current admin's mark is handled by the input below
+                      if (adminUid === userProfile.uid) return null; 
                       return (
                         <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
                           <span className="flex items-center">
@@ -530,9 +552,11 @@ export default function ViewApplicationsPage() {
                         </div>
                       );
                     })}
-                    {Object.keys(selectedApplication.phase2Marks || {}).length === 0 && (!selectedApplication.phase2Marks || !selectedApplication.phase2Marks[userProfile.uid]) && (
-                        <p className="text-sm text-muted-foreground text-center py-2">No marks submitted yet.</p>
+                    {(!selectedApplication.phase2Marks || Object.keys(selectedApplication.phase2Marks).length === 0 || (Object.keys(selectedApplication.phase2Marks).length === 1 && selectedApplication.phase2Marks[userProfile.uid])) &&  (
+                        (!selectedApplication.phase2Marks || !selectedApplication.phase2Marks[userProfile.uid] || Object.keys(selectedApplication.phase2Marks).filter(uid => uid !== userProfile.uid).length === 0  ) &&
+                         <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by other admins yet.</p>
                     )}
+
 
                     <div className="pt-3 space-y-2">
                         <Label htmlFor="adminMarkInput" className="font-semibold">Your Mark (0-100):</Label>
