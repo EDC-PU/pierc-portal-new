@@ -46,8 +46,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         try {
           let profile = await getUserProfile(firebaseUser.uid);
           if (profile) {
-            if (firebaseUser.email === 'pranavrathi07@gmail.com' && !profile.isSuperAdmin) {
-                profile.isSuperAdmin = true; 
+            // Ensure superAdmin status and role are correctly assigned for the admin email
+            if (firebaseUser.email === 'pranavrathi07@gmail.com') {
+                profile.isSuperAdmin = true;
+                profile.role = 'ADMIN_FACULTY'; // Ensure role is ADMIN_FACULTY
             }
             setUserProfile(profile);
             if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
@@ -81,8 +83,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (error.code) {
       switch (error.code) {
         case 'auth/popup-closed-by-user':
+          message = `The ${action} popup was closed before completion. Please try again.`;
+          break;
         case 'auth/cancelled-popup-request':
-          message = `The ${action} popup was closed before completion.`;
+          message = `The ${action} request was cancelled. Please try again.`;
           break;
         case 'auth/unauthorized-domain':
           message = `This domain is not authorized for Firebase ${action}. Please contact support.`;
@@ -93,9 +97,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         case 'auth/weak-password':
           message = 'The password is too weak. Please use a stronger password.';
           break;
-        case 'auth/invalid-credential': // Covers wrong password, user not found for email sign-in
-        case 'auth/user-not-found': // More specific, often for password reset or email link sign-in
-        case 'auth/wrong-password': // Older SDKs might use this
+        case 'auth/invalid-credential': 
+        case 'auth/user-not-found': 
+        case 'auth/wrong-password': 
           message = 'Invalid email or password. Please check your credentials and try again.';
           break;
         default:
@@ -104,7 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     toast({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} Error`, description: message, variant: "destructive" });
     setLoading(false);
-    throw error; // Re-throw for form handling if needed
+    throw error; 
   };
 
   const signInWithGoogle = async () => {
@@ -112,37 +116,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // Auth state change listener (useEffect above) will handle fetching/creating profile and redirection.
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
     } 
-    // setLoading will be handled by onAuthStateChanged
   };
 
   const signUpWithEmailPassword = async (email: string, password: string) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      // Auth state change listener will handle next steps (profile setup)
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     }
-    // setLoading will be handled by onAuthStateChanged
   };
 
   const signInWithEmailPassword = async (email: string, password: string) => {
     setLoading(true);
     try {
       await firebaseSignInWithEmailPassword(auth, email, password);
-      // Auth state change listener will handle next steps (dashboard or profile setup)
     } catch (error: any) {
       handleAuthError(error, "sign-in");
     }
-    // setLoading will be handled by onAuthStateChanged
   };
 
   const setRoleAndCompleteProfile = async (
-    role: Role, 
+    roleFromForm: Role, 
     additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'>
   ) => {
     if (!user) {
@@ -150,14 +148,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return Promise.reject(new Error("No user logged in."));
     }
     setLoading(true);
+    
+    let actualRole = roleFromForm;
+    const isSuperAdminEmail = user.email === 'pranavrathi07@gmail.com';
+    if (isSuperAdminEmail) {
+      actualRole = 'ADMIN_FACULTY'; // Ensure admin email always gets ADMIN_FACULTY role
+    }
+
     try {
       const profileDataForCreation: Partial<UserProfile> = {
         uid: user.uid,
-        email: user.email, // From Firebase Auth user object
-        displayName: user.displayName || additionalData.fullName, // Prefer user-entered fullName if auth displayName is null
+        email: user.email, 
+        displayName: user.displayName || additionalData.fullName, 
         photoURL: user.photoURL,
-        role,
-        isSuperAdmin: user.email === 'pranavrathi07@gmail.com',
+        role: actualRole,
+        isSuperAdmin: isSuperAdminEmail,
         ...additionalData,
       };
       const createdProfile = await createUserProfileFS(user.uid, profileDataForCreation);
@@ -202,3 +207,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

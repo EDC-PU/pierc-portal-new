@@ -37,7 +37,7 @@ const profileBaseSchema = z.object({
   applicantCategory: z.enum(['PARUL_STUDENT', 'PARUL_STAFF', 'PARUL_ALUMNI', 'OTHERS'], {
     required_error: 'You need to select an applicant category.',
   }),
-  teamMembers: z.string().max(500, 'Team members list is too long').optional().default(''), // Optional, can be empty
+  teamMembers: z.string().max(500, 'Team members list is too long').optional().default(''),
   startupTitle: z.string().min(5, 'Startup title must be at least 5 characters').max(200),
   problemDefinition: z.string().min(20, 'Problem definition must be at least 20 characters').max(2000),
   solutionDescription: z.string().min(20, 'Solution description must be at least 20 characters').max(2000),
@@ -45,7 +45,6 @@ const profileBaseSchema = z.object({
   currentStage: z.enum(['IDEA', 'PROTOTYPE_STAGE', 'STARTUP_STAGE'], {
     required_error: 'You need to select the current stage.',
   }),
-  // Conditional fields - their actual requirement is handled by .superRefine
   enrollmentNumber: z.string().optional(),
   college: z.string().optional(),
   instituteName: z.string().optional(),
@@ -74,10 +73,10 @@ const parulUserSchema = profileBaseSchema.extend({
 });
 
 // Schema for other users (role can be 'EXTERNAL_USER' or 'ADMIN_FACULTY')
+// ADMIN_FACULTY is allowed here for pranavrathi07@gmail.com, others will be EXTERNAL_USER
 const otherUserSchema = profileBaseSchema.extend({
-  role: z.enum(['EXTERNAL_USER', 'ADMIN_FACULTY'], { required_error: 'You need to select a role.' }),
+  role: z.enum(['EXTERNAL_USER', 'ADMIN_FACULTY']),
 }).superRefine((data, ctx) => {
-  // For non-Parul email users, 'PARUL_STUDENT' applicant category is unlikely/invalid but handled if chosen.
   if (data.applicantCategory === 'PARUL_STUDENT') {
      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Parul Student category only for @paruluniversity.ac.in emails.', path: ['applicantCategory'] });
   } else if (data.applicantCategory === 'PARUL_STAFF' || data.applicantCategory === 'PARUL_ALUMNI') {
@@ -99,6 +98,13 @@ export default function ProfileSetupPage() {
   const { toast } = useToast();
 
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user]);
+  const isAdminEmail = useMemo(() => user?.email === 'pranavrathi07@gmail.com', [user]);
+
+  const determinedRole = useMemo<Role>(() => {
+    if (isAdminEmail) return 'ADMIN_FACULTY';
+    if (isParulEmail) return 'STUDENT';
+    return 'EXTERNAL_USER';
+  }, [isAdminEmail, isParulEmail]);
   
   const profileSchema = isParulEmail ? parulUserSchema : otherUserSchema;
 
@@ -106,7 +112,7 @@ export default function ProfileSetupPage() {
     resolver: zodResolver(profileSchema),
     defaultValues: {
       fullName: user?.displayName || '',
-      role: isParulEmail ? 'STUDENT' : undefined, // Set default role for Parul email
+      role: determinedRole,
       contactNumber: '',
       applicantCategory: undefined,
       teamMembers: '',
@@ -136,18 +142,15 @@ export default function ProfileSetupPage() {
     if (user && !control._formValues.fullName && user.displayName) {
        setValue('fullName', user.displayName);
     }
-    if (isParulEmail && control._formValues.role !== 'STUDENT') {
-        setValue('role', 'STUDENT');
-    }
-  }, [user, control, isParulEmail, setValue]);
+    // Set determined role when user or role logic changes
+    setValue('role', determinedRole);
+  }, [user, control, determinedRole, setValue]);
 
-  // Re-validate conditional fields when applicantCategory changes
   useEffect(() => {
     if (selectedApplicantCategory) {
         trigger(['enrollmentNumber', 'college', 'instituteName']);
     }
   }, [selectedApplicantCategory, trigger]);
-
 
   const onSubmit = async (data: ProfileFormData) => {
     if (!user) {
@@ -155,10 +158,11 @@ export default function ProfileSetupPage() {
       return;
     }
     try {
+      // The `data.role` here will be the programmatically determined role.
+      // AuthContext will also apply its own check for the admin email.
       await setRoleAndCompleteProfile(data.role as Role, data);
     } catch (error) {
       console.error("Profile setup failed", error);
-      // Toast might be handled in AuthContext or here if needed
     }
   };
   
@@ -171,10 +175,16 @@ export default function ProfileSetupPage() {
   }
 
   if (!user) {
-     // Should be redirected by useEffect, but as a fallback
     return <div className="flex items-center justify-center min-h-screen"><p>Redirecting to login...</p><LoadingSpinner size={32}/></div>;
   }
   
+  const getRoleDisplayString = (role: Role) => {
+    if (role === 'ADMIN_FACULTY') return 'Administrator / Faculty';
+    if (role === 'STUDENT') return 'Student (Parul University)';
+    if (role === 'EXTERNAL_USER') return 'External User';
+    return 'N/A';
+  };
+
   return (
     <div className="flex items-center justify-center min-h-[calc(100vh-10rem)] py-12 animate-fade-in">
       <Card className="w-full max-w-2xl shadow-2xl">
@@ -184,34 +194,14 @@ export default function ProfileSetupPage() {
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
-            {/* Role Display/Selection */}
-            {!isParulEmail ? (
-              <div>
-                <Label>Select Your Role</Label>
-                <Controller
-                  name="role"
-                  control={control}
-                  render={({ field }) => (
-                    <RadioGroup onValueChange={field.onChange} defaultValue={field.value as string | undefined} className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                      {(['EXTERNAL_USER', 'ADMIN_FACULTY'] as const).map((roleValue) => (
-                        <Label key={roleValue} htmlFor={roleValue} className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
-                          <RadioGroupItem value={roleValue} id={roleValue} className="sr-only" />
-                          {roleValue.replace('_', ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}
-                        </Label>
-                      ))}
-                    </RadioGroup>
-                  )}
-                />
-                {errors.role && <p className="text-sm text-destructive mt-1">{(errors.role as any).message}</p>}
-              </div>
-            ) : (
-              <div>
-                <Label>Role</Label>
-                <Input value="Student (Parul University)" readOnly className="bg-muted/50"/>
-              </div>
-            )}
+            <div>
+              <Label>Your Role</Label>
+              <Input value={getRoleDisplayString(determinedRole)} readOnly className="bg-muted/50"/>
+              {/* Hidden input to ensure react-hook-form has the role value */}
+              <Controller name="role" control={control} render={({ field }) => <input type="hidden" {...field} />} />
+              {errors.role && <p className="text-sm text-destructive mt-1">{(errors.role as any).message}</p>}
+            </div>
 
-            {/* Standard Fields */}
             <div>
               <Label htmlFor="fullName">Full Name *</Label>
               <Controller name="fullName" control={control} render={({ field }) => <Input id="fullName" placeholder="Enter your full name" {...field} />} />
@@ -239,7 +229,6 @@ export default function ProfileSetupPage() {
               {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{errors.applicantCategory.message}</p>}
             </div>
 
-            {/* Conditional Fields based on Applicant Category */}
             {selectedApplicantCategory === 'PARUL_STUDENT' && (
               <>
                 <div>
@@ -269,7 +258,6 @@ export default function ProfileSetupPage() {
               </div>
             )}
 
-            {/* Startup/Idea Details */}
             <div>
               <Label htmlFor="startupTitle">Title of the Startup/Idea/Innovation *</Label>
               <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your amazing idea title" {...field} />} />
