@@ -14,8 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { FileText, Eye, Info } from 'lucide-react';
-import { format } from 'date-fns';
+import { FileText, Eye, Info, Download } from 'lucide-react';
+import { format, formatISO } from 'date-fns';
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
 
@@ -87,6 +87,72 @@ export default function ViewApplicationsPage() {
     setIsDetailModalOpen(true);
   };
 
+  const escapeCsvField = (field: string | number | null | undefined): string => {
+    if (field === null || field === undefined) {
+      return '';
+    }
+    const stringField = String(field);
+    // Replace quotes with double quotes, and if it contains comma, newline or quote, enclose in double quotes
+    if (stringField.includes(',') || stringField.includes('\n') || stringField.includes('"')) {
+      return `"${stringField.replace(/"/g, '""')}"`;
+    }
+    return stringField;
+  };
+
+  const handleExportCSV = () => {
+    if (applications.length === 0) {
+      toast({ title: "No Data", description: "There are no applications to export.", variant: "default" });
+      return;
+    }
+
+    const headers = [
+      'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category',
+      'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
+      'Status', 'Submitted At', 'Last Updated At', 'Attachment URL', 'Attachment Name', 'Studio Location'
+    ];
+
+    const csvRows = [headers.join(',')];
+
+    applications.forEach(app => {
+      const row = [
+        escapeCsvField(app.id),
+        escapeCsvField(app.title),
+        escapeCsvField(app.applicantDisplayName),
+        escapeCsvField(app.applicantEmail),
+        escapeCsvField(app.applicantType?.replace(/_/g, ' ')),
+        escapeCsvField(app.developmentStage.replace(/_/g, ' ')),
+        escapeCsvField(app.problem),
+        escapeCsvField(app.solution),
+        escapeCsvField(app.uniqueness),
+        escapeCsvField(app.status.replace(/_/g, ' ')),
+        escapeCsvField(app.submittedAt ? formatISO(app.submittedAt.toDate()) : 'N/A'),
+        escapeCsvField(app.updatedAt ? formatISO(app.updatedAt.toDate()) : 'N/A'),
+        escapeCsvField(app.fileURL),
+        escapeCsvField(app.fileName),
+        escapeCsvField(app.studioLocation)
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const csvString = csvRows.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `pierc_applications_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      toast({ title: "Export Successful", description: "Applications CSV has been downloaded." });
+    } else {
+      toast({ title: "Export Failed", description: "Your browser does not support direct CSV download.", variant: "destructive" });
+    }
+  };
+
+
   if (authLoading || !initialLoadComplete || loadingApplications) {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
@@ -105,6 +171,9 @@ export default function ViewApplicationsPage() {
             <p className="text-muted-foreground">Review and manage all submitted ideas and innovations.</p>
           </div>
         </div>
+        <Button onClick={handleExportCSV} disabled={applications.length === 0}>
+          <Download className="mr-2 h-4 w-4" /> Export to CSV
+        </Button>
       </header>
 
       <Card className="shadow-lg">

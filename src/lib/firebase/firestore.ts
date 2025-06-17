@@ -251,6 +251,17 @@ export const updateIdeaStatus = async (ideaId: string, newStatus: IdeaStatus): P
   });
 };
 
+export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('userId', '==', userId), orderBy('submittedAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  const userIdeas: IdeaSubmission[] = [];
+  querySnapshot.forEach((doc) => {
+    userIdeas.push({ id: doc.id, ...doc.data() } as IdeaSubmission);
+  });
+  return userIdeas;
+};
+
 
 export const getTotalIdeasCount = async (): Promise<number> => {
   const ideasCol = collection(db, 'ideas');
