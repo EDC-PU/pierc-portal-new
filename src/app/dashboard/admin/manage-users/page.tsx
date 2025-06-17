@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getAllUsers, updateUserRoleAndPermissionsFS } from '@/lib/firebase/firestore';
+import { getAllUsers, updateUserRoleAndPermissionsFS, deleteUserAndProfileFS } from '@/lib/firebase/firestore';
 import type { UserProfile, Role } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion } from 'lucide-react';
+import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,8 +22,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+} from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger as it's used with asChild
 
 export default function ManageUsersPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -33,12 +32,15 @@ export default function ManageUsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [actionUser, setActionUser] = useState<UserProfile | null>(null);
-  const [dialogAction, setDialogAction] = useState<'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper' | null>(null);
+  const [dialogAction, setDialogAction] = useState<'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper' | 'deleteUser' | null>(null);
+  const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
 
 
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
-      if (!userProfile || !userProfile.isSuperAdmin) {
+      // Allow ADMIN_FACULTY to access this page, not just super admins, for deletion.
+      // Super admin specific actions (promote/demote super) will be conditionally rendered.
+      if (!userProfile || userProfile.role !== 'ADMIN_FACULTY') {
         toast({ title: "Access Denied", description: "You are not authorized to view this page.", variant: "destructive" });
         router.push('/dashboard');
       } else {
@@ -60,51 +62,64 @@ export default function ManageUsersPage() {
     }
   };
 
-  const openConfirmationDialog = (user: UserProfile, action: 'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper') => {
-    // Prevent pranavrathi07@gmail.com from being modified through this UI
-    if (user.email === 'pranavrathi07@gmail.com' && (action === 'demoteAdmin' || action === 'demoteSuper')) {
-        toast({title: "Action Restricted", description: "The primary super admin account cannot be modified.", variant: "default"});
+  const openConfirmationDialog = (user: UserProfile, action: 'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper' | 'deleteUser') => {
+    if (user.email === 'pranavrathi07@gmail.com' && (action === 'demoteAdmin' || action === 'demoteSuper' || action === 'deleteUser')) {
+        toast({title: "Action Restricted", description: "The primary super admin account cannot be modified or deleted.", variant: "default"});
         return;
     }
     setActionUser(user);
     setDialogAction(action);
+    setIsConfirmDialogOpen(true);
   };
   
-  const handleRoleChange = async () => {
+  const handleUserAction = async () => {
     if (!actionUser || !dialogAction) return;
 
-    let newRole: Role = actionUser.role;
-    let newIsSuperAdmin: boolean | undefined = actionUser.isSuperAdmin;
+    setIsConfirmDialogOpen(false); // Close dialog before async action
 
-    switch (dialogAction) {
-      case 'promoteAdmin':
-        newRole = 'ADMIN_FACULTY';
-        break;
-      case 'demoteAdmin':
-        newRole = actionUser.email?.endsWith('@paruluniversity.ac.in') ? 'STUDENT' : 'EXTERNAL_USER';
-        newIsSuperAdmin = false; // Also demote from super admin if they were one
-        break;
-      case 'promoteSuper':
-        newRole = 'ADMIN_FACULTY'; // Must be admin to be super admin
-        newIsSuperAdmin = true;
-        break;
-      case 'demoteSuper':
-        newIsSuperAdmin = false;
-        // Role remains ADMIN_FACULTY
-        break;
-    }
+    if (dialogAction === 'deleteUser') {
+        try {
+            await deleteUserAndProfileFS(actionUser.uid);
+            toast({ title: "User Profile Deleted", description: `Profile for ${actionUser.displayName || actionUser.email} has been deleted.` });
+            fetchUsers(); // Refresh the list
+        } catch (error: any) {
+            console.error("Error deleting user profile:", error);
+            toast({ title: "Delete Error", description: error.message || "Could not delete user profile.", variant: "destructive" });
+        }
+    } else {
+        // Handle role changes
+        let newRole: Role = actionUser.role;
+        let newIsSuperAdmin: boolean | undefined = actionUser.isSuperAdmin;
 
-    try {
-      await updateUserRoleAndPermissionsFS(actionUser.uid, newRole, newIsSuperAdmin);
-      toast({ title: "Success", description: `${actionUser.displayName || actionUser.email}'s permissions updated.` });
-      fetchUsers(); // Refresh the list
-    } catch (error: any) {
-      console.error("Error updating user role:", error);
-      toast({ title: "Update Error", description: error.message || "Could not update user permissions.", variant: "destructive" });
-    } finally {
-        setActionUser(null);
-        setDialogAction(null);
+        switch (dialogAction) {
+        case 'promoteAdmin':
+            newRole = 'ADMIN_FACULTY';
+            break;
+        case 'demoteAdmin':
+            newRole = actionUser.email?.endsWith('@paruluniversity.ac.in') ? 'STUDENT' : 'EXTERNAL_USER';
+            newIsSuperAdmin = false; 
+            break;
+        case 'promoteSuper':
+            newRole = 'ADMIN_FACULTY'; 
+            newIsSuperAdmin = true;
+            break;
+        case 'demoteSuper':
+            newIsSuperAdmin = false;
+            break;
+        }
+
+        try {
+            await updateUserRoleAndPermissionsFS(actionUser.uid, newRole, newIsSuperAdmin);
+            toast({ title: "Success", description: `${actionUser.displayName || actionUser.email}'s permissions updated.` });
+            fetchUsers(); 
+        } catch (error: any) {
+            console.error("Error updating user role:", error);
+            toast({ title: "Update Error", description: error.message || "Could not update user permissions.", variant: "destructive" });
+        }
     }
+    
+    setActionUser(null);
+    setDialogAction(null);
   };
 
   const getRoleBadge = (role: Role, isSuperAdmin?: boolean) => {
@@ -122,9 +137,10 @@ export default function ManageUsersPage() {
     const userName = actionUser.displayName || actionUser.email;
     switch (dialogAction) {
         case 'promoteAdmin': return `Promote ${userName} to Administrator? They will gain access to admin functionalities.`;
-        case 'demoteAdmin': return `Demote ${userName} from Administrator? Their role will revert to Student/External User and they will lose admin access.`;
+        case 'demoteAdmin': return `Demote ${userName} from Administrator? Their role will revert and they will lose admin access. If they were a Super Admin, this status will also be removed.`;
         case 'promoteSuper': return `Promote ${userName} to Super Admin? They must already be an Admin. They will gain full system control.`;
         case 'demoteSuper': return `Demote ${userName} from Super Admin? Their role will remain Administrator, but they will lose super admin privileges.`;
+        case 'deleteUser': return `Delete user profile for ${userName}? This action removes their data from the system but does NOT delete their login account. This cannot be undone.`;
         default: return "Are you sure you want to proceed with this action?";
     }
   }
@@ -134,7 +150,7 @@ export default function ManageUsersPage() {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
 
-  if (!userProfile || !userProfile.isSuperAdmin) {
+  if (!userProfile || userProfile.role !== 'ADMIN_FACULTY') {
     return <div className="flex justify-center items-center h-screen"><p>Access Denied. Redirecting...</p></div>;
   }
   
@@ -178,7 +194,7 @@ export default function ManageUsersPage() {
                         {getRoleBadge(u.role, u.isSuperAdmin)}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
-                        {u.email !== 'pranavrathi07@gmail.com' && (
+                        {u.email !== 'pranavrathi07@gmail.com' && userProfile.isSuperAdmin && ( // Super admin actions only for super admins
                             <>
                             {u.role !== 'ADMIN_FACULTY' && (
                                 <Button variant="outline" size="sm" onClick={() => openConfirmationDialog(u, 'promoteAdmin')}>Promote to Admin</Button>
@@ -189,10 +205,15 @@ export default function ManageUsersPage() {
                             {u.role === 'ADMIN_FACULTY' && u.isSuperAdmin && (
                                 <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'demoteSuper')}>Demote Super</Button>
                             )}
-                            {u.role === 'ADMIN_FACULTY' && ( // Can always demote an admin (unless it's the main super admin)
+                            {u.role === 'ADMIN_FACULTY' && ( 
                                 <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'demoteAdmin')}>Demote Admin</Button>
                             )}
                             </>
+                        )}
+                        {u.email !== 'pranavrathi07@gmail.com' && ( // Delete button available for all admins for non-primary super admin users
+                           <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'deleteUser')} className="ml-2">
+                             <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete
+                           </Button>
                         )}
                         {u.email === 'pranavrathi07@gmail.com' && <Badge variant="default">Primary Super Admin</Badge>}
                       </TableCell>
@@ -204,7 +225,7 @@ export default function ManageUsersPage() {
           )}
         </CardContent>
       </Card>
-      <AlertDialog open={!!dialogAction} onOpenChange={(isOpen) => { if (!isOpen) {setActionUser(null); setDialogAction(null);}}}>
+      <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
         <AlertDialogContent>
             <AlertDialogHeader>
             <AlertDialogTitle>Confirm Action: {dialogAction?.replace(/([A-Z])/g, ' $1').trim()}</AlertDialogTitle>
@@ -213,8 +234,8 @@ export default function ManageUsersPage() {
             </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => {setActionUser(null); setDialogAction(null);}}>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleRoleChange} className={dialogAction?.includes('demote') ? "bg-destructive hover:bg-destructive/90" : ""}>
+            <AlertDialogCancel onClick={() => {setActionUser(null); setDialogAction(null); setIsConfirmDialogOpen(false);}}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleUserAction} className={(dialogAction?.includes('demote') || dialogAction === 'deleteUser') ? "bg-destructive hover:bg-destructive/90" : ""}>
                 Proceed
             </AlertDialogAction>
             </AlertDialogFooter>
@@ -223,3 +244,4 @@ export default function ManageUsersPage() {
     </div>
   );
 }
+

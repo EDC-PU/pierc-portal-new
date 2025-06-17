@@ -104,6 +104,17 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   await updateDoc(userProfileRef, updates);
 };
 
+export const deleteUserAndProfileFS = async (userId: string): Promise<void> => {
+  const userProfileRef = doc(db, 'users', userId);
+  // Important: This only deletes the Firestore document, not the Firebase Auth user.
+  // Deleting Firebase Auth user requires Admin SDK (e.g., in a Cloud Function).
+  const userDoc = await getDoc(userProfileRef);
+  if (userDoc.exists() && userDoc.data().email === 'pranavrathi07@gmail.com') {
+    throw new Error("The primary super admin profile cannot be deleted.");
+  }
+  await deleteDoc(userProfileRef);
+};
+
 
 // Announcement Functions
 export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>): Promise<Announcement> => {
@@ -192,12 +203,17 @@ export const deleteAnnouncement = async (announcementId: string): Promise<void> 
 export const createIdeaFromProfile = async (
     userId: string, 
     profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory'>
-): Promise<IdeaSubmission> => {
+): Promise<IdeaSubmission | null> => {
+  // Skip creating an idea for the admin's placeholder profile
+  if (profileData.startupTitle === 'Administrative Account') {
+    return null;
+  }
+
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt'> = {
     userId: userId,
     title: profileData.startupTitle,
-    category: 'General Profile Submission', // Default category for ideas from profile
+    category: 'General Profile Submission', 
     problem: profileData.problemDefinition,
     solution: profileData.solutionDescription,
     uniqueness: profileData.uniqueness,
@@ -206,7 +222,6 @@ export const createIdeaFromProfile = async (
     status: 'SUBMITTED',
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
-    // fileURL, fileName, studioLocation, cohortId can be added later if needed for this flow
   };
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
@@ -297,13 +312,6 @@ export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>)
   return { id: newDocSnap.id, ...newDocSnap.data() } as Cohort;
 };
 
-export const deleteUserAndProfile = async (userId: string): Promise<void> => {
-  const batch = writeBatch(db);
-  const userProfileRef = doc(db, 'users', userId);
-  batch.delete(userProfileRef);
-  
-  await batch.commit();
-};
 
 // System Settings Functions
 const SYSTEM_SETTINGS_DOC_ID = 'config'; 
