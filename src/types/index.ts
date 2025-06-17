@@ -37,21 +37,25 @@ export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELEC
 
 export interface IdeaSubmission {
   id?: string;
-  userId: string;
+  userId: string; // UID of the user who submitted
   title: string;
-  category: string; 
+  category: string; // e.g., "General Profile Submission", "Specific Call for Ideas"
   problem: string;
   solution: string;
-  developmentStage: CurrentStage; 
+  uniqueness: string;
+  developmentStage: CurrentStage;
+  applicantType?: ApplicantCategory; // From user's profile
+  
   fileURL?: string; 
   fileName?: string;
   studioLocation?: 'SURAT' | 'RAJKOT' | 'BARODA' | 'AHMEDABAD'; 
-  applicantType?: ApplicantCategory;
+  
   status: IdeaStatus;
   submittedAt: Timestamp;
   updatedAt: Timestamp;
   cohortId?: string; 
-  // Fields to be populated after fetching user details
+  
+  // Fields to be populated after fetching user details for display in admin view
   applicantDisplayName?: string;
   applicantEmail?: string;
 }

@@ -4,7 +4,7 @@
 import type { User } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth } from '@/lib/firebase/config';
-import { getUserProfile, createUserProfileFS } from '@/lib/firebase/firestore';
+import { getUserProfile, createUserProfileFS, createIdeaFromProfile } from '@/lib/firebase/firestore';
 import type { UserProfile, Role } from '@/types';
 import { 
   GoogleAuthProvider, 
@@ -63,23 +63,22 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } catch (error) {
           console.error("Error fetching user profile:", error);
           setUserProfile(null);
-          profileExists = false; // Assume no profile if error occurs
-          // Avoid toasting for expected "profile not found" for new users if it's a specific error type
-          // For now, generic error toast remains.
-          if ((error as any)?.code !== 'permission-denied' && (error as any)?.message?.includes('firestore/permission-denied')) {
-            // Only toast if it's not a typical "not found" scenario disguised as permission error initially
+          profileExists = false; 
+          if (!String(error).includes("Missing or insufficient permissions")) {
              toast({ title: "Profile Check Error", description: "Could not verify user profile.", variant: "destructive" });
           }
         }
 
-        // Unified redirect logic: if no profile, go to setup (unless already there)
-        if (!profileExists && router && window.location.pathname !== '/profile-setup') {
+        if (!profileExists && router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login') {
           router.push('/profile-setup');
         }
 
       } else {
         setUser(null);
         setUserProfile(null);
+         if (router && !['/login', '/'].includes(window.location.pathname) && !window.location.pathname.startsWith('/_next')) {
+            router.push('/login');
+        }
       }
       setLoading(false);
       setInitialLoadComplete(true);
@@ -180,6 +179,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         ...additionalData,
       };
       const createdProfile = await createUserProfileFS(user.uid, profileDataForCreation);
+      
+      // Create an idea submission if it's not an admin's placeholder profile
+      if (additionalData.startupTitle && additionalData.startupTitle !== 'Administrative Account') {
+        await createIdeaFromProfile(user.uid, {
+            startupTitle: additionalData.startupTitle,
+            problemDefinition: additionalData.problemDefinition,
+            solutionDescription: additionalData.solutionDescription,
+            uniqueness: additionalData.uniqueness,
+            currentStage: additionalData.currentStage,
+            applicantCategory: additionalData.applicantCategory,
+        });
+      }
+      
       setUserProfile(createdProfile); 
       router.push('/dashboard');
       toast({ title: "Profile Updated", description: "Your profile has been successfully set up." });
@@ -221,4 +233,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

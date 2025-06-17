@@ -189,19 +189,31 @@ export const deleteAnnouncement = async (announcementId: string): Promise<void> 
 };
 
 // Idea Submission functions
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status'>): Promise<IdeaSubmission> => {
+export const createIdeaFromProfile = async (
+    userId: string, 
+    profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory'>
+): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload = {
-    ...ideaData,
-    status: 'SUBMITTED', 
-    submittedAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  } as const; 
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt'> = {
+    userId: userId,
+    title: profileData.startupTitle,
+    category: 'General Profile Submission', // Default category for ideas from profile
+    problem: profileData.problemDefinition,
+    solution: profileData.solutionDescription,
+    uniqueness: profileData.uniqueness,
+    developmentStage: profileData.currentStage,
+    applicantType: profileData.applicantCategory,
+    status: 'SUBMITTED',
+    submittedAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
+    // fileURL, fileName, studioLocation, cohortId can be added later if needed for this flow
+  };
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
-  if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
+  if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
 };
+
 
 export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission[]> => {
   const ideasCol = collection(db, 'ideas');
@@ -301,3 +313,18 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
+// This function is deprecated / unused after createIdeaFromProfile was introduced.
+// It remains here in case direct idea submission (not from profile) is added later.
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status'>): Promise<IdeaSubmission> => {
+  const ideaCol = collection(db, 'ideas');
+  const newIdeaPayload = {
+    ...ideaData,
+    status: 'SUBMITTED', 
+    submittedAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  } as const; 
+  const docRef = await addDoc(ideaCol, newIdeaPayload);
+  const newDocSnap = await getDoc(docRef);
+  if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
+  return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
+};
