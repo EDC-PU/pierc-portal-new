@@ -209,11 +209,9 @@ export default function ManageUsersPage() {
                             </>
                         )}
                         {u.email !== 'pranavrathi07@gmail.com' && (
-                           <AlertDialogTrigger asChild>
-                             <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'deleteUser')} className="ml-2">
-                               <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete User
-                             </Button>
-                           </AlertDialogTrigger>
+                           <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'deleteUser')} className="ml-2">
+                             <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete User
+                           </Button>
                         )}
                         {u.email === 'pranavrathi07@gmail.com' && <Badge variant="default">Primary Super Admin</Badge>}
                       </TableCell>
@@ -244,3 +242,4 @@ export default function ManageUsersPage() {
     </div>
   );
 }
+
