@@ -3,7 +3,7 @@
 
 import type { User } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { auth } from '@/lib/firebase/config';
+import { auth, db, functions as firebaseFunctions } from '@/lib/firebase/config'; // Ensure functions is imported
 import { getUserProfile, createUserProfileFS, createIdeaFromProfile } from '@/lib/firebase/firestore';
 import type { UserProfile, Role } from '@/types';
 import { 
@@ -11,8 +11,11 @@ import {
   signInWithPopup, 
   signOut as firebaseSignOut,
   createUserWithEmailAndPassword,
-  signInWithEmailAndPassword as firebaseSignInWithEmailPassword
+  signInWithEmailAndPassword as firebaseSignInWithEmailPassword,
+  sendPasswordResetEmail // Added for completeness, though used directly in page
 } from 'firebase/auth';
+import { doc, deleteDoc } from 'firebase/firestore'; // Added for deleting user profile
+import { httpsCallable } from 'firebase/functions'; // Added for calling delete auth function
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
@@ -26,6 +29,7 @@ interface AuthContextType {
   signInWithEmailPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  deleteCurrentUserAccount: () => Promise<void>; // New function
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -126,7 +130,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
     } 
@@ -136,7 +139,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     }
@@ -146,7 +148,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await firebaseSignInWithEmailPassword(auth, email, password);
-      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "sign-in");
     }
@@ -180,7 +181,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       };
       const createdProfile = await createUserProfileFS(user.uid, profileDataForCreation);
       
-      // Create an idea submission if it's not an admin's placeholder profile
       if (additionalData.startupTitle && additionalData.startupTitle !== 'Administrative Account') {
         await createIdeaFromProfile(user.uid, {
             startupTitle: additionalData.startupTitle,
@@ -204,6 +204,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const deleteCurrentUserAccount = async () => {
+    if (!user) {
+      toast({ title: "Not Authenticated", description: "No user is currently logged in.", variant: "destructive" });
+      throw new Error("User not authenticated");
+    }
+    if (user.email === 'pranavrathi07@gmail.com') {
+        toast({ title: "Action Restricted", description: "The primary super admin account cannot be deleted.", variant: "default" });
+        throw new Error("Primary super admin cannot be deleted.");
+    }
+
+    setLoading(true);
+    try {
+      // 1. Delete Firestore profile
+      const userProfileRef = doc(db, 'users', user.uid);
+      await deleteDoc(userProfileRef);
+      toast({ title: "Profile Data Deleted", description: "Your profile information has been removed."});
+
+      // 2. Call Cloud Function to delete Firebase Auth user
+      const deleteAuthFn = httpsCallable(firebaseFunctions, 'deleteMyAuthAccountCallable');
+      await deleteAuthFn(); // No data needed as function uses caller's UID
+
+      // 3. Sign out (onAuthStateChanged will handle UI updates)
+      await firebaseSignOut(auth); 
+      // User will be null, onAuthStateChanged will redirect to /login
+      toast({ title: "Account Deleted", description: "Your account has been successfully deleted. You have been signed out." });
+      
+    } catch (error: any) {
+      console.error("Error deleting user account:", error);
+      // Attempt to sign out even if parts of deletion failed
+      await firebaseSignOut(auth).catch(e => console.error("Sign out failed after delete error:", e));
+      toast({ title: "Account Deletion Failed", description: error.message || "Could not fully delete your account. Please contact support.", variant: "destructive" });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const signOut = async () => {
     setLoading(true);
     try {
@@ -220,7 +258,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, initialLoadComplete, signInWithGoogle, signUpWithEmailPassword, signInWithEmailPassword, signOut, setRoleAndCompleteProfile }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      userProfile, 
+      loading, 
+      initialLoadComplete, 
+      signInWithGoogle, 
+      signUpWithEmailPassword, 
+      signInWithEmailPassword, 
+      signOut, 
+      setRoleAndCompleteProfile,
+      deleteCurrentUserAccount // Added
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -233,3 +282,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+

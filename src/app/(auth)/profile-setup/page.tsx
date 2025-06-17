@@ -16,6 +16,19 @@ import type { Role, ApplicantCategory, CurrentStage } from '@/types';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
+import { auth } from '@/lib/firebase/config'; // Import auth for sendPasswordResetEmail
+import { sendPasswordResetEmail } from 'firebase/auth';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 const applicantCategories: { value: ApplicantCategory; label: string }[] = [
   { value: 'PARUL_STUDENT', label: 'Parul University Student' },
@@ -66,8 +79,6 @@ const parulUserSchema = profileBaseSchema.extend({
   } else if (data.applicantCategory === 'OTHERS') {
     // This case should not be reachable if role is STUDENT and category is OTHERS,
     // as @paruluniversity.ac.in emails get STUDENT role.
-    // If a non-Parul email user somehow got STUDENT role and selected OTHERS, it's an edge case.
-    // For now, schema implies student role is tied to Parul categories.
   }
 });
 
@@ -78,13 +89,12 @@ const otherUserSchema = profileBaseSchema.extend({
     if (data.applicantCategory !== 'OTHERS') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Admin category should be OTHERS.', path: ['applicantCategory'] });
     }
-    if (!data.instituteName && data.applicantCategory === 'OTHERS') { // Admins are categorized as 'OTHERS' with an institute.
+    if (!data.instituteName && data.applicantCategory === 'OTHERS') { 
          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Institute name is required for Admin role (e.g., PIERC Administration).', path: ['instituteName']});
     }
-    return; // Skip other non-admin specific checks
+    return;
   }
 
-  // For EXTERNAL_USER role
   if (data.applicantCategory === 'PARUL_STUDENT') {
      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Parul Student category is only for @paruluniversity.ac.in emails.', path: ['applicantCategory'] });
   } else if (data.applicantCategory === 'PARUL_STAFF' || data.applicantCategory === 'PARUL_ALUMNI') {
@@ -101,10 +111,11 @@ const otherUserSchema = profileBaseSchema.extend({
 type ProfileFormData = z.infer<typeof parulUserSchema> | z.infer<typeof otherUserSchema>;
 
 export default function ProfileSetupPage() {
-  const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete } = useAuth();
+  const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete, deleteCurrentUserAccount } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [isAutoSubmittingAdmin, setIsAutoSubmittingAdmin] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user]);
   const isAdminEmail = useMemo(() => user?.email === 'pranavrathi07@gmail.com', [user]);
@@ -117,7 +128,7 @@ export default function ProfileSetupPage() {
 
   const profileSchema = determinedRole === 'STUDENT' ? parulUserSchema : otherUserSchema;
 
-  const { control, handleSubmit, watch, formState: { errors, isSubmitting }, setValue, trigger, reset } = useForm<ProfileFormData>({
+  const { control, handleSubmit, watch, formState: { errors, isSubmitting: isFormSubmitting }, setValue, trigger, reset } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
       fullName: '',
@@ -139,7 +150,6 @@ export default function ProfileSetupPage() {
   const selectedApplicantCategory = watch('applicantCategory');
 
   useEffect(() => {
-    // Populate form with existing profile data if userProfile exists
     if (userProfile) {
       reset({
         fullName: userProfile.fullName || user?.displayName || '',
@@ -157,11 +167,10 @@ export default function ProfileSetupPage() {
         instituteName: userProfile.instituteName || '',
       });
     } else if (user) {
-      // For new profiles, pre-fill with Firebase Auth display name if available
       reset({
-        ...control._formValues, // Keep existing form values if any (e.g. role)
+        ...control._formValues,
         fullName: user.displayName || '',
-        role: determinedRole, // Ensure role is set based on email
+        role: determinedRole,
       });
     }
   }, [userProfile, user, determinedRole, reset, control]);
@@ -169,20 +178,15 @@ export default function ProfileSetupPage() {
 
   useEffect(() => {
     if (initialLoadComplete && !user) {
-      router.push('/login'); // Redirect to login if not authenticated and auth state is fully loaded.
+      router.push('/login'); 
     }
-    // DashboardLayout handles redirecting to /profile-setup if user is authenticated but profile is null.
-    // No need for an explicit redirect from here TO /dashboard if profile is complete,
-    // as the user might be intentionally visiting to edit.
   }, [user, initialLoadComplete, router]);
 
   useEffect(() => {
-    // Auto-submit profile for admin if not already done and auth is fully initialized.
     if (initialLoadComplete && user && determinedRole === 'ADMIN_FACULTY' && !userProfile && !isAutoSubmittingAdmin) {
       const autoSubmitAdminProfile = async () => {
         setIsAutoSubmittingAdmin(true);
         toast({ title: "Setting up Admin Account", description: "Please wait..." });
-
         const adminDefaults: ProfileFormData = {
           role: 'ADMIN_FACULTY',
           fullName: user?.displayName || 'Admin User',
@@ -191,26 +195,23 @@ export default function ProfileSetupPage() {
           instituteName: 'PIERC Administration',
           teamMembers: 'N/A',
           startupTitle: 'Administrative Account',
-          problemDefinition: 'This is an administrative account, not applicable for startup details.',
-          solutionDescription: 'This is an administrative account, not applicable for startup details.',
-          uniqueness: 'This is an administrative account, not applicable for startup details.',
+          problemDefinition: 'Administrative account, not applicable.',
+          solutionDescription: 'Administrative account, not applicable.',
+          uniqueness: 'Administrative account, not applicable.',
           currentStage: 'IDEA',
         };
         try {
           await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
         } catch (error) {
-          console.error("Admin profile auto-setup failed", error);
-          toast({ title: "Admin Setup Error", description: "Could not auto-setup admin profile. Please try again or contact support.", variant: "destructive" });
           setIsAutoSubmittingAdmin(false);
         }
       };
       autoSubmitAdminProfile();
     }
-  }, [initialLoadComplete, user, determinedRole, userProfile, setRoleAndCompleteProfile, toast, router, isAutoSubmittingAdmin]);
+  }, [initialLoadComplete, user, determinedRole, userProfile, setRoleAndCompleteProfile, toast, isAutoSubmittingAdmin]);
 
 
   useEffect(() => {
-    // Ensure role is set based on email, and fullName is pre-filled if not already in form values
     if (user) {
       if (!control._formValues.fullName && user.displayName) {
          setValue('fullName', user.displayName);
@@ -233,9 +234,42 @@ export default function ProfileSetupPage() {
     try {
       await setRoleAndCompleteProfile(data.role as Role, data);
     } catch (error) {
-      console.error("Profile setup failed on submit", error);
+      // Errors are handled by toast in AuthContext method
     }
   };
+
+  const handleChangePassword = async () => {
+    if (user?.email) {
+      try {
+        await sendPasswordResetEmail(auth, user.email);
+        toast({ title: 'Password Reset Email Sent', description: `An email has been sent to ${user.email} with instructions to reset your password.` });
+      } catch (error: any) {
+        toast({ title: 'Error Sending Reset Email', description: error.message || 'Could not send password reset email.', variant: 'destructive' });
+      }
+    } else {
+      toast({ title: 'Error', description: 'Your email address is not available.', variant: 'destructive' });
+    }
+  };
+
+  const handleConfirmDeleteAccount = async () => {
+    if (!user) {
+      toast({ title: "Error", description: "You are not logged in.", variant: "destructive" });
+      return;
+    }
+    if (user.email === 'pranavrathi07@gmail.com') {
+        toast({title: "Action Restricted", description: "The primary super admin account cannot be deleted.", variant: "default"});
+        setIsDeleteDialogOpen(false);
+        return;
+    }
+    try {
+      await deleteCurrentUserAccount();
+      // AuthContext will handle sign out and redirect
+    } catch (error) {
+      // Errors are handled by toast in AuthContext method
+    }
+    setIsDeleteDialogOpen(false);
+  };
+
 
   if (!initialLoadComplete || (loading && !isAutoSubmittingAdmin && !userProfile) || (isAutoSubmittingAdmin && !userProfile)) {
     return (
@@ -251,7 +285,7 @@ export default function ProfileSetupPage() {
   }
 
   if (determinedRole === 'ADMIN_FACULTY') {
-     if (!userProfile && !isAutoSubmittingAdmin) { // Admin setup failed
+     if (!userProfile && !isAutoSubmittingAdmin) {
         return (
              <div className="flex flex-col items-center justify-center min-h-screen">
                 <p className="text-destructive mb-4">Administrator account setup encountered an issue.</p>
@@ -261,8 +295,6 @@ export default function ProfileSetupPage() {
             </div>
         );
      }
-     // If admin profile exists or is being auto-submitted, AuthContext or other effects will redirect to dashboard.
-     // This return is a safety net during the brief period before redirection or while auto-submitting.
      if (userProfile || isAutoSubmittingAdmin) {
         return (
             <div className="flex items-center justify-center min-h-screen">
@@ -399,10 +431,36 @@ export default function ProfileSetupPage() {
             </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 pt-6">
-            <Button type="submit" className="w-full" disabled={isSubmitting || loading}>
-              {isSubmitting || loading ? <LoadingSpinner className="mr-2" /> : null}
+            <Button type="submit" className="w-full" disabled={isFormSubmitting || loading}>
+              {isFormSubmitting || loading ? <LoadingSpinner className="mr-2" /> : null}
               {userProfile ? 'Update Profile' : 'Save Profile & Proceed'}
             </Button>
+            <div className="w-full flex flex-col sm:flex-row gap-2">
+                <Button variant="outline" onClick={handleChangePassword} className="w-full sm:w-1/2" type="button">
+                    Change Password
+                </Button>
+                <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="w-full sm:w-1/2" type="button" disabled={user?.email === 'pranavrathi07@gmail.com'}>
+                            Delete My Account
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete your account and all associated data from PIERC Portal.
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleConfirmDeleteAccount} className="bg-destructive hover:bg-destructive/90">
+                            Delete Account
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </div>
             <Button variant="link" onClick={signOut} className="text-muted-foreground">
               Logout
             </Button>
@@ -412,3 +470,4 @@ export default function ProfileSetupPage() {
     </div>
   );
 }
+

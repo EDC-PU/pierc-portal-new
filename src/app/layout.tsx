@@ -10,10 +10,7 @@ import { AuthInitializer } from '@/components/AuthInitializer';
 export const metadata: Metadata = {
   title: 'PIERC Portal',
   description: 'Portal for PIERC Incubation and Research',
-  icons: {
-    // Consider adding a favicon if available
-    // icon: '/favicon.ico',
-  }
+  // The 'icons' key has been removed.
 };
 
 export default function RootLayout({
