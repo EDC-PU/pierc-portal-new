@@ -1,3 +1,4 @@
+
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/contexts/AuthContext';
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
   description: 'Portal for PIERC Incubation and Research',
   icons: {
     // Consider adding a favicon if available
-    // icon: '/favicon.ico', 
+    // icon: '/favicon.ico',
   }
 };
 
@@ -21,7 +22,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark"> {/* Enforce dark theme by default */}
+    <html lang="en" className="dark">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
