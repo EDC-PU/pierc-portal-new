@@ -1,6 +1,6 @@
 
 import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 
@@ -91,18 +91,17 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         instituteName: data.instituteName,
         createdAt: data.createdAt, 
         updatedAt: data.updatedAt, 
-        isSuperAdmin: false 
+        isSuperAdmin: false // Default to false
     };
 
+    // Explicitly set isSuperAdmin based on email or stored value
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true; 
         if (profile.role !== 'ADMIN_FACULTY') { 
             profile.role = 'ADMIN_FACULTY'; 
         }
-    } else {
-        if (data.isSuperAdmin === true) {
-             profile.isSuperAdmin = true;
-        }
+    } else if (data.isSuperAdmin === true) { // Check stored value if not primary admin
+        profile.isSuperAdmin = true;
     }
     return profile;
   }
@@ -125,7 +124,7 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   const users: UserProfile[] = [];
   querySnapshot.forEach((doc) => {
     const data = doc.data();
-     users.push({ 
+    const profile: UserProfile = { 
         uid: doc.id,
         email: data.email ?? null,
         displayName: data.displayName ?? null,
@@ -145,8 +144,17 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin === true)
-    } as UserProfile);
+        isSuperAdmin: false // Default
+    };
+     if (profile.email === 'pranavrathi07@gmail.com') {
+        profile.isSuperAdmin = true; 
+        if (profile.role !== 'ADMIN_FACULTY') { 
+            profile.role = 'ADMIN_FACULTY'; 
+        }
+    } else if (data.isSuperAdmin === true) {
+        profile.isSuperAdmin = true;
+    }
+    users.push(profile);
   });
   return users;
 };
@@ -301,6 +309,7 @@ export const createIdeaFromProfile = async (
     applicantType: profileData.applicantCategory,
     status: 'SUBMITTED',
     programPhase: null,
+    // phase2Marks is intentionally omitted here, will be initialized when idea moves to PHASE_2 if needed
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -374,17 +383,22 @@ export const updateIdeaStatusAndPhase = async (
   }
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
-  const updates: Partial<IdeaSubmission> = {
+  const updates: {[key: string]: any} = { // Using a more generic type for updates to accommodate deleteField
     status: newStatus,
     updatedAt: serverTimestamp(),
   };
 
   if (newStatus === 'SELECTED') {
     updates.programPhase = newPhase;
-    updates.rejectionRemarks = undefined; 
-    updates.rejectedByUid = undefined;
-    updates.rejectedAt = undefined;
+    updates.rejectionRemarks = deleteField(); 
+    updates.rejectedByUid = deleteField();
+    updates.rejectedAt = deleteField();
     if (newPhase === 'PHASE_2') {
+      // Ensure phase2Marks is initialized if it doesn't exist.
+      // This should be handled carefully to avoid overwriting existing marks with an empty object
+      // if not already structured. A read-then-write might be safer if atomicity isn't paramount here,
+      // or rely on the client to have fetched the latest doc for `phase2Marks` initialization.
+      // For now, we assume phase2Marks is an object or needs to be one.
       const currentDoc = await getDoc(ideaRef);
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
@@ -396,14 +410,14 @@ export const updateIdeaStatusAndPhase = async (
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (!newPhase) { // If phase is cleared (e.g. "Not Assigned") but status is still SELECTED
+    } else if (!newPhase) { 
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
     }
-  } else { // If status is not 'SELECTED'
+  } else { 
     updates.programPhase = null; 
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -412,12 +426,12 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseGuidelines = null;
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
-      updates.rejectedByUid = adminUid;
+      updates.rejectedByUid = adminUid; // Can be undefined, Firestore handles this by not setting/deleting
       updates.rejectedAt = serverTimestamp() as Timestamp;
-    } else {
-      updates.rejectionRemarks = undefined; 
-      updates.rejectedByUid = undefined;
-      updates.rejectedAt = undefined;
+    } else { 
+      updates.rejectionRemarks = deleteField();
+      updates.rejectedByUid = deleteField();
+      updates.rejectedAt = deleteField();
     }
   }
   await updateDoc(ideaRef, updates);
@@ -440,13 +454,14 @@ export const submitOrUpdatePhase2Mark = async (
   }
 
   const markData: AdminMark = {
-    mark: mark,
+    mark: mark, // mark can be null to clear
     adminDisplayName: adminProfile.displayName || adminProfile.fullName || 'Admin',
     markedAt: serverTimestamp() as Timestamp,
   };
   
+  // Using dot notation to update a specific field within the phase2Marks map
   await updateDoc(ideaRef, {
-    [`phase2Marks.${adminProfile.uid}`]: markData,
+    [`phase2Marks.${adminProfile.uid}`]: mark !== null ? markData : deleteField(), // Use deleteField if mark is null
     updatedAt: serverTimestamp(),
   });
 };
