@@ -22,6 +22,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,11 +35,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning } from 'lucide-react';
-import { format, formatISO } from 'date-fns';
-import type { Timestamp } from 'firebase/firestore';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon } from 'lucide-react';
+import { format, formatISO, isValid } from 'date-fns';
+import { Timestamp } from 'firebase/firestore'; 
 import { getDoc, doc } from 'firebase/firestore'; 
 import { db } from '@/lib/firebase/config'; 
+import { cn } from '@/lib/utils';
 
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
@@ -53,6 +56,14 @@ const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null
     default: return 'N/A';
   }
 };
+
+interface PhaseDetailsFormData {
+    date: Date | null;
+    startTime: string;
+    endTime: string;
+    venue: string;
+    guidelines: string;
+}
 
 export default function ViewApplicationsPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -70,6 +81,17 @@ export default function ViewApplicationsPage() {
   const [isRejectionDialogVisible, setIsRejectionDialogVisible] = useState(false);
   const [currentIdeaForRejection, setCurrentIdeaForRejection] = useState<IdeaSubmission | null>(null);
   const [rejectionRemarksInput, setRejectionRemarksInput] = useState('');
+
+  const [isPhaseDetailsDialogVisible, setIsPhaseDetailsDialogVisible] = useState(false);
+  const [currentIdeaForPhaseDetails, setCurrentIdeaForPhaseDetails] = useState<IdeaSubmission | null>(null);
+  const [currentPhaseForDialog, setCurrentPhaseForDialog] = useState<ProgramPhase | null>(null);
+  const [phaseDetailsForm, setPhaseDetailsForm] = useState<PhaseDetailsFormData>({
+    date: null,
+    startTime: '',
+    endTime: '',
+    venue: '',
+    guidelines: '',
+  });
 
 
   useEffect(() => {
@@ -109,11 +131,52 @@ export default function ViewApplicationsPage() {
     }
   };
 
+  const getDefaultPhaseDetails = (phase: ProgramPhase): Partial<PhaseDetailsFormData> => {
+    switch (phase) {
+        case 'PHASE_1':
+            return {
+                venue: 'PIERC Office, BBA Building, Ground Floor',
+                guidelines: 'Each team will have 5 minutes for verbal discussion followed by 2 minutes for questions by the jury members.\nNo PPT or presentation is required for this phase.',
+                startTime: '10:00 AM',
+                endTime: '12:00 PM',
+            };
+        case 'PHASE_2':
+            return {
+                venue: 'PIERC Presentation Hall (To be confirmed by Admin)',
+                guidelines: 'Please prepare a presentation (PPT recommended).\nEach team will have approximately [X] minutes for presentation and [Y] minutes for Q&A.\nFurther details will be confirmed by PIERC Admin.',
+                startTime: '10:00 AM',
+                endTime: '01:00 PM',
+            };
+        case 'COHORT':
+            return {
+                venue: 'PIERC Training Room (To be confirmed by Admin)',
+                guidelines: 'Welcome to the PIERC Incubation Cohort!\nThe induction session will cover the program structure and next steps.\nPlease bring your laptops.',
+                startTime: '02:00 PM',
+                endTime: '04:00 PM',
+            };
+        default:
+            return {};
+    }
+  };
+  
+  const openPhaseDetailsDialog = (idea: IdeaSubmission, phase: ProgramPhase) => {
+    setCurrentIdeaForPhaseDetails(idea);
+    setCurrentPhaseForDialog(phase);
+    const defaults = getDefaultPhaseDetails(phase);
+    setPhaseDetailsForm({
+        date: idea.nextPhaseDate?.toDate() || null,
+        startTime: idea.nextPhaseStartTime || defaults.startTime || '',
+        endTime: idea.nextPhaseEndTime || defaults.endTime || '',
+        venue: idea.nextPhaseVenue || defaults.venue || '',
+        guidelines: idea.nextPhaseGuidelines || defaults.guidelines || '',
+    });
+    setIsPhaseDetailsDialogVisible(true);
+  };
+
   const handleStatusOrPhaseChange = async (
-    ideaId: string,
+    idea: IdeaSubmission,
     newStatus: IdeaStatus,
-    newPhaseInputValue: ProgramPhase | typeof NO_PHASE_VALUE | null = null,
-    remarks?: string // Optional remarks for rejection
+    newPhaseInputValue: ProgramPhase | typeof NO_PHASE_VALUE | null = null
   ) => {
     if (!userProfile) {
         toast({ title: "Error", description: "Admin profile not found.", variant: "destructive" });
@@ -124,28 +187,75 @@ export default function ViewApplicationsPage() {
     if (newPhaseInputValue && newPhaseInputValue !== NO_PHASE_VALUE) {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
+    
+    // If status is SELECTED and a specific phase is chosen, open phase details dialog
+    if (newStatus === 'SELECTED' && actualNewPhase) {
+        openPhaseDetailsDialog(idea, actualNewPhase);
+        // The actual update to Firestore will happen when the phase details dialog is submitted
+        // For now, we only update the local state optimistically for the dropdowns
+        setApplications(prevApps => prevApps.map(app => 
+            app.id === idea.id ? {...app, status: newStatus, programPhase: actualNewPhase } : app
+        ));
+        return; 
+    }
+    
+    // If status is NOT_SELECTED, open rejection dialog
+    if (newStatus === 'NOT_SELECTED') {
+        setCurrentIdeaForRejection(idea);
+        setRejectionRemarksInput(idea.rejectionRemarks || '');
+        setIsRejectionDialogVisible(true);
+        // Optimistically update local state for status dropdown
+         setApplications(prevApps => prevApps.map(app => 
+            app.id === idea.id ? {...app, status: newStatus, programPhase: null } : app
+        ));
+        return;
+    }
 
+    // For other cases (e.g., moving to UNDER_REVIEW, or clearing phase by selecting "Not Assigned")
     try {
-      await updateIdeaStatusAndPhase(ideaId, newStatus, actualNewPhase, remarks, userProfile.uid);
+      await updateIdeaStatusAndPhase(idea.id!, newStatus, actualNewPhase, undefined, userProfile.uid, undefined);
       toast({ title: "Update Successful", description: `Application updated.` });
       fetchApplications(); 
     } catch (error) {
       console.error("Error updating status/phase:", error);
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-      fetchApplications(); 
+      fetchApplications(); // Re-fetch to ensure UI consistency on error
+    }
+  };
+  
+  const handleSubmitPhaseDetails = async () => {
+    if (!currentIdeaForPhaseDetails || !currentPhaseForDialog || !userProfile) return;
+    if (!phaseDetailsForm.date || !phaseDetailsForm.startTime || !phaseDetailsForm.endTime || !phaseDetailsForm.venue.trim() || !phaseDetailsForm.guidelines.trim()) {
+        toast({ title: "Missing Information", description: "Please fill in all date, time, venue, and guideline fields.", variant: "destructive" });
+        return;
+    }
+
+    try {
+        await updateIdeaStatusAndPhase(
+            currentIdeaForPhaseDetails.id!,
+            'SELECTED', // Status remains SELECTED
+            currentPhaseForDialog,
+            undefined, // No rejection remarks
+            userProfile.uid,
+            {
+                date: Timestamp.fromDate(phaseDetailsForm.date),
+                startTime: phaseDetailsForm.startTime,
+                endTime: phaseDetailsForm.endTime,
+                venue: phaseDetailsForm.venue,
+                guidelines: phaseDetailsForm.guidelines,
+            }
+        );
+        toast({ title: "Phase Details Saved", description: `Meeting details for ${getProgramPhaseLabel(currentPhaseForDialog)} saved. Email to innovator simulated.` });
+        fetchApplications();
+        setIsPhaseDetailsDialogVisible(false);
+        setCurrentIdeaForPhaseDetails(null);
+        setCurrentPhaseForDialog(null);
+    } catch (error) {
+        console.error("Error saving phase details:", error);
+        toast({ title: "Save Error", description: "Could not save phase details.", variant: "destructive" });
     }
   };
 
-  const triggerStatusChange = (idea: IdeaSubmission, newStatus: IdeaStatus) => {
-    if (newStatus === 'NOT_SELECTED') {
-        setCurrentIdeaForRejection(idea);
-        setRejectionRemarksInput(idea.rejectionRemarks || ''); // Pre-fill if editing
-        setIsRejectionDialogVisible(true);
-    } else {
-        // For other statuses, or if changing from NOT_SELECTED to something else, clear remarks potentially
-        handleStatusOrPhaseChange(idea.id!, newStatus, idea.programPhase);
-    }
-  };
 
   const handleSubmitRejection = async () => {
     if (!currentIdeaForRejection || !userProfile) return;
@@ -153,15 +263,25 @@ export default function ViewApplicationsPage() {
         toast({ title: "Remarks Required", description: "Please provide rejection remarks or guidance.", variant: "destructive" });
         return;
     }
-    await handleStatusOrPhaseChange(
-        currentIdeaForRejection.id!, 
-        'NOT_SELECTED', 
-        null, 
-        rejectionRemarksInput,
-    );
-    setIsRejectionDialogVisible(false);
-    setCurrentIdeaForRejection(null);
-    setRejectionRemarksInput('');
+    try {
+        await updateIdeaStatusAndPhase(
+            currentIdeaForRejection.id!, 
+            'NOT_SELECTED', 
+            null, // Phase is cleared on rejection
+            rejectionRemarksInput,
+            userProfile.uid,
+            undefined // No phase meeting details for rejection
+        );
+        toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
+        fetchApplications(); 
+        setIsRejectionDialogVisible(false);
+        setCurrentIdeaForRejection(null);
+        setRejectionRemarksInput('');
+    } catch (error) {
+        console.error("Error submitting rejection:", error);
+        toast({ title: "Rejection Error", description: "Could not submit rejection.", variant: "destructive" });
+        fetchApplications(); // Re-fetch on error
+    }
   };
 
 
@@ -239,8 +359,23 @@ export default function ViewApplicationsPage() {
     } else {
       return 'Invalid Date';
     }
+    if (!isValid(dateToFormat)) return 'Invalid Date';
     return format(dateToFormat, 'MMM d, yyyy, HH:mm');
   };
+
+  const formatDateOnly = (dateValue: Date | Timestamp | undefined | null): string => {
+    if (!dateValue) return 'N/A';
+    let dateToFormat: Date;
+     if (typeof (dateValue as Timestamp)?.toDate === 'function') {
+      dateToFormat = (dateValue as Timestamp).toDate();
+    } else if (dateValue instanceof Date) {
+      dateToFormat = dateValue;
+    } else {
+      return 'Invalid Date';
+    }
+    if (!isValid(dateToFormat)) return 'Invalid Date';
+    return format(dateToFormat, 'MMM d, yyyy');
+  }
   
   const formatDateISO = (dateValue: Date | Timestamp | undefined | null): string => {
     if (!dateValue) return 'N/A';
@@ -252,6 +387,7 @@ export default function ViewApplicationsPage() {
     } else {
       return 'Invalid Date';
     }
+    if (!isValid(dateToFormat)) return 'Invalid Date';
     return formatISO(dateToFormat);
   };
 
@@ -278,6 +414,7 @@ export default function ViewApplicationsPage() {
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
       'Status', 'Program Phase', 'Rejection Remarks', 'Studio Location', 
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
+      'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At', 
     ];
     
@@ -324,6 +461,11 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.fileName),
         escapeCsvField(app.phase2PptFileName),
         escapeCsvField(app.phase2PptUrl),
+        escapeCsvField(app.nextPhaseDate ? formatDateOnly(app.nextPhaseDate) : 'N/A'),
+        escapeCsvField(app.nextPhaseStartTime),
+        escapeCsvField(app.nextPhaseEndTime),
+        escapeCsvField(app.nextPhaseVenue),
+        escapeCsvField(app.nextPhaseGuidelines),
         escapeCsvField(formatDateISO(app.submittedAt)),
         escapeCsvField(formatDateISO(app.updatedAt)),
       ];
@@ -382,7 +524,7 @@ export default function ViewApplicationsPage() {
         <CardHeader>
           <CardTitle>All Submitted Applications</CardTitle>
           <CardDescription>
-            Set status for applications. If 'Selected', assign a Program Phase. If 'Not Selected', provide remarks. For 'Phase 2' ideas, provide marks in the details dialog.
+            Set status for applications. If 'Selected', assign a Program Phase & meeting details. If 'Not Selected', provide remarks. For 'Phase 2' ideas, provide marks in the details dialog.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -409,13 +551,13 @@ export default function ViewApplicationsPage() {
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                        {formatDate(app.submittedAt)}
+                        {formatDateOnly(app.submittedAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Select
                             value={app.status}
-                            onValueChange={(value) => triggerStatusChange(app, value as IdeaStatus)}
+                            onValueChange={(value) => handleStatusOrPhaseChange(app, value as IdeaStatus, app.programPhase)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Set status" />
@@ -437,7 +579,7 @@ export default function ViewApplicationsPage() {
                         {app.status === 'SELECTED' ? (
                           <Select
                             value={app.programPhase || NO_PHASE_VALUE}
-                            onValueChange={(value) => handleStatusOrPhaseChange(app.id!, 'SELECTED', value as ProgramPhase | typeof NO_PHASE_VALUE)}
+                            onValueChange={(value) => handleStatusOrPhaseChange(app, 'SELECTED', value as ProgramPhase | typeof NO_PHASE_VALUE)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Assign Phase" />
@@ -579,7 +721,7 @@ export default function ViewApplicationsPage() {
                     <div>
                         <h4 className="font-semibold text-muted-foreground text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4>
                         <p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90">{selectedApplication.rejectionRemarks}</p>
-                        {selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByUid.substring(0,5)}... on {formatDate(selectedApplication.rejectedAt)}</p>}
+                        {selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByUid.substring(0,5)}... on {formatDateOnly(selectedApplication.rejectedAt)}</p>}
                     </div>
                 )}
                  {selectedApplication.programPhase === 'PHASE_2' && selectedApplication.phase2PptUrl && (
@@ -588,8 +730,24 @@ export default function ViewApplicationsPage() {
                         <a href={selectedApplication.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
                             {selectedApplication.phase2PptFileName || 'View Phase 2 Presentation'}
                         </a>
-                         {selectedApplication.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-1">Uploaded on {formatDate(selectedApplication.phase2PptUploadedAt)}</p>}
+                         {selectedApplication.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-1">Uploaded on {formatDateOnly(selectedApplication.phase2PptUploadedAt)}</p>}
                     </div>
+                 )}
+                 {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase && selectedApplication.nextPhaseDate && (
+                    <Card className="mt-3 border-primary/30">
+                        <CardHeader className="pb-2 pt-3 px-4">
+                            <CardTitle className="text-base font-semibold text-primary flex items-center">
+                                <ChevronsRight className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(selectedApplication.programPhase)} Details
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm px-4 pb-3 space-y-1">
+                            <p><strong>Date:</strong> {formatDateOnly(selectedApplication.nextPhaseDate)}</p>
+                            <p><strong>Time:</strong> {selectedApplication.nextPhaseStartTime} - {selectedApplication.nextPhaseEndTime}</p>
+                            <p><strong>Venue:</strong> {selectedApplication.nextPhaseVenue}</p>
+                            <p className="font-semibold mt-2">Guidelines:</p>
+                            <p className="whitespace-pre-wrap text-xs bg-muted/20 p-2 rounded-md">{selectedApplication.nextPhaseGuidelines}</p>
+                        </CardContent>
+                    </Card>
                  )}
               </div>
 
@@ -606,10 +764,6 @@ export default function ViewApplicationsPage() {
                       const displayName = markEntry.adminDisplayName || 'Admin';
                       const isCurrentUserMark = adminUid === userProfile.uid;
                       
-                      if (!userProfile.isSuperAdmin && isCurrentUserMark && !selectedApplication.phase2Marks?.[userProfile.uid]) {
-                         return null; // Regular admin: don't show their own mark in the list if they haven't submitted yet (it's in the input)
-                      }
-                      // Show all marks for SuperAdmin, or other admins' marks for regular admin
                       if (userProfile.isSuperAdmin || !isCurrentUserMark) {
                         return (
                             <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
@@ -635,7 +789,6 @@ export default function ViewApplicationsPage() {
                         } else { 
                             const otherAdminMarksCount = Object.keys(marksObject).filter(uid => uid !== userProfile.uid).length;
                             if (otherAdminMarksCount === 0 && totalMarksCount > 0 && selectedApplication.phase2Marks?.[userProfile.uid]) {
-                               // Current user is the only one who marked
                                return <p className="text-sm text-muted-foreground text-center py-2">You are the only admin who has submitted a mark.</p>;
                             }
                             if (otherAdminMarksCount === 0 && totalMarksCount === 0) {
@@ -647,7 +800,6 @@ export default function ViewApplicationsPage() {
                         }
                         return null;
                     })()}
-
 
                     <div className="pt-3 space-y-2">
                         <Label htmlFor="adminMarkInput" className="font-semibold">
@@ -693,7 +845,6 @@ export default function ViewApplicationsPage() {
                 setIsRejectionDialogVisible(false);
                 setCurrentIdeaForRejection(null);
                 setRejectionRemarksInput('');
-                 // Important: Re-fetch applications to revert optimistic UI change of status dropdown if dialog is cancelled
                 fetchApplications();
             } else {
                 setIsRejectionDialogVisible(isOpen);
@@ -722,9 +873,109 @@ export default function ViewApplicationsPage() {
                         setIsRejectionDialogVisible(false); 
                         setCurrentIdeaForRejection(null); 
                         setRejectionRemarksInput('');
-                        fetchApplications(); // Revert status dropdown if cancelled
+                        fetchApplications(); 
                     }}>Cancel</Button>
                     <Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+      )}
+
+      {isPhaseDetailsDialogVisible && currentIdeaForPhaseDetails && currentPhaseForDialog && (
+        <Dialog open={isPhaseDetailsDialogVisible} onOpenChange={(isOpen) => {
+            if (!isOpen) {
+                setIsPhaseDetailsDialogVisible(false);
+                setCurrentIdeaForPhaseDetails(null);
+                setCurrentPhaseForDialog(null);
+                fetchApplications(); // Re-fetch to revert optimistic UI for dropdowns if dialog is cancelled
+            } else {
+                setIsPhaseDetailsDialogVisible(isOpen);
+            }
+        }}>
+            <DialogContent className="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center">
+                        <CalendarIcon className="h-5 w-5 mr-2 text-primary"/> Set Meeting Details for {getProgramPhaseLabel(currentPhaseForDialog)}
+                    </DialogTitle>
+                    <DialogDescription>
+                        Provide date, time, venue, and guidelines for <span className="font-semibold">{currentIdeaForPhaseDetails.title}</span>.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    <div>
+                        <Label htmlFor="phaseDate">Date</Label>
+                        <Popover>
+                            <PopoverTrigger asChild>
+                                <Button
+                                    id="phaseDate"
+                                    variant={"outline"}
+                                    className={cn(
+                                        "w-full justify-start text-left font-normal",
+                                        !phaseDetailsForm.date && "text-muted-foreground"
+                                    )}
+                                >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {phaseDetailsForm.date ? format(phaseDetailsForm.date, "PPP") : <span>Pick a date</span>}
+                                </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0">
+                                <Calendar
+                                    mode="single"
+                                    selected={phaseDetailsForm.date || undefined}
+                                    onSelect={(date) => setPhaseDetailsForm(prev => ({...prev, date: date || null}))}
+                                    initialFocus
+                                />
+                            </PopoverContent>
+                        </Popover>
+                    </div>
+                     <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label htmlFor="phaseStartTime">Start Time</Label>
+                            <Input 
+                                id="phaseStartTime" 
+                                type="time" 
+                                value={phaseDetailsForm.startTime}
+                                onChange={(e) => setPhaseDetailsForm(prev => ({...prev, startTime: e.target.value}))}
+                            />
+                        </div>
+                        <div>
+                            <Label htmlFor="phaseEndTime">End Time</Label>
+                            <Input 
+                                id="phaseEndTime" 
+                                type="time"
+                                value={phaseDetailsForm.endTime}
+                                onChange={(e) => setPhaseDetailsForm(prev => ({...prev, endTime: e.target.value}))}
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <Label htmlFor="phaseVenue">Venue</Label>
+                        <Input 
+                            id="phaseVenue"
+                            value={phaseDetailsForm.venue}
+                            onChange={(e) => setPhaseDetailsForm(prev => ({...prev, venue: e.target.value}))}
+                            placeholder="e.g., PIERC Office, BBA Building"
+                        />
+                    </div>
+                    <div>
+                        <Label htmlFor="phaseGuidelines">Guidelines</Label>
+                        <Textarea 
+                            id="phaseGuidelines"
+                            value={phaseDetailsForm.guidelines}
+                            onChange={(e) => setPhaseDetailsForm(prev => ({...prev, guidelines: e.target.value}))}
+                            placeholder="Enter guidelines for this phase meeting..."
+                            rows={4}
+                        />
+                    </div>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => {
+                        setIsPhaseDetailsDialogVisible(false); 
+                        setCurrentIdeaForPhaseDetails(null); 
+                        setCurrentPhaseForDialog(null);
+                        fetchApplications();
+                    }}>Cancel</Button>
+                    <Button onClick={handleSubmitPhaseDetails}>Save Details & Notify (Simulated)</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

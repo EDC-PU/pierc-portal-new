@@ -69,6 +69,13 @@ export interface IdeaSubmission {
   phase2PptFileName?: string;
   phase2PptUploadedAt?: Timestamp;
 
+  // Fields for next phase meeting details
+  nextPhaseDate?: Timestamp | null;
+  nextPhaseStartTime?: string | null;
+  nextPhaseEndTime?: string | null;
+  nextPhaseVenue?: string | null;
+  nextPhaseGuidelines?: string | null;
+
   submittedAt: Timestamp;
   updatedAt: Timestamp;
   cohortId?: string; 

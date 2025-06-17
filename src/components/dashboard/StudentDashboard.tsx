@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getUserIdeaSubmissionsWithStatus, type IdeaSubmission, updateIdeaPhase2PptDetails } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -14,6 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import type { ProgramPhase } from '@/types';
 import { Input } from '../ui/input';
+import { format, isValid } from 'date-fns';
 // Note: Firebase Storage import and upload logic will be part of a future update.
 // import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 // import { app as firebaseApp } from '@/lib/firebase/config'; // To get storage instance
@@ -75,30 +76,46 @@ export default function StudentDashboard() {
     }
   };
 
-  const formatDate = (timestamp: Timestamp | Date | undefined): string => {
+  const formatDate = (timestamp: Timestamp | Date | undefined | null): string => {
     if (!timestamp) return 'N/A';
     let dateToFormat: Date;
-    if ((timestamp as Timestamp).toDate) { 
+    if ((timestamp as Timestamp)?.toDate) { 
       dateToFormat = (timestamp as Timestamp).toDate();
     } else if (timestamp instanceof Date) {
       dateToFormat = timestamp;
     } else {
         return 'Invalid Date';
     }
+    if (!isValid(dateToFormat)) return 'Invalid Date';
     return dateToFormat.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
+  
+  const formatDateWithTime = (timestamp: Timestamp | Date | undefined | null): string => {
+    if (!timestamp) return 'N/A';
+    let dateToFormat: Date;
+    if ((timestamp as Timestamp)?.toDate) { 
+      dateToFormat = (timestamp as Timestamp).toDate();
+    } else if (timestamp instanceof Date) {
+      dateToFormat = timestamp;
+    } else {
+        return 'Invalid Date';
+    }
+    if (!isValid(dateToFormat)) return 'Invalid Date';
+    return format(dateToFormat, 'MMM d, yyyy');
+  };
+
 
   const handlePptFileChange = (event: React.ChangeEvent<HTMLInputElement>, ideaId: string) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
       if (file.type === "application/vnd.ms-powerpoint" || file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
         setSelectedPptFile(file);
-        setUploadingPptIdeaId(ideaId); // Keep track of which idea this file is for
+        setUploadingPptIdeaId(ideaId); 
       } else {
         toast({ title: "Invalid File Type", description: "Please upload a PPT or PPTX file.", variant: "destructive" });
         setSelectedPptFile(null);
         setUploadingPptIdeaId(null);
-        event.target.value = ''; // Clear the input
+        event.target.value = ''; 
       }
     }
   };
@@ -109,25 +126,16 @@ export default function StudentDashboard() {
       return;
     }
 
-    toast({ title: "PPT Upload", description: "PPT upload functionality is currently a placeholder. This feature will be fully implemented soon.", variant: "default" });
-    
-    // Placeholder for actual Firebase Storage upload logic:
-    // For now, we'll simulate updating Firestore with dummy data.
-    // In a real implementation, you would:
-    // 1. Initialize Firebase Storage: const storage = getStorage(firebaseApp);
-    // 2. Create a storage reference: const storageRef = ref(storage, `ideas/${uploadingPptIdeaId}/phase2_presentations/${selectedPptFile.name}`);
-    // 3. Upload the file: await uploadBytes(storageRef, selectedPptFile);
-    // 4. Get the download URL: const downloadURL = await getDownloadURL(storageRef);
-    // 5. Call updateIdeaPhase2PptDetails with the actual URL and file name.
+    toast({ title: "PPT Upload Simulation", description: "PPT upload functionality is currently a placeholder. This feature will be fully implemented soon.", variant: "default" });
     
     const dummyFileUrl = `https://example.com/uploads/ideas/${uploadingPptIdeaId}/${selectedPptFile.name}`;
     try {
-      setLoadingIdeas(true); // Show loading indicator
+      setLoadingIdeas(true); 
       await updateIdeaPhase2PptDetails(uploadingPptIdeaId, dummyFileUrl, selectedPptFile.name);
       toast({ title: "PPT Info Updated (Simulation)", description: `${selectedPptFile.name} details recorded.` });
       setSelectedPptFile(null);
       setUploadingPptIdeaId(null);
-      // Re-fetch ideas to show the updated PPT info
+      
       const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
       setUserIdeas(ideas);
     } catch (error) {
@@ -167,7 +175,7 @@ export default function StudentDashboard() {
           ) : userIdeas.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
           ) : (
-            <ScrollArea className="h-auto max-h-[400px] pr-3"> 
+            <ScrollArea className="h-auto max-h-[calc(100vh-26rem)] pr-3"> 
               <ul className="space-y-4">
                 {userIdeas.map((idea) => (
                   <li key={idea.id} className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors shadow-sm">
@@ -208,6 +216,26 @@ export default function StudentDashboard() {
                             </CardContent>
                         </Card>
                     )}
+                    {idea.status === 'SELECTED' && idea.programPhase && idea.nextPhaseDate && (
+                        <Card className="mt-3 border-primary/20 bg-primary/5">
+                            <CardHeader className="pb-2 pt-3 px-4">
+                                <CardTitle className="text-sm font-semibold text-primary flex items-center">
+                                  <CalendarDays className="h-4 w-4 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-xs px-4 pb-3 space-y-1 text-foreground/80">
+                                <p><strong className="text-foreground/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
+                                <p><strong className="text-foreground/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
+                                <p><strong className="text-foreground/90">Venue:</strong> {idea.nextPhaseVenue}</p>
+                                {idea.nextPhaseGuidelines && (
+                                    <div className="mt-1.5">
+                                        <p className="font-medium text-foreground/90 flex items-center"><ListChecks className="h-3.5 w-3.5 mr-1.5 text-primary/80"/>Guidelines:</p>
+                                        <p className="whitespace-pre-wrap text-xs bg-background/30 p-1.5 rounded-sm">{idea.nextPhaseGuidelines}</p>
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
+                    )}
                     {idea.programPhase === 'PHASE_2' && (
                         <Card className="mt-3 border-primary/30">
                             <CardHeader className="pb-2 pt-3 px-4">
@@ -219,10 +247,7 @@ export default function StudentDashboard() {
                                 {idea.phase2PptUrl && idea.phase2PptFileName ? (
                                     <div className="flex items-center justify-between">
                                         <p>Uploaded: <span className="font-medium">{idea.phase2PptFileName}</span></p>
-                                        {/* <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                                            <Button variant="link" size="sm" className="p-0 h-auto"><Download className="h-3 w-3 mr-1"/>Download</Button>
-                                        </a> */}
-                                        <p className="text-muted-foreground">(Download via Admin Details for now)</p>
+                                        <p className="text-muted-foreground">(Download from Admin Portal Details)</p>
                                     </div>
                                 ) : (
                                     <p className="text-muted-foreground">No presentation uploaded yet.</p>

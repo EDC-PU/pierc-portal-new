@@ -290,7 +290,7 @@ export const createIdeaFromProfile = async (
   }
 
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt'> = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines'> = {
     userId: userId,
     title: profileData.startupTitle,
     category: 'General Profile Submission', 
@@ -331,6 +331,8 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
     }
     const submittedAt = (ideaData.submittedAt as any) instanceof Timestamp ? (ideaData.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (ideaData.updatedAt as any) instanceof Timestamp ? (ideaData.updatedAt as Timestamp) : Timestamp.now();
+    const nextPhaseDate = (ideaData.nextPhaseDate as any) instanceof Timestamp ? (ideaData.nextPhaseDate as Timestamp) : null;
+
 
     ideaSubmissions.push({ 
       id: ideaDoc.id, 
@@ -347,6 +349,11 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       phase2PptUrl: ideaData.phase2PptUrl,
       phase2PptFileName: ideaData.phase2PptFileName,
       phase2PptUploadedAt: ideaData.phase2PptUploadedAt,
+      nextPhaseDate: nextPhaseDate,
+      nextPhaseStartTime: ideaData.nextPhaseStartTime,
+      nextPhaseEndTime: ideaData.nextPhaseEndTime,
+      nextPhaseVenue: ideaData.nextPhaseVenue,
+      nextPhaseGuidelines: ideaData.nextPhaseGuidelines,
     } as IdeaSubmission);
   }
   return ideaSubmissions;
@@ -356,8 +363,15 @@ export const updateIdeaStatusAndPhase = async (
   ideaId: string, 
   newStatus: IdeaStatus, 
   newPhase: ProgramPhase | null = null,
-  rejectionRemarks?: string,
-  adminUid?: string
+  remarks?: string,
+  adminUid?: string,
+  nextPhaseDetails?: {
+    date: Timestamp | null;
+    startTime: string | null;
+    endTime: string | null;
+    venue: string | null;
+    guidelines: string | null;
+  }
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const updates: Partial<IdeaSubmission> = {
@@ -367,7 +381,7 @@ export const updateIdeaStatusAndPhase = async (
 
   if (newStatus === 'SELECTED') {
     updates.programPhase = newPhase;
-    updates.rejectionRemarks = undefined; // Clear rejection remarks if selected
+    updates.rejectionRemarks = undefined; 
     updates.rejectedByUid = undefined;
     updates.rejectedAt = undefined;
     if (newPhase === 'PHASE_2') {
@@ -376,10 +390,28 @@ export const updateIdeaStatusAndPhase = async (
         updates.phase2Marks = {};
       }
     }
-  } else {
+    if (newPhase && nextPhaseDetails) {
+      updates.nextPhaseDate = nextPhaseDetails.date;
+      updates.nextPhaseStartTime = nextPhaseDetails.startTime;
+      updates.nextPhaseEndTime = nextPhaseDetails.endTime;
+      updates.nextPhaseVenue = nextPhaseDetails.venue;
+      updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
+    } else if (!newPhase) { // If phase is cleared (e.g. "Not Assigned") but status is still SELECTED
+        updates.nextPhaseDate = null;
+        updates.nextPhaseStartTime = null;
+        updates.nextPhaseEndTime = null;
+        updates.nextPhaseVenue = null;
+        updates.nextPhaseGuidelines = null;
+    }
+  } else { // If status is not 'SELECTED'
     updates.programPhase = null; 
+    updates.nextPhaseDate = null;
+    updates.nextPhaseStartTime = null;
+    updates.nextPhaseEndTime = null;
+    updates.nextPhaseVenue = null;
+    updates.nextPhaseGuidelines = null;
     if (newStatus === 'NOT_SELECTED') {
-      updates.rejectionRemarks = rejectionRemarks || 'No specific remarks provided.';
+      updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminUid;
       updates.rejectedAt = serverTimestamp() as Timestamp;
     } else {
@@ -429,6 +461,8 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
     const data = doc.data();
     const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
+    const nextPhaseDate = (data.nextPhaseDate as any) instanceof Timestamp ? (data.nextPhaseDate as Timestamp) : null;
+
     userIdeas.push({ 
         id: doc.id, 
         ...data, 
@@ -442,6 +476,11 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         phase2PptUrl: data.phase2PptUrl,
         phase2PptFileName: data.phase2PptFileName,
         phase2PptUploadedAt: data.phase2PptUploadedAt,
+        nextPhaseDate: nextPhaseDate,
+        nextPhaseStartTime: data.nextPhaseStartTime,
+        nextPhaseEndTime: data.nextPhaseEndTime,
+        nextPhaseVenue: data.nextPhaseVenue,
+        nextPhaseGuidelines: data.nextPhaseGuidelines,
     } as IdeaSubmission);
   });
   return userIdeas;
@@ -514,7 +553,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt'>): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines'>): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
