@@ -90,7 +90,7 @@ export default function IncubationPhasesPage() {
           </Card>
         ))}
       </div>
-       <Card className="mt-12 bg-primary/10 border-primary">
+       <Card className="mt-12 bg-primary/10 border-primary shadow-md hover:shadow-lg transition-shadow">
         <CardHeader>
           <CardTitle className="font-headline text-2xl text-primary">Ready to Innovate?</CardTitle>
         </CardHeader>
@@ -105,3 +105,4 @@ export default function IncubationPhasesPage() {
     </div>
   );
 }
+

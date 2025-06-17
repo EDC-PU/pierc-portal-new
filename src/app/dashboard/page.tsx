@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { format, isValid } from 'date-fns';
-import { FileCheck2, ChevronsRight, AlertCircle, Users, BarChart3, Megaphone, Settings, UserCog, BarChartBig, FileText, Loader2, Activity, BookOpen, CalendarDays, ListChecks, MapPin, Clock, Download } from 'lucide-react';
+import { FileCheck2, ChevronsRight, AlertCircle, Users, BarChart3, Megaphone, Download, Activity, CalendarDays, ListChecks, Clock, MapPin } from 'lucide-react'; // Removed UserCog, Settings, BarChartBig, FileText, Loader2
 
 interface DashboardStats {
   totalUsers: number | null;
@@ -92,7 +92,7 @@ export default function DashboardPage() {
 
   if (!userProfile) {
     return (
-      <Card className="mt-10">
+      <Card className="mt-10 shadow-md hover:shadow-lg transition-shadow">
         <CardHeader><CardTitle>Profile Not Found</CardTitle></CardHeader>
         <CardContent>
           <p>Your user profile could not be loaded. Please try again or contact support.</p>
@@ -151,14 +151,14 @@ export default function DashboardPage() {
   };
 
   const AdminStatDisplay = ({ value }: { value: number | null }) => {
-    if (loadingAdminStats) return <Loader2 className="h-5 w-5 animate-spin text-primary" />;
+    if (loadingAdminStats) return <LoadingSpinner size={20} className="text-primary" />;
     if (value === null) return <span className="text-muted-foreground">N/A</span>;
     return <>{value}</>;
   };
 
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-slide-in-up">
       <UrgentAnnouncementModal />
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl md:text-3xl font-headline font-bold">
@@ -169,7 +169,7 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
-          <Card className="shadow-md">
+          <Card className="shadow-md hover:shadow-lg transition-shadow">
             <CardHeader>
               <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                 <CardTitle className="flex items-center font-headline"><Megaphone className="mr-2 h-5 w-5 text-primary" />ANNOUNCEMENT</CardTitle>
@@ -189,7 +189,7 @@ export default function DashboardPage() {
           </Card>
 
           {userProfile.role === 'STUDENT' && (
-            <Card className="shadow-md">
+            <Card className="shadow-md hover:shadow-lg transition-shadow">
               <CardHeader>
                 <CardTitle className="flex items-center font-headline"><FileCheck2 className="mr-2 h-5 w-5 text-primary"/>MY IDEA SUBMISSIONS</CardTitle>
               </CardHeader>
@@ -233,7 +233,7 @@ export default function DashboardPage() {
           
            {userProfile.role === 'ADMIN_FACULTY' && (
              <div className="grid gap-6 md:grid-cols-2">
-                 <Card className="hover:shadow-lg transition-shadow">
+                 <Card className="shadow-md hover:shadow-lg transition-shadow">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">TOTAL USERS</CardTitle>
                     <Users className="h-4 w-4 text-muted-foreground" />
@@ -242,7 +242,7 @@ export default function DashboardPage() {
                     <div className="text-2xl font-bold"><AdminStatDisplay value={stats.totalUsers} /></div>
                   </CardContent>
                 </Card>
-                 <Card className="hover:shadow-lg transition-shadow">
+                 <Card className="shadow-md hover:shadow-lg transition-shadow">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle className="text-sm font-medium">SUBMITTED IDEAS</CardTitle>
                     <BarChart3 className="h-4 w-4 text-muted-foreground" />
@@ -259,12 +259,12 @@ export default function DashboardPage() {
              </div>
            )}
 
-          <Card className="shadow-md">
+          <Card className="shadow-md hover:shadow-lg transition-shadow">
             <CardHeader><CardTitle className="flex items-center font-headline"><CalendarDays className="mr-2 h-5 w-5 text-primary"/>ATTENDANCE SUMMARY</CardTitle></CardHeader>
             <CardContent className="bg-destructive/10 p-3 rounded-md"><p className="text-destructive text-sm font-medium flex items-center"><AlertCircle className="w-4 h-4 mr-2"/>No Record Found</p></CardContent>
           </Card>
           
-          <Card className="shadow-md">
+          <Card className="shadow-md hover:shadow-lg transition-shadow">
             <CardHeader>
                 <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
                     <CardTitle className="flex items-center font-headline"><Activity className="mr-2 h-5 w-5 text-primary"/>ACTIVITIES</CardTitle>
@@ -281,7 +281,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="lg:col-span-1 space-y-6">
-          <Card className="shadow-md">
+          <Card className="shadow-md hover:shadow-lg transition-shadow">
             <CardContent className="pt-6 text-center">
               <Avatar className="w-20 h-20 mx-auto mb-3 border-2 border-primary">
                 <AvatarImage src={userProfile.photoURL || `https://placehold.co/80x80.png?text=${getInitials(userProfile.displayName)}`} data-ai-hint="profile person" alt={userProfile.displayName || 'User'} />
@@ -298,3 +298,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

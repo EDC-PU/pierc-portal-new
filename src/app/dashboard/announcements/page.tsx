@@ -1,3 +1,4 @@
+
 'use client';
 
 import { AnnouncementsFeed } from '@/components/announcements/AnnouncementsFeed';
@@ -32,3 +33,4 @@ export default function AnnouncementsPage() {
     </div>
   );
 }
+

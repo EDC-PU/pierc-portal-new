@@ -239,7 +239,7 @@ export default function ViewApplicationsPage() {
                 guidelines: phaseDetailsForm.guidelines,
             }
         );
-        toast({ title: "Phase Details Saved", description: `Meeting details for ${getProgramPhaseLabel(currentPhaseForDialog)} have been saved.` });
+        toast({ title: "Phase Details Saved", description: `${getProgramPhaseLabel(currentPhaseForDialog)} details saved.` });
         fetchApplications();
         setIsPhaseDetailsDialogVisible(false);
         setCurrentIdeaForPhaseDetails(null);
@@ -977,4 +977,5 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+
 
