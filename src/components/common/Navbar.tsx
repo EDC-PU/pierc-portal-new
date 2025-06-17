@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -5,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LogIn, LogOut, User as UserIcon, LayoutDashboard, AnnoyedIcon, Rss, Settings, FileText, Briefcase } from 'lucide-react'; // AnnoyedIcon for PIERC logo placeholder
+import { LogIn, LogOut, User as UserIcon, LayoutDashboard, AnnoyedIcon, Rss, Settings, FileText, Briefcase, ShieldCheck } from 'lucide-react'; // AnnoyedIcon for PIERC logo placeholder
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '../ui/skeleton';
 
@@ -81,9 +82,14 @@ export function Navbar() {
                      <Rss className="mr-2 h-4 w-4" /> Announcements
                    </DropdownMenuItem>
                   {userProfile?.role === 'ADMIN_FACULTY' && (
-                     <DropdownMenuItem onClick={() => router.push('/dashboard/admin/manage-announcements')}>
-                        <Settings className="mr-2 h-4 w-4" /> Manage Announcements
-                     </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => router.push('/dashboard/admin/manage-announcements')}>
+                          <Megaphone className="mr-2 h-4 w-4" /> Manage Announcements
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => router.push('/dashboard/admin/system-settings')}>
+                          <Settings className="mr-2 h-4 w-4" /> System Settings
+                      </DropdownMenuItem>
+                    </>
                   )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={signOut}>

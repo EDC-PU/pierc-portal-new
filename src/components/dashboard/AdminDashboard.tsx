@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,7 +63,7 @@ export default function AdminDashboard() {
           </CardHeader>
           <CardContent>
              <div className="text-2xl font-bold">Configuration</div>
-            <Button variant="link" size="sm" className="p-0 h-auto text-xs">Access Settings</Button> {/* Placeholder action */}
+            <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/system-settings')}>Access Settings</Button>
           </CardContent>
         </Card>
       </div>
@@ -74,6 +75,9 @@ export default function AdminDashboard() {
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Button variant="outline" onClick={() => router.push('/dashboard/admin/manage-announcements')}>
             Manage Announcements
+          </Button>
+           <Button variant="outline" onClick={() => router.push('/dashboard/admin/system-settings')}>
+            System Settings
           </Button>
           <Button variant="outline" disabled>Manage Users (Coming Soon)</Button>
           <Button variant="outline" disabled>View Incubation Applications (Coming Soon)</Button>
