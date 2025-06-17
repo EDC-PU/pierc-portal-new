@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react'; // Added useState import
+import { useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -15,31 +15,47 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import type { Announcement as AnnouncementType, UserProfile } from '@/types';
 import { improveAnnouncementLanguage } from '@/ai/flows/improve-announcement-language';
-import { Wand2 } from 'lucide-react'; // Icon for AI feature
+import { Wand2 } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'; // Added for target audience
 
 const announcementSchema = z.object({
   title: z.string().min(5, 'Title must be at least 5 characters').max(100),
   content: z.string().min(10, 'Content must be at least 10 characters').max(5000),
   isUrgent: z.boolean().default(false),
+  targetAudience: z.enum(['ALL', 'SPECIFIC_COHORT']).default('ALL'),
+  // cohortId: z.string().optional(), // Add cohort selection later if 'SPECIFIC_COHORT'
+  // attachment handling to be added later
 });
 
-type AnnouncementFormData = z.infer<typeof announcementSchema>;
+// This type represents the data structure expected by onSave (excluding fields managed by onSave itself like UIDs or timestamps)
+export type AnnouncementFormSubmitData = z.infer<typeof announcementSchema>;
+
+// This type includes fields that are part of the Announcement but not directly from the form's schema (e.g. createdByUid)
+// It represents the full structure for creating/updating an announcement in Firestore via the onSave prop.
+export type AnnouncementSaveData = AnnouncementFormSubmitData & {
+    createdByUid: string;
+    creatorDisplayName: string | null;
+    // attachmentURL and attachmentName would be added here when implemented
+};
+
 
 interface AnnouncementFormProps {
   currentUserProfile: UserProfile | null;
   initialData?: AnnouncementType | null;
-  onSubmitSuccess: () => void; // Callback when form submits successfully
-  onSave: (data: AnnouncementFormData, creatorUid: string, creatorName: string | null) => Promise<void>;
+  onSubmitSuccess: () => void;
+  // onSave expects the full data needed to create/update, including creator info
+  onSave: (data: AnnouncementSaveData) => Promise<void>;
 }
 
 export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSuccess, onSave }: AnnouncementFormProps) {
   const { toast } = useToast();
-  const { control, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<AnnouncementFormData>({
+  const { control, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<AnnouncementFormSubmitData>({
     resolver: zodResolver(announcementSchema),
     defaultValues: {
       title: initialData?.title || '',
       content: initialData?.content || '',
       isUrgent: initialData?.isUrgent || false,
+      targetAudience: initialData?.targetAudience || 'ALL',
     },
   });
 
@@ -69,20 +85,29 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
   const useAiSuggestion = () => {
     if (aiImprovedContent) {
       setValue('content', aiImprovedContent, { shouldValidate: true });
-      setAiImprovedContent(null); // Clear suggestion after use
+      setAiImprovedContent(null);
     }
   };
 
-  const processSubmit = async (data: AnnouncementFormData) => {
+  const processSubmit = async (formData: AnnouncementFormSubmitData) => {
     if (!currentUserProfile) {
         toast({ title: "Error", description: "User not authenticated.", variant: "destructive"});
         return;
     }
+    
+    const announcementDataToSave: AnnouncementSaveData = {
+        ...formData,
+        createdByUid: currentUserProfile.uid,
+        creatorDisplayName: currentUserProfile.displayName || currentUserProfile.fullName || 'Admin',
+    };
+
     try {
-      await onSave(data, currentUserProfile.uid, currentUserProfile.displayName); // Use Auth displayName primarily
+      await onSave(announcementDataToSave);
       onSubmitSuccess(); 
     } catch (error) {
-      console.error("Failed to save announcement:", error);
+      // Error should be toasted by the onSave implementation or here if it throws
+      console.error("Failed to save announcement from form:", error);
+       toast({ title: "Save Error", description: (error as Error).message || "Could not save announcement.", variant: "destructive"});
     }
   };
 
@@ -130,6 +155,31 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
             </Card>
           )}
           
+          <div className="space-y-2">
+            <Label>Target Audience</Label>
+            <Controller
+              name="targetAudience"
+              control={control}
+              render={({ field }) => (
+                <RadioGroup
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  className="flex space-x-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="ALL" id="audience-all" />
+                    <Label htmlFor="audience-all">All Users</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="SPECIFIC_COHORT" id="audience-cohort" disabled /> 
+                    <Label htmlFor="audience-cohort" className="text-muted-foreground">Specific Cohort (Coming Soon)</Label>
+                  </div>
+                </RadioGroup>
+              )}
+            />
+            {errors.targetAudience && <p className="text-sm text-destructive mt-1">{errors.targetAudience.message}</p>}
+          </div>
+
           <div className="flex items-center space-x-2 pt-2">
             <Controller
               name="isUrgent"
@@ -148,8 +198,6 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
             </Label>
           </div>
            {errors.isUrgent && <p className="text-sm text-destructive mt-1">{errors.isUrgent.message}</p>}
-
-
         </CardContent>
         <CardFooter>
           <Button type="submit" className="w-full" disabled={isSubmitting || isAiLoading}>

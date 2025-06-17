@@ -7,17 +7,13 @@ import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, 
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
   
-  // Construct the full profile ensuring all fields from UserProfile type are handled.
-  // Form validation (Zod) is responsible for ensuring `data` contains valid values for mandatory fields.
   const profileToCreate: UserProfile = {
     uid: userId,
     email: data.email ?? null,
-    displayName: data.displayName ?? null, // Firebase Auth display name
+    displayName: data.displayName ?? data.fullName ?? 'User',
     photoURL: data.photoURL ?? null,
-    role: data.role ?? null, // Role determined by form logic or AuthContext
-
-    // Fields from PRD - these should be present in `data` due to form validation
-    fullName: data.fullName!, // User-entered full name
+    role: data.role ?? null,
+    fullName: data.fullName!, 
     contactNumber: data.contactNumber!,
     applicantCategory: data.applicantCategory!,
     currentStage: data.currentStage!,
@@ -25,32 +21,23 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     problemDefinition: data.problemDefinition!,
     solutionDescription: data.solutionDescription!,
     uniqueness: data.uniqueness!,
-    teamMembers: data.teamMembers || '', // Default to empty string if not provided (Zod default)
-
-    // Conditional fields, will be present in `data` if applicable and validated by Zod
+    teamMembers: data.teamMembers || '', 
     enrollmentNumber: data.enrollmentNumber, 
     college: data.college,
     instituteName: data.instituteName,
-
     isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
-    
-    createdAt: serverTimestamp() as Timestamp, // Cast for type consistency before write
+    createdAt: serverTimestamp() as Timestamp, 
     updatedAt: serverTimestamp() as Timestamp,
   };
 
-  // Filter out undefined values before setting to Firestore, as Firestore cannot store 'undefined'.
-  // Note: serverTimestamp() will be resolved by Firestore server.
   const cleanProfileToCreate = Object.fromEntries(
     Object.entries(profileToCreate).filter(([, value]) => value !== undefined)
   );
 
-
   await setDoc(userProfileRef, cleanProfileToCreate);
   
-  // Fetch the newly created profile to get server-generated timestamps and ensure consistency
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
-    // The data returned from Firestore will have actual Timestamp objects for createdAt/updatedAt
     return docSnap.data() as UserProfile;
   }
   throw new Error("Failed to create or retrieve user profile after creation.");
@@ -61,7 +48,6 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const profile = docSnap.data() as UserProfile;
-    // Ensure superAdmin status is correctly reflected based on email, overriding stored value if necessary.
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true;
     }
@@ -72,7 +58,6 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 
 export const updateUserProfile = async (userId: string, data: Partial<UserProfile>): Promise<void> => {
   const userProfileRef = doc(db, 'users', userId);
-  // Filter out undefined values before updating
   const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
   await updateDoc(userProfileRef, {
     ...cleanData,
@@ -83,8 +68,9 @@ export const updateUserProfile = async (userId: string, data: Partial<UserProfil
 // Announcement Functions
 export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>): Promise<Announcement> => {
   const announcementsCol = collection(db, 'announcements');
+  // Ensure createdByUid and creatorDisplayName are part of announcementData passed in
   const newAnnouncementPayload = {
-    ...announcementData,
+    ...announcementData, // This should include title, content, isUrgent, targetAudience, createdByUid, creatorDisplayName etc.
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -99,7 +85,7 @@ export const getAnnouncementsStream = (callback: (announcements: Announcement[])
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol, 
     where('isUrgent', '==', false), 
-    where('targetAudience', '==', 'ALL'), // Only 'ALL' target audience for this general feed
+    where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
   ); 
 
@@ -111,7 +97,7 @@ export const getAnnouncementsStream = (callback: (announcements: Announcement[])
     callback(announcements);
   }, (error) => {
     console.error("Error fetching general announcements:", error);
-    callback([]); // Send empty array on error
+    callback([]);
   });
 };
 
@@ -120,7 +106,7 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol, 
     where('isUrgent', '==', true),
-    where('targetAudience', '==', 'ALL'), // Assuming urgent modals are for 'ALL' for now
+    where('targetAudience', '==', 'ALL'), 
     orderBy('createdAt', 'desc')
   );
 
@@ -136,7 +122,7 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
   });
 };
 
-// Stream for all announcements for Admin dashboard (no audience filtering)
+// Stream for all announcements for Admin dashboard (no audience filtering initially, can be refined)
 export const getAllAnnouncementsForAdminStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol, orderBy('createdAt', 'desc'));
@@ -154,10 +140,11 @@ export const getAllAnnouncementsForAdminStream = (callback: (announcements: Anno
 };
 
 
-export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'|'updatedAt'>>): Promise<void> => {
+export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'>>): Promise<void> => {
   const announcementRef = doc(db, 'announcements', announcementId);
+  // Ensure createdByUid and creatorDisplayName are part of data if they are being updated
   await updateDoc(announcementRef, {
-    ...data,
+    ...data, // This should include title, content, isUrgent, targetAudience, etc.
     updatedAt: serverTimestamp(),
   });
 };
@@ -176,7 +163,7 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
     status: 'SUBMITTED',
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  } as const; // Add 'as const' for stricter type checking if needed
+  } as const;
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
@@ -199,21 +186,10 @@ export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>)
 
 
 export const deleteUserAndProfile = async (userId: string): Promise<void> => {
-  // This function should also handle deletion of user's Firebase Auth account
-  // and potentially other user-related data (e.g., their idea submissions).
-  // For now, it only deletes the Firestore profile.
-  // Actual user deletion from Auth requires Admin SDK in a Cloud Function.
   const batch = writeBatch(db);
   const userProfileRef = doc(db, 'users', userId);
   batch.delete(userProfileRef);
   
-  // Example: Query and delete user's idea submissions (consider batch limits)
-  // const ideasQuery = query(collection(db, 'ideas'), where('userId', '==', userId));
-  // const ideasSnapshot = await getDocs(ideasQuery);
-  // ideasSnapshot.forEach(doc => batch.delete(doc.ref));
-
   await batch.commit();
-  // Note: Deleting the Firebase Auth user record typically needs to be done
-  // from a backend environment (e.g., Cloud Function) using the Admin SDK.
 };
 

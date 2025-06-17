@@ -68,7 +68,7 @@ export interface Announcement {
   title: string;
   content: string;
   isUrgent: boolean;
-  targetAudience: 'ALL' | 'SPECIFIC_COHORT';
+  targetAudience: 'ALL' | 'SPECIFIC_COHORT'; // Default to ALL, admin can specify cohort
   cohortId?: string; // if targetAudience is 'SPECIFIC_COHORT'
   attachmentURL?: string;
   attachmentName?: string;
