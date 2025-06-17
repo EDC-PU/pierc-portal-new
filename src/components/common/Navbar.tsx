@@ -2,11 +2,12 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LogIn, LogOut, User as UserIcon, LayoutDashboard, Rss, Settings, FileText, Briefcase, ShieldCheck, UserCog, Megaphone } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon, LayoutDashboard, Rss, Settings, FileText, ShieldCheck, UserCog, Megaphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '../ui/skeleton';
 
@@ -25,8 +26,13 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link href="/" className="flex items-center space-x-2 text-primary hover:opacity-80 transition-opacity">
-              <Briefcase className="h-8 w-8" /> 
-              <h1 className="text-2xl font-headline font-bold">PIERC Portal</h1>
+              <Image
+                src="https://www.pierc.org/_next/static/media/PIERC%20WHITE.a9ef7cc8.svg"
+                alt="PIERC Portal Logo"
+                width={130} // Adjust width as needed based on logo aspect ratio
+                height={32} // Adjust height to fit navbar
+                className="h-8" // Tailwind class to control height, ensure width/height props match aspect ratio
+              />
             </Link>
           </div>
           
