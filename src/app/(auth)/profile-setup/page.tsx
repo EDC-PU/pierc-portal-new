@@ -16,7 +16,7 @@ import type { Role, ApplicantCategory, CurrentStage } from '@/types';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase/config'; // Import auth for sendPasswordResetEmail
+import { auth } from '@/lib/firebase/config'; 
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
   AlertDialog,
@@ -77,8 +77,7 @@ const parulUserSchema = profileBaseSchema.extend({
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'College name is required for Parul staff/alumni.', path: ['college'] });
     }
   } else if (data.applicantCategory === 'OTHERS') {
-    // This case should not be reachable if role is STUDENT and category is OTHERS,
-    // as @paruluniversity.ac.in emails get STUDENT role.
+    // This case should not be reachable if role is STUDENT and category is OTHERS
   }
 });
 
@@ -263,7 +262,6 @@ export default function ProfileSetupPage() {
     }
     try {
       await deleteCurrentUserAccount();
-      // AuthContext will handle sign out and redirect
     } catch (error) {
       // Errors are handled by toast in AuthContext method
     }
@@ -273,22 +271,30 @@ export default function ProfileSetupPage() {
 
   if (!initialLoadComplete || (loading && !isAutoSubmittingAdmin && !userProfile) || (isAutoSubmittingAdmin && !userProfile)) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]"> {/* Adjusted for Navbar height (h-20) */}
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
         <LoadingSpinner size={48} />
-        {isAutoSubmittingAdmin && <p className="ml-4">Setting up Administrator account...</p>}
+        {isAutoSubmittingAdmin && <p className="mt-4 text-lg text-muted-foreground">Setting up Administrator account...</p>}
+         {!isAutoSubmittingAdmin && loading && <p className="mt-4 text-lg text-muted-foreground">Loading profile...</p>}
       </div>
     );
   }
 
   if (!user && initialLoadComplete) {
-    return <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]"><p>Redirecting to login...</p><LoadingSpinner size={32}/></div>;
+    return (
+        <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+                <p className="text-lg text-muted-foreground">Redirecting to login...</p>
+                <LoadingSpinner size={32}/>
+            </div>
+        </div>
+    );
   }
 
   if (determinedRole === 'ADMIN_FACULTY') {
      if (!userProfile && !isAutoSubmittingAdmin) {
         return (
-             <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]">
-                <p className="text-destructive mb-4">Administrator account setup encountered an issue.</p>
+             <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+                <p className="text-destructive mb-4 text-xl">Administrator account setup encountered an issue.</p>
                 <p className="text-muted-foreground mb-4">Please ensure your Firestore permissions are correctly set.</p>
                 <Button onClick={() => window.location.reload()}>Try Again</Button>
                 <Button variant="link" onClick={signOut} className="mt-2">Logout</Button>
@@ -297,9 +303,11 @@ export default function ProfileSetupPage() {
      }
      if (userProfile || isAutoSubmittingAdmin) {
         return (
-            <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]">
-                <p>Redirecting to dashboard or completing setup...</p>
-                <LoadingSpinner size={32} />
+            <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                    <p className="text-lg text-muted-foreground">Redirecting to dashboard or completing setup...</p>
+                    <LoadingSpinner size={32} />
+                </div>
             </div>
         );
      }
@@ -313,7 +321,6 @@ export default function ProfileSetupPage() {
   };
 
   return (
-    // Adjusted min-h to ensure it fills space below Navbar if AppShell causes flex-grow issues for this page.
     <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] animate-fade-in"> 
       <Card className="w-full max-w-2xl shadow-2xl">
         <CardHeader>

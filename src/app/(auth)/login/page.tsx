@@ -48,50 +48,41 @@ export default function LoginPage() {
   useEffect(() => {
     if (initialLoadComplete && user) {
       if (userProfile) {
-        // If user is authenticated and has a profile, redirect to dashboard.
-        // AuthContext usually handles this, but this is a safeguard if they land here.
         router.push('/dashboard');
       }
-      // If user is authenticated but no profile, AuthContext is responsible for
-      // redirecting to /profile-setup. The "Redirecting..." message (below)
-      // will show during this brief period.
     }
   }, [user, userProfile, initialLoadComplete, router]);
 
   if (loading && !initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]"> {/* Adjusted for Navbar height (h-20) */}
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
         <LoadingSpinner size={48} />
       </div>
     );
   }
   
-  // This screen shows if auth is complete, user exists, but redirection (by AuthContext or above useEffect) is pending.
-  // For a new user, AuthContext will redirect to /profile-setup.
-  // For an existing user with profile, the useEffect above will redirect to /dashboard.
   if (user && initialLoadComplete) {
      return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))]">
-        <p>Redirecting...</p>
-        <LoadingSpinner size={32} />
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+            <p className="text-lg text-muted-foreground">Redirecting...</p>
+            <LoadingSpinner size={32} />
+        </div>
       </div>
     );
   }
 
-  // If not loading, and no user, render the login/signup form.
   const onSubmit: SubmitHandler<LoginFormInputs | SignUpFormInputs> = async (data) => {
     try {
       if (isSignUpMode) {
         const { email, password } = data as SignUpFormInputs;
         await signUpWithEmailPassword(email, password);
-        // AuthContext will redirect to profile-setup upon successful auth state change
       } else {
         const { email, password } = data as LoginFormInputs;
         await signInWithEmailPassword(email, password);
-         // AuthContext will redirect to dashboard or profile-setup
       }
     } catch (error: any) {
-      // Errors are handled by toast in AuthContext methods, no need to re-toast here
+      // Errors are handled by toast in AuthContext methods
     }
   };
 
@@ -101,7 +92,6 @@ export default function LoginPage() {
   }
 
   return (
-    // Adjusted min-h to ensure it fills space below Navbar if AppShell causes flex-grow issues for this page.
     <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] bg-gradient-to-br from-background to-secondary/30 animate-fade-in">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
