@@ -15,9 +15,6 @@ import type { Timestamp } from 'firebase/firestore';
 import type { ProgramPhase } from '@/types';
 import { Input } from '../ui/input';
 import { format, isValid } from 'date-fns';
-// Note: Firebase Storage import and upload logic will be part of a future update.
-// import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-// import { app as firebaseApp } from '@/lib/firebase/config'; // To get storage instance
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -219,18 +216,21 @@ export default function StudentDashboard() {
                     {idea.status === 'SELECTED' && idea.programPhase && idea.nextPhaseDate && (
                         <Card className="mt-3 border-primary/20 bg-primary/5">
                             <CardHeader className="pb-2 pt-3 px-4">
-                                <CardTitle className="text-sm font-semibold text-primary flex items-center">
-                                  <CalendarDays className="h-4 w-4 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting
+                                <CardTitle className="text-base font-semibold text-primary flex items-center">
+                                  <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
                                 </CardTitle>
+                                <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
                             </CardHeader>
-                            <CardContent className="text-xs px-4 pb-3 space-y-1 text-foreground/80">
-                                <p><strong className="text-foreground/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
-                                <p><strong className="text-foreground/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
-                                <p><strong className="text-foreground/90">Venue:</strong> {idea.nextPhaseVenue}</p>
+                            <CardContent className="text-sm px-4 pb-3 space-y-2 text-foreground/90">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                                    <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
+                                    <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
+                                </div>
+                                <p><strong className="text-primary/90">Venue:</strong> {idea.nextPhaseVenue}</p>
                                 {idea.nextPhaseGuidelines && (
-                                    <div className="mt-1.5">
-                                        <p className="font-medium text-foreground/90 flex items-center"><ListChecks className="h-3.5 w-3.5 mr-1.5 text-primary/80"/>Guidelines:</p>
-                                        <p className="whitespace-pre-wrap text-xs bg-background/30 p-1.5 rounded-sm">{idea.nextPhaseGuidelines}</p>
+                                    <div className="mt-2">
+                                        <p className="font-semibold text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
+                                        <p className="whitespace-pre-wrap text-xs bg-background/50 p-2 rounded-md mt-1 border border-border">{idea.nextPhaseGuidelines}</p>
                                     </div>
                                 )}
                             </CardContent>

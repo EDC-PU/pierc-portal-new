@@ -137,22 +137,22 @@ export default function ViewApplicationsPage() {
             return {
                 venue: 'PIERC Office, BBA Building, Ground Floor',
                 guidelines: 'Each team will have 5 minutes for verbal discussion followed by 2 minutes for questions by the jury members.\nNo PPT or presentation is required for this phase.',
-                startTime: '10:00 AM',
-                endTime: '12:00 PM',
+                startTime: '10:00', // Using 24-hour format for input type="time"
+                endTime: '12:00',
             };
         case 'PHASE_2':
             return {
                 venue: 'PIERC Presentation Hall (To be confirmed by Admin)',
                 guidelines: 'Please prepare a presentation (PPT recommended).\nEach team will have approximately [X] minutes for presentation and [Y] minutes for Q&A.\nFurther details will be confirmed by PIERC Admin.',
-                startTime: '10:00 AM',
-                endTime: '01:00 PM',
+                startTime: '10:00',
+                endTime: '13:00',
             };
         case 'COHORT':
             return {
                 venue: 'PIERC Training Room (To be confirmed by Admin)',
                 guidelines: 'Welcome to the PIERC Incubation Cohort!\nThe induction session will cover the program structure and next steps.\nPlease bring your laptops.',
-                startTime: '02:00 PM',
-                endTime: '04:00 PM',
+                startTime: '14:00',
+                endTime: '16:00',
             };
         default:
             return {};
@@ -188,30 +188,24 @@ export default function ViewApplicationsPage() {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
     
-    // If status is SELECTED and a specific phase is chosen, open phase details dialog
     if (newStatus === 'SELECTED' && actualNewPhase) {
         openPhaseDetailsDialog(idea, actualNewPhase);
-        // The actual update to Firestore will happen when the phase details dialog is submitted
-        // For now, we only update the local state optimistically for the dropdowns
         setApplications(prevApps => prevApps.map(app => 
             app.id === idea.id ? {...app, status: newStatus, programPhase: actualNewPhase } : app
         ));
         return; 
     }
     
-    // If status is NOT_SELECTED, open rejection dialog
     if (newStatus === 'NOT_SELECTED') {
         setCurrentIdeaForRejection(idea);
         setRejectionRemarksInput(idea.rejectionRemarks || '');
         setIsRejectionDialogVisible(true);
-        // Optimistically update local state for status dropdown
          setApplications(prevApps => prevApps.map(app => 
             app.id === idea.id ? {...app, status: newStatus, programPhase: null } : app
         ));
         return;
     }
 
-    // For other cases (e.g., moving to UNDER_REVIEW, or clearing phase by selecting "Not Assigned")
     try {
       await updateIdeaStatusAndPhase(idea.id!, newStatus, actualNewPhase, undefined, userProfile.uid, undefined);
       toast({ title: "Update Successful", description: `Application updated.` });
@@ -219,7 +213,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
       console.error("Error updating status/phase:", error);
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-      fetchApplications(); // Re-fetch to ensure UI consistency on error
+      fetchApplications(); 
     }
   };
   
@@ -233,9 +227,9 @@ export default function ViewApplicationsPage() {
     try {
         await updateIdeaStatusAndPhase(
             currentIdeaForPhaseDetails.id!,
-            'SELECTED', // Status remains SELECTED
+            'SELECTED', 
             currentPhaseForDialog,
-            undefined, // No rejection remarks
+            undefined, 
             userProfile.uid,
             {
                 date: Timestamp.fromDate(phaseDetailsForm.date),
@@ -245,7 +239,7 @@ export default function ViewApplicationsPage() {
                 guidelines: phaseDetailsForm.guidelines,
             }
         );
-        toast({ title: "Phase Details Saved", description: `Meeting details for ${getProgramPhaseLabel(currentPhaseForDialog)} saved. Email to innovator simulated.` });
+        toast({ title: "Phase Details Saved", description: `Meeting details for ${getProgramPhaseLabel(currentPhaseForDialog)} have been saved.` });
         fetchApplications();
         setIsPhaseDetailsDialogVisible(false);
         setCurrentIdeaForPhaseDetails(null);
@@ -267,10 +261,10 @@ export default function ViewApplicationsPage() {
         await updateIdeaStatusAndPhase(
             currentIdeaForRejection.id!, 
             'NOT_SELECTED', 
-            null, // Phase is cleared on rejection
+            null, 
             rejectionRemarksInput,
             userProfile.uid,
-            undefined // No phase meeting details for rejection
+            undefined 
         );
         toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
         fetchApplications(); 
@@ -280,7 +274,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
         console.error("Error submitting rejection:", error);
         toast({ title: "Rejection Error", description: "Could not submit rejection.", variant: "destructive" });
-        fetchApplications(); // Re-fetch on error
+        fetchApplications(); 
     }
   };
 
@@ -887,7 +881,7 @@ export default function ViewApplicationsPage() {
                 setIsPhaseDetailsDialogVisible(false);
                 setCurrentIdeaForPhaseDetails(null);
                 setCurrentPhaseForDialog(null);
-                fetchApplications(); // Re-fetch to revert optimistic UI for dropdowns if dialog is cancelled
+                fetchApplications(); 
             } else {
                 setIsPhaseDetailsDialogVisible(isOpen);
             }
@@ -975,7 +969,7 @@ export default function ViewApplicationsPage() {
                         setCurrentPhaseForDialog(null);
                         fetchApplications();
                     }}>Cancel</Button>
-                    <Button onClick={handleSubmitPhaseDetails}>Save Details & Notify (Simulated)</Button>
+                    <Button onClick={handleSubmitPhaseDetails}>Save Details</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
