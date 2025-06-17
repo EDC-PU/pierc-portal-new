@@ -5,15 +5,15 @@ import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2 } from 'lucide-react';
+import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2, FileText } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getTotalUsersCount, getTotalIdeasCount, getPendingIdeasCount } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 
 interface DashboardStats {
   totalUsers: number | null;
-  activeProjects: number | null;
-  pendingProjects: number | null;
+  activeProjects: number | null; // Representing total ideas
+  pendingProjects: number | null; // Representing ideas with 'SUBMITTED' status
 }
 
 export default function AdminDashboard() {
@@ -38,7 +38,7 @@ export default function AdminDashboard() {
         ]);
         setStats({
           totalUsers: usersCount,
-          activeProjects: ideasCount, // Representing total ideas as active projects for now
+          activeProjects: ideasCount, 
           pendingProjects: pendingIdeas,
         });
       } catch (error) {
@@ -48,7 +48,7 @@ export default function AdminDashboard() {
           description: "Could not load dashboard statistics.",
           variant: "destructive",
         });
-        setStats({ totalUsers: 0, activeProjects: 0, pendingProjects: 0 }); // Set to 0 on error
+        setStats({ totalUsers: 0, activeProjects: 0, pendingProjects: 0 }); 
       } finally {
         setLoadingStats(false);
       }
@@ -115,7 +115,6 @@ export default function AdminDashboard() {
             <Megaphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {/* Placeholder, real count would need another fetch or stream */}
             <div className="text-2xl font-bold">Manage</div> 
              <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/manage-announcements')}>Access</Button>
           </CardContent>
@@ -148,7 +147,9 @@ export default function AdminDashboard() {
               <UserCog className="mr-2 h-4 w-4" /> Manage Users & Permissions
             </Button>
           )}
-          <Button variant="outline" disabled>View Incubation Applications (Coming Soon)</Button>
+          <Button variant="outline" onClick={() => router.push('/dashboard/admin/view-applications')}>
+            <FileText className="mr-2 h-4 w-4" /> View Incubation Applications
+          </Button>
           <Button variant="outline" disabled>Platform Analytics (Coming Soon)</Button>
         </CardContent>
       </Card>

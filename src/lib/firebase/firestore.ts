@@ -1,7 +1,7 @@
 
 import { db } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus } from '@/types';
 
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
@@ -48,10 +48,9 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const profile = docSnap.data() as UserProfile;
-    // Ensure super admin status for the specific email, even if not explicitly set during initial creation elsewhere
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true; 
-        if (profile.role !== 'ADMIN_FACULTY') { // Also ensure role is ADMIN_FACULTY
+        if (profile.role !== 'ADMIN_FACULTY') { 
             profile.role = 'ADMIN_FACULTY';
         }
     }
@@ -71,7 +70,7 @@ export const updateUserProfile = async (userId: string, data: Partial<UserProfil
 
 export const getAllUsers = async (): Promise<UserProfile[]> => {
   const usersCol = collection(db, 'users');
-  const q = query(usersCol, orderBy('createdAt', 'desc')); // Order by creation date or another relevant field
+  const q = query(usersCol, orderBy('createdAt', 'desc')); 
   const querySnapshot = await getDocs(q);
   const users: UserProfile[] = [];
   querySnapshot.forEach((doc) => {
@@ -87,8 +86,6 @@ export const getTotalUsersCount = async (): Promise<number> => {
 };
 
 
-// IMPORTANT: This function performs client-side updates.
-// For production, this logic should be moved to a Firebase Cloud Function for security.
 export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Role, newIsSuperAdmin?: boolean): Promise<void> => {
   const userProfileRef = doc(db, 'users', userId);
   const updates: Partial<UserProfile> = {
@@ -98,7 +95,6 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   if (newIsSuperAdmin !== undefined) {
     updates.isSuperAdmin = newIsSuperAdmin;
   }
-  // Ensure pranavrathi07@gmail.com cannot be demoted from super admin or have role changed from ADMIN_FACULTY client-side
   const userDoc = await getDoc(userProfileRef);
   if (userDoc.exists() && userDoc.data().email === 'pranavrathi07@gmail.com') {
     updates.role = 'ADMIN_FACULTY';
@@ -197,15 +193,52 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
-    status: 'SUBMITTED', // Default status
+    status: 'SUBMITTED', 
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  } as const; // Ensure status is treated as a literal type
+  } as const; 
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
 };
+
+export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission[]> => {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, orderBy('submittedAt', 'desc'));
+  const querySnapshot = await getDocs(q);
+  const ideaSubmissions: IdeaSubmission[] = [];
+
+  for (const ideaDoc of querySnapshot.docs) {
+    const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
+    let applicantDisplayName = 'N/A';
+    let applicantEmail = 'N/A';
+
+    if (ideaData.userId) {
+      const userProfile = await getUserProfile(ideaData.userId);
+      if (userProfile) {
+        applicantDisplayName = userProfile.displayName || userProfile.fullName || 'Unknown User';
+        applicantEmail = userProfile.email || 'No Email';
+      }
+    }
+    ideaSubmissions.push({ 
+      id: ideaDoc.id, 
+      ...ideaData,
+      applicantDisplayName,
+      applicantEmail,
+    } as IdeaSubmission);
+  }
+  return ideaSubmissions;
+};
+
+export const updateIdeaStatus = async (ideaId: string, newStatus: IdeaStatus): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  await updateDoc(ideaRef, {
+    status: newStatus,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 
 export const getTotalIdeasCount = async (): Promise<number> => {
   const ideasCol = collection(db, 'ideas');
@@ -239,9 +272,7 @@ export const deleteUserAndProfile = async (userId: string): Promise<void> => {
   const userProfileRef = doc(db, 'users', userId);
   batch.delete(userProfileRef);
   
-  // Future: Add deletion of user's ideas, etc., to the batch
   await batch.commit();
-  // Note: Deleting the Firebase Auth user is a separate operation, typically done server-side.
 };
 
 // System Settings Functions

@@ -33,6 +33,8 @@ export interface UserProfile {
   isSuperAdmin?: boolean;
 }
 
+export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
+
 export interface IdeaSubmission {
   id?: string;
   userId: string;
@@ -45,10 +47,13 @@ export interface IdeaSubmission {
   fileName?: string;
   studioLocation?: 'SURAT' | 'RAJKOT' | 'BARODA' | 'AHMEDABAD'; 
   applicantType?: ApplicantCategory;
-  status: 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
+  status: IdeaStatus;
   submittedAt: Timestamp;
   updatedAt: Timestamp;
   cohortId?: string; 
+  // Fields to be populated after fetching user details
+  applicantDisplayName?: string;
+  applicantEmail?: string;
 }
 
 export interface Cohort {
