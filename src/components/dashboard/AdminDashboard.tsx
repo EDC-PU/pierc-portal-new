@@ -4,10 +4,12 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Users, Settings, BarChart3, Megaphone } from 'lucide-react';
+import { Users, Settings, BarChart3, Megaphone, UserCog } from 'lucide-react'; // Added UserCog for Manage Users
+import { useAuth } from '@/contexts/AuthContext'; // Import useAuth
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { userProfile } = useAuth(); // Get userProfile for super admin check
 
   return (
     <div className="space-y-6">
@@ -21,7 +23,7 @@ export default function AdminDashboard() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-4">
         <Card className="hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -74,12 +76,16 @@ export default function AdminDashboard() {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Button variant="outline" onClick={() => router.push('/dashboard/admin/manage-announcements')}>
-            Manage Announcements
+            <Megaphone className="mr-2 h-4 w-4" /> Manage Announcements
           </Button>
            <Button variant="outline" onClick={() => router.push('/dashboard/admin/system-settings')}>
-            System Settings
+            <Settings className="mr-2 h-4 w-4" /> System Settings
           </Button>
-          <Button variant="outline" disabled>Manage Users (Coming Soon)</Button>
+           {userProfile?.isSuperAdmin && (
+            <Button variant="outline" onClick={() => router.push('/dashboard/admin/manage-users')}>
+              <UserCog className="mr-2 h-4 w-4" /> Manage Users & Permissions
+            </Button>
+          )}
           <Button variant="outline" disabled>View Incubation Applications (Coming Soon)</Button>
           <Button variant="outline" disabled>Platform Analytics (Coming Soon)</Button>
         </CardContent>

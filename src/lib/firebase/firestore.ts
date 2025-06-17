@@ -7,43 +7,39 @@ import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, 
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
   
-  // Ensure all required fields for UserProfile are present, using defaults or null where appropriate
   const profileToCreate: UserProfile = {
     uid: userId,
     email: data.email ?? null,
-    displayName: data.displayName || data.fullName || 'User', // Firebase displayName or User-provided fullName
+    displayName: data.displayName || data.fullName || 'User',
     photoURL: data.photoURL ?? null,
-    role: data.role ?? null, // Role is determined and passed in
-    fullName: data.fullName!, // Assert non-null as it's mandatory from form
-    contactNumber: data.contactNumber!, // Assert non-null
-    applicantCategory: data.applicantCategory!, // Assert non-null
-    currentStage: data.currentStage!, // Assert non-null
-    startupTitle: data.startupTitle!, // Assert non-null
-    problemDefinition: data.problemDefinition!, // Assert non-null
-    solutionDescription: data.solutionDescription!, // Assert non-null
-    uniqueness: data.uniqueness!, // Assert non-null
-    teamMembers: data.teamMembers || '', // Default to empty string if not provided
-    enrollmentNumber: data.enrollmentNumber, // Optional
-    college: data.college, // Optional
-    instituteName: data.instituteName, // Optional
+    role: data.role ?? null,
+    fullName: data.fullName!, 
+    contactNumber: data.contactNumber!,
+    applicantCategory: data.applicantCategory!,
+    currentStage: data.currentStage!,
+    startupTitle: data.startupTitle!,
+    problemDefinition: data.problemDefinition!,
+    solutionDescription: data.solutionDescription!,
+    uniqueness: data.uniqueness!,
+    teamMembers: data.teamMembers || '',
+    enrollmentNumber: data.enrollmentNumber,
+    college: data.college,
+    instituteName: data.instituteName,
     isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
-    createdAt: serverTimestamp() as Timestamp, // Firestore server timestamp
-    updatedAt: serverTimestamp() as Timestamp, // Firestore server timestamp
+    createdAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
   };
 
-  // Remove undefined properties before sending to Firestore
   const cleanProfileToCreate = Object.fromEntries(
     Object.entries(profileToCreate).filter(([, value]) => value !== undefined)
   );
 
   await setDoc(userProfileRef, cleanProfileToCreate);
   
-  // Fetch the just-created profile to return the complete object with server timestamps
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     return docSnap.data() as UserProfile;
   }
-  // This should ideally not be reached if setDoc was successful
   throw new Error("Failed to create or retrieve user profile after creation.");
 };
 
@@ -52,8 +48,12 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const profile = docSnap.data() as UserProfile;
+    // Ensure super admin status for the specific email, even if not explicitly set during initial creation elsewhere
     if (profile.email === 'pranavrathi07@gmail.com') {
-        profile.isSuperAdmin = true; // Ensure super admin status for the specific email
+        profile.isSuperAdmin = true; 
+        if (profile.role !== 'ADMIN_FACULTY') { // Also ensure role is ADMIN_FACULTY
+            profile.role = 'ADMIN_FACULTY';
+        }
     }
     return profile;
   }
@@ -62,13 +62,45 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 
 export const updateUserProfile = async (userId: string, data: Partial<UserProfile>): Promise<void> => {
   const userProfileRef = doc(db, 'users', userId);
-  // Remove undefined properties before sending to Firestore
   const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
   await updateDoc(userProfileRef, {
     ...cleanData,
     updatedAt: serverTimestamp(),
   });
 };
+
+export const getAllUsers = async (): Promise<UserProfile[]> => {
+  const usersCol = collection(db, 'users');
+  const q = query(usersCol, orderBy('createdAt', 'desc')); // Order by creation date or another relevant field
+  const querySnapshot = await getDocs(q);
+  const users: UserProfile[] = [];
+  querySnapshot.forEach((doc) => {
+    users.push({ uid: doc.id, ...doc.data() } as UserProfile);
+  });
+  return users;
+};
+
+// IMPORTANT: This function performs client-side updates.
+// For production, this logic should be moved to a Firebase Cloud Function for security.
+export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Role, newIsSuperAdmin?: boolean): Promise<void> => {
+  const userProfileRef = doc(db, 'users', userId);
+  const updates: Partial<UserProfile> = {
+    role: newRole,
+    updatedAt: serverTimestamp(),
+  };
+  if (newIsSuperAdmin !== undefined) {
+    updates.isSuperAdmin = newIsSuperAdmin;
+  }
+  // Ensure pranavrathi07@gmail.com cannot be demoted from super admin or have role changed from ADMIN_FACULTY client-side
+  const userDoc = await getDoc(userProfileRef);
+  if (userDoc.exists() && userDoc.data().email === 'pranavrathi07@gmail.com') {
+    updates.role = 'ADMIN_FACULTY';
+    updates.isSuperAdmin = true;
+  }
+
+  await updateDoc(userProfileRef, updates);
+};
+
 
 // Announcement Functions
 export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>): Promise<Announcement> => {
@@ -192,7 +224,7 @@ export const deleteUserAndProfile = async (userId: string): Promise<void> => {
 };
 
 // System Settings Functions
-const SYSTEM_SETTINGS_DOC_ID = 'config'; // Use a fixed ID for the single settings document
+const SYSTEM_SETTINGS_DOC_ID = 'config'; 
 
 export const getSystemSettings = async (): Promise<SystemSettings | null> => {
   const settingsRef = doc(db, 'systemSettings', SYSTEM_SETTINGS_DOC_ID);
@@ -200,7 +232,6 @@ export const getSystemSettings = async (): Promise<SystemSettings | null> => {
   if (docSnap.exists()) {
     return { id: docSnap.id, ...docSnap.data() } as SystemSettings;
   }
-  // Return null or default settings if the document doesn't exist
   return null; 
 };
 
@@ -211,7 +242,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
       ...settingsData,
       updatedAt: serverTimestamp(),
       updatedByUid: adminUid,
-    }, { merge: true }); // Use setDoc with merge:true to create if not exists, or update
+    }, { merge: true }); 
   } catch (error) {
     console.error("Error updating system settings:", error);
     throw error;

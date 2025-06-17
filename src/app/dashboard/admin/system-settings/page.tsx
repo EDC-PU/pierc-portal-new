@@ -17,9 +17,6 @@ export default function SystemSettingsPage() {
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
       if (!userProfile) {
-        // This case should ideally be handled by DashboardLayout redirecting to /login
-        // or AuthContext redirecting to /profile-setup if user exists but no profile.
-        // For robustness, redirect if somehow userProfile is null here.
         router.push('/login');
         return;
       }
@@ -34,9 +31,7 @@ export default function SystemSettingsPage() {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
 
-  // Fallback check if useEffect hasn't redirected yet or userProfile became null
   if (!userProfile || userProfile.role !== 'ADMIN_FACULTY') {
-    // This message is shown briefly if redirection is in progress or if access is denied.
     return <div className="flex justify-center items-center h-screen"><p>Verifying access or redirecting...</p></div>;
   }
 

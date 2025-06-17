@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LogIn, LogOut, User as UserIcon, LayoutDashboard, AnnoyedIcon, Rss, Settings, FileText, Briefcase, ShieldCheck } from 'lucide-react'; // AnnoyedIcon for PIERC logo placeholder
+import { LogIn, LogOut, User as UserIcon, LayoutDashboard, Rss, Settings, FileText, Briefcase, ShieldCheck, UserCog, Megaphone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '../ui/skeleton';
 
@@ -25,7 +25,6 @@ export function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link href="/" className="flex items-center space-x-2 text-primary hover:opacity-80 transition-opacity">
-              {/* Placeholder for PIERC logo - Using an icon for now */}
               <Briefcase className="h-8 w-8" /> 
               <h1 className="text-2xl font-headline font-bold">PIERC Portal</h1>
             </Link>
@@ -63,7 +62,7 @@ export function Navbar() {
                     <div className="flex flex-col space-y-1">
                       <p className="text-sm font-medium leading-none">{userProfile?.displayName || user.displayName}</p>
                       <p className="text-xs leading-none text-muted-foreground">{userProfile?.email || user.email}</p>
-                      {userProfile?.role && <p className="text-xs leading-none text-muted-foreground capitalize">{userProfile.role.replace('_', ' ').toLowerCase()}</p>}
+                      {userProfile?.role && <p className="text-xs leading-none text-muted-foreground capitalize">{userProfile.role.replace('_', ' ').toLowerCase()}{userProfile.isSuperAdmin ? ' (Super Admin)' : ''}</p>}
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
@@ -89,6 +88,11 @@ export function Navbar() {
                       <DropdownMenuItem onClick={() => router.push('/dashboard/admin/system-settings')}>
                           <Settings className="mr-2 h-4 w-4" /> System Settings
                       </DropdownMenuItem>
+                       {userProfile.isSuperAdmin && (
+                        <DropdownMenuItem onClick={() => router.push('/dashboard/admin/manage-users')}>
+                            <UserCog className="mr-2 h-4 w-4" /> Manage Users
+                        </DropdownMenuItem>
+                      )}
                     </>
                   )}
                   <DropdownMenuSeparator />

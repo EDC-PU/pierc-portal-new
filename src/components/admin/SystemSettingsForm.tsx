@@ -25,18 +25,18 @@ const systemSettingsSchema = z.object({
 export type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 
 interface SystemSettingsFormProps {
-  currentUserProfile: UserProfile; // Assuming this is passed and verified to be an admin
+  currentUserProfile: UserProfile; 
 }
 
 export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormProps) {
   const { toast } = useToast();
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
-  const [isSubmitting, setIsSubmittingState] = useState(false); // Local submitting state
+  const [isSubmitting, setIsSubmittingState] = useState(false); 
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<SystemSettingsFormData>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
-      portalName: 'PIERC Portal', // Default initial value
+      portalName: 'PIERC Portal', 
       maintenanceMode: false,
       allowNewRegistrations: true,
       defaultCohortSize: 15,
@@ -49,11 +49,8 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
       try {
         const settings = await getSettingsFS();
         if (settings) {
-          reset(settings); // Populate form with fetched settings
+          reset(settings); 
         } else {
-          // If no settings document exists, the form will keep its defaultValues.
-          // Optionally, create a default settings document here if desired.
-          // For now, we'll assume defaults are fine if nothing is in Firestore.
           toast({ title: "Default Settings Loaded", description: "No existing settings found, using defaults. Save to create.", variant: "default"});
         }
       } catch (error) {
@@ -93,8 +90,8 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <Card className="md:col-span-2 shadow-lg">
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-8"> {/* Changed to 1 column for simpler layout */}
+        <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl">Portal Configuration</CardTitle>
             <CardDescription>General settings for the PIERC portal.</CardDescription>
@@ -160,7 +157,7 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
                     id="defaultCohortSize" 
                     type="number" 
                     {...field} 
-                    onChange={e => field.onChange(parseInt(e.target.value,10) || 0)} // Ensure number
+                    onChange={e => field.onChange(parseInt(e.target.value,10) || 0)}
                     value={field.value || ''}
                     disabled={isSubmitting}
                   />
@@ -169,37 +166,13 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
               {errors.defaultCohortSize && <p className="text-sm text-destructive mt-1">{errors.defaultCohortSize.message}</p>}
             </div>
           </CardContent>
+          <CardFooter>
+             <Button type="submit" className="w-full md:w-auto" disabled={isSubmitting || isLoadingSettings}>
+              {isSubmitting ? <LoadingSpinner className="mr-2" /> : null}
+              Save System Settings
+            </Button>
+          </CardFooter>
         </Card>
-
-        <div className="space-y-8">
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="font-headline text-xl">Access Control</CardTitle>
-              <CardDescription>Manage administrator access.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {currentUserProfile.isSuperAdmin ? (
-                <Button type="button" variant="outline" className="w-full" disabled>
-                  Manage Admins (Coming Soon)
-                </Button>
-              ) : (
-                <p className="text-sm text-muted-foreground">Only Super Admins can manage other administrators.</p>
-              )}
-            </CardContent>
-          </Card>
-          
-          <Card className="shadow-lg">
-             <CardHeader>
-                <CardTitle className="font-headline text-xl">Save Changes</CardTitle>
-             </CardHeader>
-            <CardContent>
-                <Button type="submit" className="w-full" disabled={isSubmitting || isLoadingSettings}>
-                {isSubmitting ? <LoadingSpinner className="mr-2" /> : null}
-                Save System Settings
-                </Button>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </form>
   );
