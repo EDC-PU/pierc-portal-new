@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getAllUsers, updateUserRoleAndPermissionsFS, deleteUserAndProfileFS } from '@/lib/firebase/firestore';
+import { getAllUsers, updateUserRoleAndPermissionsFS, deleteUserAccountAndProfile } from '@/lib/firebase/firestore';
 import type { UserProfile, Role } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -22,7 +22,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger as it's used with asChild
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export default function ManageUsersPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -38,8 +39,6 @@ export default function ManageUsersPage() {
 
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
-      // Allow ADMIN_FACULTY to access this page, not just super admins, for deletion.
-      // Super admin specific actions (promote/demote super) will be conditionally rendered.
       if (!userProfile || userProfile.role !== 'ADMIN_FACULTY') {
         toast({ title: "Access Denied", description: "You are not authorized to view this page.", variant: "destructive" });
         router.push('/dashboard');
@@ -75,19 +74,18 @@ export default function ManageUsersPage() {
   const handleUserAction = async () => {
     if (!actionUser || !dialogAction) return;
 
-    setIsConfirmDialogOpen(false); // Close dialog before async action
+    setIsConfirmDialogOpen(false); 
 
     if (dialogAction === 'deleteUser') {
         try {
-            await deleteUserAndProfileFS(actionUser.uid);
-            toast({ title: "User Profile Deleted", description: `Profile for ${actionUser.displayName || actionUser.email} has been deleted.` });
-            fetchUsers(); // Refresh the list
+            await deleteUserAccountAndProfile(actionUser.uid);
+            toast({ title: "User Account and Profile Deleted", description: `All data for ${actionUser.displayName || actionUser.email} has been removed.` });
+            fetchUsers(); 
         } catch (error: any) {
-            console.error("Error deleting user profile:", error);
-            toast({ title: "Delete Error", description: error.message || "Could not delete user profile.", variant: "destructive" });
+            console.error("Error deleting user account and profile:", error);
+            toast({ title: "Delete Error", description: error.message || "Could not complete user deletion.", variant: "destructive" });
         }
     } else {
-        // Handle role changes
         let newRole: Role = actionUser.role;
         let newIsSuperAdmin: boolean | undefined = actionUser.isSuperAdmin;
 
@@ -140,7 +138,7 @@ export default function ManageUsersPage() {
         case 'demoteAdmin': return `Demote ${userName} from Administrator? Their role will revert and they will lose admin access. If they were a Super Admin, this status will also be removed.`;
         case 'promoteSuper': return `Promote ${userName} to Super Admin? They must already be an Admin. They will gain full system control.`;
         case 'demoteSuper': return `Demote ${userName} from Super Admin? Their role will remain Administrator, but they will lose super admin privileges.`;
-        case 'deleteUser': return `Delete user profile for ${userName}? This action removes their data from the system but does NOT delete their login account. This cannot be undone.`;
+        case 'deleteUser': return `Delete user account and profile for ${userName}? This action permanently removes their login account and all associated data from the system. This cannot be undone.`;
         default: return "Are you sure you want to proceed with this action?";
     }
   }
@@ -161,7 +159,7 @@ export default function ManageUsersPage() {
           <Users className="h-10 w-10 text-primary mr-3" />
           <div>
             <h1 className="text-3xl font-headline font-bold">Manage Users</h1>
-            <p className="text-muted-foreground">Oversee user roles and permissions across the portal.</p>
+            <p className="text-muted-foreground">Oversee user roles, permissions, and accounts across the portal.</p>
           </div>
         </div>
       </header>
@@ -169,7 +167,7 @@ export default function ManageUsersPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>All Portal Users</CardTitle>
-          <CardDescription>View and manage roles for all registered users. Be cautious with permission changes.</CardDescription>
+          <CardDescription>View and manage roles for all registered users. Be cautious with permission changes and account deletions.</CardDescription>
         </CardHeader>
         <CardContent>
           {users.length === 0 ? (
@@ -194,7 +192,7 @@ export default function ManageUsersPage() {
                         {getRoleBadge(u.role, u.isSuperAdmin)}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
-                        {u.email !== 'pranavrathi07@gmail.com' && userProfile.isSuperAdmin && ( // Super admin actions only for super admins
+                        {u.email !== 'pranavrathi07@gmail.com' && userProfile.isSuperAdmin && ( 
                             <>
                             {u.role !== 'ADMIN_FACULTY' && (
                                 <Button variant="outline" size="sm" onClick={() => openConfirmationDialog(u, 'promoteAdmin')}>Promote to Admin</Button>
@@ -210,10 +208,12 @@ export default function ManageUsersPage() {
                             )}
                             </>
                         )}
-                        {u.email !== 'pranavrathi07@gmail.com' && ( // Delete button available for all admins for non-primary super admin users
-                           <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'deleteUser')} className="ml-2">
-                             <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete
-                           </Button>
+                        {u.email !== 'pranavrathi07@gmail.com' && (
+                           <AlertDialogTrigger asChild>
+                             <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'deleteUser')} className="ml-2">
+                               <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete User
+                             </Button>
+                           </AlertDialogTrigger>
                         )}
                         {u.email === 'pranavrathi07@gmail.com' && <Badge variant="default">Primary Super Admin</Badge>}
                       </TableCell>
@@ -244,4 +244,3 @@ export default function ManageUsersPage() {
     </div>
   );
 }
-

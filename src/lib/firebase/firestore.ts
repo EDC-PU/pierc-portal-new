@@ -1,7 +1,8 @@
 
-import { db } from './config';
+import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus } from '@/types';
+import { httpsCallable } from 'firebase/functions';
 
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
@@ -104,15 +105,52 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   await updateDoc(userProfileRef, updates);
 };
 
-export const deleteUserAndProfileFS = async (userId: string): Promise<void> => {
+export const deleteUserAccountAndProfile = async (userId: string): Promise<void> => {
+  // 1. Delete Firestore Profile
   const userProfileRef = doc(db, 'users', userId);
-  // Important: This only deletes the Firestore document, not the Firebase Auth user.
-  // Deleting Firebase Auth user requires Admin SDK (e.g., in a Cloud Function).
-  const userDoc = await getDoc(userProfileRef);
-  if (userDoc.exists() && userDoc.data().email === 'pranavrathi07@gmail.com') {
-    throw new Error("The primary super admin profile cannot be deleted.");
+  const userDocSnap = await getDoc(userProfileRef);
+
+  if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
+    throw new Error("The primary super admin's profile and account cannot be deleted through this interface.");
   }
   await deleteDoc(userProfileRef);
+
+  // 2. Call a Firebase Function to delete the Auth user
+  // IMPORTANT: You need to create a Firebase Cloud Function named 'deleteAuthUserCallable'
+  // This function will use the Firebase Admin SDK to delete the user.
+  // Example Cloud Function (Node.js):
+  //
+  // const functions = require('firebase-functions');
+  // const admin = require('firebase-admin');
+  // admin.initializeApp();
+  //
+  // exports.deleteAuthUserCallable = functions.https.onCall(async (data, context) => {
+  //   // Check if the requester is an admin (you might have more specific checks)
+  //   if (!context.auth || !context.auth.token.admin) { // or check custom claim
+  //     throw new functions.https.HttpsError('permission-denied', 'Must be an administrative user to initiate delete.');
+  //   }
+  //   const uid = data.uid;
+  //   if (!uid) {
+  //     throw new functions.https.HttpsError('invalid-argument', 'The function must be called with a "uid" argument.');
+  //   }
+  //   try {
+  //     await admin.auth().deleteUser(uid);
+  //     return { message: `Successfully deleted user ${uid}` };
+  //   } catch (error) {
+  //     console.error('Error deleting user:', error);
+  //     throw new functions.https.HttpsError('internal', 'Unable to delete user', error);
+  //   }
+  // });
+  try {
+    const deleteAuthUserFn = httpsCallable(firebaseFunctions, 'deleteAuthUserCallable');
+    await deleteAuthUserFn({ uid: userId });
+    // If successful, the auth user is deleted.
+  } catch (error) {
+    console.error("Error calling Firebase Function to delete auth user:", error);
+    // The Firestore profile was already deleted.
+    // You might want to log this or inform the admin that the auth account might still exist.
+    throw new Error(`Firestore profile deleted, but an error occurred attempting to delete the Firebase Auth account: ${(error as Error).message}. Please check the Cloud Function logs.`);
+  }
 };
 
 
@@ -220,8 +258,9 @@ export const createIdeaFromProfile = async (
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
     status: 'SUBMITTED',
-    submittedAt: serverTimestamp() as Timestamp,
-    updatedAt: serverTimestamp() as Timestamp,
+    // submittedAt and updatedAt will be handled by serverTimestamp
+    submittedAt: serverTimestamp() as Timestamp, // Placeholder, will be replaced by server
+    updatedAt: serverTimestamp() as Timestamp,   // Placeholder, will be replaced by server
   };
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
@@ -248,9 +287,14 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
         applicantEmail = userProfile.email || 'No Email';
       }
     }
+    const submittedAt = (ideaData.submittedAt as any) instanceof Timestamp ? (ideaData.submittedAt as Timestamp) : Timestamp.now();
+    const updatedAt = (ideaData.updatedAt as any) instanceof Timestamp ? (ideaData.updatedAt as Timestamp) : Timestamp.now();
+
     ideaSubmissions.push({ 
       id: ideaDoc.id, 
       ...ideaData,
+      submittedAt,
+      updatedAt,
       applicantDisplayName,
       applicantEmail,
     } as IdeaSubmission);
@@ -272,7 +316,10 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
   const querySnapshot = await getDocs(q);
   const userIdeas: IdeaSubmission[] = [];
   querySnapshot.forEach((doc) => {
-    userIdeas.push({ id: doc.id, ...doc.data() } as IdeaSubmission);
+    const data = doc.data();
+     const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
+    const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
+    userIdeas.push({ id: doc.id, ...data, submittedAt, updatedAt } as IdeaSubmission);
   });
   return userIdeas;
 };
@@ -354,4 +401,3 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
   return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
 };
-

@@ -1,6 +1,7 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
+import { initializeApp, getApps, getApp, type FirebaseApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getFunctions } from 'firebase/functions';
 // import { getAnalytics } from "firebase/analytics";
 
 // Your web app's Firebase configuration
@@ -14,9 +15,10 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+const app: FirebaseApp = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app); // Initialize Firebase Functions
 // const analytics = getAnalytics(app);
 
-export { app, auth, db };
+export { app, auth, db, functions }; // Export functions
