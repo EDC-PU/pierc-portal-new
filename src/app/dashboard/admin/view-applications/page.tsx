@@ -4,8 +4,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getAllIdeaSubmissionsWithDetails, updateIdeaStatus, deleteIdeaSubmission as deleteIdeaSubmissionFS } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus } from '@/types';
+import { getAllIdeaSubmissionsWithDetails, updateIdeaStatusAndPhase, deleteIdeaSubmission as deleteIdeaSubmissionFS } from '@/lib/firebase/firestore';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -25,10 +25,23 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2 } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight } from 'lucide-react';
 import { format, formatISO } from 'date-fns';
+import type { Timestamp } from 'firebase/firestore';
+
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
+const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
+
+const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
+  if (!phase) return 'N/A';
+  switch (phase) {
+    case 'PHASE_1': return 'Phase 1';
+    case 'PHASE_2': return 'Phase 2';
+    case 'COHORT': return 'Cohort';
+    default: return 'N/A';
+  }
+};
 
 export default function ViewApplicationsPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -69,30 +82,40 @@ export default function ViewApplicationsPage() {
     }
   };
 
-  const handleStatusChange = async (ideaId: string, newStatus: IdeaStatus) => {
+  const handleStatusOrPhaseChange = async (
+    ideaId: string,
+    newStatus: IdeaStatus,
+    newPhase: ProgramPhase | null = null // Default to null if only status changes
+  ) => {
     try {
-      await updateIdeaStatus(ideaId, newStatus);
+      await updateIdeaStatusAndPhase(ideaId, newStatus, newPhase);
+      // Optimistically update local state or re-fetch
       setApplications(prevApps =>
-        prevApps.map(app => app.id === ideaId ? { ...app, status: newStatus, updatedAt: new Date() } : app)
+        prevApps.map(app => 
+          app.id === ideaId 
+            ? { ...app, status: newStatus, programPhase: newStatus === 'SELECTED' ? newPhase : null, updatedAt: new Date() } 
+            : app
+        )
       );
-      toast({ title: "Status Updated", description: `Application status changed to ${newStatus.replace('_', ' ')}.` });
+      toast({ title: "Update Successful", description: `Application updated.` });
     } catch (error) {
-      console.error("Error updating status:", error);
-      toast({ title: "Update Error", description: "Could not update application status.", variant: "destructive" });
-      fetchApplications(); 
+      console.error("Error updating status/phase:", error);
+      toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
+      fetchApplications(); // Re-fetch on error to ensure data consistency
     }
   };
+
 
   const handleDeleteIdea = async (ideaId: string) => {
     try {
       await deleteIdeaSubmissionFS(ideaId);
       toast({ title: "Idea Deleted", description: "The idea submission has been successfully deleted." });
-      fetchApplications(); // Refresh the list
+      fetchApplications(); 
     } catch (error) {
       console.error("Error deleting idea:", error);
       toast({ title: "Delete Error", description: "Could not delete the idea submission.", variant: "destructive" });
     }
-    setApplicationToDelete(null); // Close confirmation dialog
+    setApplicationToDelete(null); 
   };
 
   const getStatusBadgeVariant = (status: IdeaStatus) => {
@@ -113,18 +136,28 @@ export default function ViewApplicationsPage() {
   
   const formatDate = (dateValue: Date | Timestamp | undefined | null): string => {
     if (!dateValue) return 'N/A';
-    if (typeof (dateValue as any).toDate === 'function') { // Firestore Timestamp
-      return format((dateValue as Timestamp).toDate(), 'MMM d, yyyy, HH:mm');
+    let dateToFormat: Date;
+    if (typeof (dateValue as Timestamp)?.toDate === 'function') {
+      dateToFormat = (dateValue as Timestamp).toDate();
+    } else if (dateValue instanceof Date) {
+      dateToFormat = dateValue;
+    } else {
+      return 'Invalid Date';
     }
-    return format(dateValue as Date, 'MMM d, yyyy, HH:mm'); // JavaScript Date
+    return format(dateToFormat, 'MMM d, yyyy, HH:mm');
   };
   
   const formatDateISO = (dateValue: Date | Timestamp | undefined | null): string => {
     if (!dateValue) return 'N/A';
-    if (typeof (dateValue as any).toDate === 'function') { // Firestore Timestamp
-      return formatISO((dateValue as Timestamp).toDate());
+    let dateToFormat: Date;
+    if (typeof (dateValue as Timestamp)?.toDate === 'function') {
+      dateToFormat = (dateValue as Timestamp).toDate();
+    } else if (dateValue instanceof Date) {
+      dateToFormat = dateValue;
+    } else {
+      return 'Invalid Date';
     }
-    return formatISO(dateValue as Date); // JavaScript Date
+    return formatISO(dateToFormat);
   };
 
 
@@ -148,7 +181,7 @@ export default function ViewApplicationsPage() {
     const headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Submitted At', 'Last Updated At', 'Attachment URL', 'Attachment Name', 'Studio Location'
+      'Status', 'Program Phase', 'Submitted At', 'Last Updated At', 'Attachment URL', 'Attachment Name', 'Studio Location'
     ];
 
     const csvRows = [headers.join(',')];
@@ -165,6 +198,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.solution),
         escapeCsvField(app.uniqueness),
         escapeCsvField(app.status.replace(/_/g, ' ')),
+        escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
         escapeCsvField(formatDateISO(app.submittedAt)),
         escapeCsvField(formatDateISO(app.updatedAt)),
         escapeCsvField(app.fileURL),
@@ -219,7 +253,7 @@ export default function ViewApplicationsPage() {
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle>All Submitted Applications</CardTitle>
-          <CardDescription>Overview of applications received for the incubation program. Click "View Details" for more.</CardDescription>
+          <CardDescription>Overview of applications. If status is 'Selected', assign a Program Phase.</CardDescription>
         </CardHeader>
         <CardContent>
           {applications.length === 0 ? (
@@ -231,9 +265,9 @@ export default function ViewApplicationsPage() {
                   <TableRow>
                     <TableHead className="min-w-[150px] md:min-w-[200px]">Idea Title</TableHead>
                     <TableHead className="hidden md:table-cell">Applicant Name</TableHead>
-                    <TableHead className="hidden lg:table-cell">Applicant Email</TableHead>
-                    <TableHead className="hidden sm:table-cell">Submitted</TableHead>
-                    <TableHead className="min-w-[200px]">Status</TableHead>
+                    <TableHead className="hidden lg:table-cell">Submitted</TableHead>
+                    <TableHead className="min-w-[180px]">Status</TableHead>
+                    <TableHead className="min-w-[200px]">Program Phase</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -244,15 +278,14 @@ export default function ViewApplicationsPage() {
                         {app.title}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{app.applicantEmail}</TableCell>
-                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                      <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                         {formatDate(app.submittedAt)}
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Select
-                            defaultValue={app.status}
-                            onValueChange={(value) => handleStatusChange(app.id!, value as IdeaStatus)}
+                            value={app.status}
+                            onValueChange={(value) => handleStatusOrPhaseChange(app.id!, value as IdeaStatus, app.programPhase)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Set status" />
@@ -265,10 +298,32 @@ export default function ViewApplicationsPage() {
                               ))}
                             </SelectContent>
                           </Select>
-                          <Badge variant={getStatusBadgeVariant(app.status)} className="capitalize hidden xl:inline-flex text-xs">
+                           <Badge variant={getStatusBadgeVariant(app.status)} className="capitalize hidden xl:inline-flex text-xs">
                             {app.status.replace(/_/g, ' ').toLowerCase()}
                           </Badge>
                         </div>
+                      </TableCell>
+                       <TableCell>
+                        {app.status === 'SELECTED' ? (
+                          <Select
+                            value={app.programPhase || ''} // Ensure value is not null for Select
+                            onValueChange={(value) => handleStatusOrPhaseChange(app.id!, 'SELECTED', value as ProgramPhase)}
+                          >
+                            <SelectTrigger className="w-[150px] h-9 text-xs">
+                              <SelectValue placeholder="Assign Phase" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="" className="text-xs italic">Not Assigned</SelectItem>
+                              {programPhases.map(phaseVal => (
+                                <SelectItem key={phaseVal} value={phaseVal} className="text-xs">
+                                  {getProgramPhaseLabel(phaseVal)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground italic">N/A (Status not 'Selected')</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
                         <Button variant="outline" size="sm" onClick={() => openDetailModal(app)}>
@@ -330,6 +385,12 @@ export default function ViewApplicationsPage() {
                       {selectedApplication.status.replace(/_/g, ' ').toLowerCase()}
                   </Badge>
                 </div>
+                {selectedApplication.status === 'SELECTED' && (
+                    <div>
+                        <h4 className="font-semibold text-muted-foreground">Program Phase</h4>
+                        <p>{getProgramPhaseLabel(selectedApplication.programPhase)}</p>
+                    </div>
+                )}
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Applicant Name</h4>
                   <p>{selectedApplication.applicantDisplayName || 'N/A'}</p>

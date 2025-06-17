@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 
 // User Profile Functions
@@ -113,7 +113,7 @@ export const deleteUserAccountAndProfile = async (userId: string): Promise<void>
     throw new Error("The primary super admin's profile and account cannot be deleted through this interface.");
   }
   
-  await deleteDoc(userProfileRef); // Delete Firestore profile first
+  await deleteDoc(userProfileRef); 
 
   try {
     const deleteAuthUserFn = httpsCallable(firebaseFunctions, 'deleteAuthUserCallable');
@@ -213,7 +213,6 @@ export const createIdeaFromProfile = async (
     userId: string, 
     profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory'>
 ): Promise<IdeaSubmission | null> => {
-  // Skip creating an idea for the admin's placeholder profile
   if (profileData.startupTitle === 'Administrative Account') {
     return null;
   }
@@ -229,9 +228,9 @@ export const createIdeaFromProfile = async (
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
     status: 'SUBMITTED',
-    // submittedAt and updatedAt will be handled by serverTimestamp
-    submittedAt: serverTimestamp() as Timestamp, // Placeholder, will be replaced by server
-    updatedAt: serverTimestamp() as Timestamp,   // Placeholder, will be replaced by server
+    programPhase: null, // Initialize programPhase
+    submittedAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
   };
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
@@ -264,6 +263,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
     ideaSubmissions.push({ 
       id: ideaDoc.id, 
       ...ideaData,
+      programPhase: ideaData.programPhase || null,
       submittedAt,
       updatedAt,
       applicantDisplayName,
@@ -273,12 +273,23 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
   return ideaSubmissions;
 };
 
-export const updateIdeaStatus = async (ideaId: string, newStatus: IdeaStatus): Promise<void> => {
+export const updateIdeaStatusAndPhase = async (
+  ideaId: string, 
+  newStatus: IdeaStatus, 
+  newPhase: ProgramPhase | null = null
+): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
-  await updateDoc(ideaRef, {
+  const updates: Partial<IdeaSubmission> = {
     status: newStatus,
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (newStatus === 'SELECTED') {
+    updates.programPhase = newPhase; // Assign the new phase if status is SELECTED
+  } else {
+    updates.programPhase = null; // Clear the phase if status is not SELECTED
+  }
+  await updateDoc(ideaRef, updates);
 };
 
 export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
@@ -288,9 +299,15 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
   const userIdeas: IdeaSubmission[] = [];
   querySnapshot.forEach((doc) => {
     const data = doc.data();
-     const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
+    const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
-    userIdeas.push({ id: doc.id, ...data, submittedAt, updatedAt } as IdeaSubmission);
+    userIdeas.push({ 
+        id: doc.id, 
+        ...data, 
+        programPhase: data.programPhase || null,
+        submittedAt, 
+        updatedAt 
+    } as IdeaSubmission);
   });
   return userIdeas;
 };
@@ -362,13 +379,12 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-// This function is deprecated / unused after createIdeaFromProfile was introduced.
-// It remains here in case direct idea submission (not from profile) is added later.
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status'>): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase'>): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
-    status: 'SUBMITTED', 
+    status: 'SUBMITTED',
+    programPhase: null, // Initialize programPhase
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const; 

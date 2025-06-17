@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getUserIdeaSubmissionsWithStatus, type IdeaSubmission } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
@@ -12,9 +12,20 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
+import type { ProgramPhase } from '@/types';
+
+const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
+  if (!phase) return ''; // Return empty or some placeholder if not assigned
+  switch (phase) {
+    case 'PHASE_1': return 'Phase 1';
+    case 'PHASE_2': return 'Phase 2';
+    case 'COHORT': return 'Cohort';
+    default: return '';
+  }
+};
 
 export default function StudentDashboard() {
-  const { user } = useAuth(); // userProfile is also available if needed for other things
+  const { user } = useAuth(); 
   const { toast } = useToast();
   const router = useRouter();
   const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
@@ -35,13 +46,13 @@ export default function StudentDashboard() {
           setLoadingIdeas(false);
         }
       } else {
-        setUserIdeas([]); // Clear ideas if no user or uid
+        setUserIdeas([]); 
         setLoadingIdeas(false);
       }
     };
 
     fetchUserIdeas();
-  }, [user?.uid, toast]); // Depend specifically on user.uid for re-fetching
+  }, [user?.uid, toast]); 
   
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
     if (!status) return 'secondary';
@@ -57,10 +68,15 @@ export default function StudentDashboard() {
 
   const formatDate = (timestamp: Timestamp | Date | undefined): string => {
     if (!timestamp) return 'N/A';
-    if ((timestamp as Timestamp).toDate) { // Check if it's a Firestore Timestamp
-      return (timestamp as Timestamp).toDate().toLocaleDateString();
+    let dateToFormat: Date;
+    if ((timestamp as Timestamp).toDate) { 
+      dateToFormat = (timestamp as Timestamp).toDate();
+    } else if (timestamp instanceof Date) {
+      dateToFormat = timestamp;
+    } else {
+        return 'Invalid Date';
     }
-    return (timestamp as Date).toLocaleDateString(); // Assume it's a JS Date
+    return dateToFormat.toLocaleDateString();
   };
 
 
@@ -81,7 +97,7 @@ export default function StudentDashboard() {
             <FileCheck2 className="h-6 w-6 text-primary" />
             <CardTitle className="font-headline text-xl">My Idea Submissions</CardTitle>
           </div>
-          <CardDescription>Track the status of your innovative ideas submitted to PIERC.</CardDescription>
+          <CardDescription>Track the status and phase of your innovative ideas submitted to PIERC.</CardDescription>
         </CardHeader>
         <CardContent>
           {loadingIdeas ? (
@@ -95,16 +111,24 @@ export default function StudentDashboard() {
             <ScrollArea className="h-[200px] pr-3"> 
               <ul className="space-y-3">
                 {userIdeas.map((idea) => (
-                  <li key={idea.id} className="flex justify-between items-center p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
-                    <div>
+                  <li key={idea.id} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
+                    <div className="mb-2 sm:mb-0">
                       <p className="font-semibold text-foreground">{idea.title}</p>
                       <p className="text-xs text-muted-foreground">
                         Submitted: {formatDate(idea.submittedAt)}
                       </p>
                     </div>
-                    <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs">
-                      {idea.status.replace(/_/g, ' ').toLowerCase()}
-                    </Badge>
+                    <div className="flex items-center space-x-2">
+                        <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs">
+                        {idea.status.replace(/_/g, ' ').toLowerCase()}
+                        </Badge>
+                        {idea.status === 'SELECTED' && idea.programPhase && (
+                             <Badge variant="outline" className="capitalize text-xs flex items-center">
+                                <ChevronsRight className="h-3 w-3 mr-1" />
+                                {getProgramPhaseLabel(idea.programPhase)}
+                            </Badge>
+                        )}
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -166,3 +190,4 @@ export default function StudentDashboard() {
     </div>
   );
 }
+

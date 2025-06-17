@@ -34,6 +34,7 @@ export interface UserProfile {
 }
 
 export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
+export type ProgramPhase = 'PHASE_1' | 'PHASE_2' | 'COHORT';
 
 export interface IdeaSubmission {
   id?: string;
@@ -51,6 +52,7 @@ export interface IdeaSubmission {
   studioLocation?: 'SURAT' | 'RAJKOT' | 'BARODA' | 'AHMEDABAD'; 
   
   status: IdeaStatus;
+  programPhase: ProgramPhase | null; // New field for selected ideas
   submittedAt: Timestamp;
   updatedAt: Timestamp;
   cohortId?: string; 
