@@ -23,7 +23,7 @@ export function Navbar() {
   return (
     <nav className="bg-card text-card-foreground shadow-md sticky top-0 z-50">
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-28">
           <div className="flex items-center">
             <Link href="/" className="flex items-center space-x-2 text-primary hover:opacity-80 transition-opacity">
               <Image
@@ -31,7 +31,7 @@ export function Navbar() {
                 alt="PIERC Portal Logo"
                 width={130} // Adjust width as needed based on logo aspect ratio
                 height={32} // Adjust height to fit navbar
-                className="h-8" // Tailwind class to control height, ensure width/height props match aspect ratio
+                className="h-20" // Tailwind class to control height, ensure width/height props match aspect ratio
               />
             </Link>
           </div>

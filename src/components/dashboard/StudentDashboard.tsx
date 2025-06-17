@@ -11,9 +11,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import type { Timestamp } from 'firebase/firestore';
 
 export default function StudentDashboard() {
-  const { user } = useAuth();
+  const { user } = useAuth(); // userProfile is also available if needed for other things
   const { toast } = useToast();
   const router = useRouter();
   const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
@@ -34,24 +35,32 @@ export default function StudentDashboard() {
           setLoadingIdeas(false);
         }
       } else {
-        setUserIdeas([]);
+        setUserIdeas([]); // Clear ideas if no user or uid
         setLoadingIdeas(false);
       }
     };
 
     fetchUserIdeas();
-  }, [user, toast]);
+  }, [user?.uid, toast]); // Depend specifically on user.uid for re-fetching
   
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
     if (!status) return 'secondary';
     switch (status) {
-      case 'SELECTED': return 'default'; // Primary color
+      case 'SELECTED': return 'default'; 
       case 'SUBMITTED': return 'secondary';
       case 'UNDER_REVIEW': return 'outline'; 
       case 'IN_EVALUATION': return 'outline'; 
       case 'NOT_SELECTED': return 'destructive';
       default: return 'secondary';
     }
+  };
+
+  const formatDate = (timestamp: Timestamp | Date | undefined): string => {
+    if (!timestamp) return 'N/A';
+    if ((timestamp as Timestamp).toDate) { // Check if it's a Firestore Timestamp
+      return (timestamp as Timestamp).toDate().toLocaleDateString();
+    }
+    return (timestamp as Date).toLocaleDateString(); // Assume it's a JS Date
   };
 
 
@@ -81,16 +90,16 @@ export default function StudentDashboard() {
               <p className="ml-2 text-muted-foreground">Loading your submissions...</p>
             </div>
           ) : userIdeas.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Complete your profile to submit your first idea!</p>
+            <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
           ) : (
-            <ScrollArea className="h-[200px] pr-3"> {/* Adjust height as needed */}
+            <ScrollArea className="h-[200px] pr-3"> 
               <ul className="space-y-3">
                 {userIdeas.map((idea) => (
                   <li key={idea.id} className="flex justify-between items-center p-3 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors">
                     <div>
                       <p className="font-semibold text-foreground">{idea.title}</p>
                       <p className="text-xs text-muted-foreground">
-                        Submitted: {idea.submittedAt ? new Date(idea.submittedAt.toDate()).toLocaleDateString() : 'N/A'}
+                        Submitted: {formatDate(idea.submittedAt)}
                       </p>
                     </div>
                     <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs">
@@ -103,7 +112,7 @@ export default function StudentDashboard() {
           )}
         </CardContent>
          <CardFooter>
-            <p className="text-xs text-muted-foreground">Your idea submissions are automatically created/updated when you save your profile.</p>
+            <p className="text-xs text-muted-foreground">Your idea submissions are automatically created when you save your profile with startup details.</p>
         </CardFooter>
       </Card>
 

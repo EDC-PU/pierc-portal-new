@@ -114,22 +114,22 @@ export default function ProfileSetupPage() {
     if (isParulEmail) return 'STUDENT';
     return 'EXTERNAL_USER';
   }, [isAdminEmail, isParulEmail]);
-  
+
   const profileSchema = determinedRole === 'STUDENT' ? parulUserSchema : otherUserSchema;
 
-  const { control, handleSubmit, watch, formState: { errors, isSubmitting }, setValue, trigger } = useForm<ProfileFormData>({
+  const { control, handleSubmit, watch, formState: { errors, isSubmitting }, setValue, trigger, reset } = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
     defaultValues: {
-      fullName: user?.displayName || '',
-      role: determinedRole, // Set role based on email
+      fullName: '',
+      role: determinedRole,
       contactNumber: '',
-      applicantCategory: undefined, // User must select
+      applicantCategory: undefined,
       teamMembers: '',
       startupTitle: '',
       problemDefinition: '',
       solutionDescription: '',
       uniqueness: '',
-      currentStage: undefined, // User must select
+      currentStage: undefined,
       enrollmentNumber: '',
       college: '',
       instituteName: '',
@@ -139,42 +139,69 @@ export default function ProfileSetupPage() {
   const selectedApplicantCategory = watch('applicantCategory');
 
   useEffect(() => {
+    // Populate form with existing profile data if userProfile exists
+    if (userProfile) {
+      reset({
+        fullName: userProfile.fullName || user?.displayName || '',
+        role: userProfile.role || determinedRole,
+        contactNumber: userProfile.contactNumber || '',
+        applicantCategory: userProfile.applicantCategory || undefined,
+        teamMembers: userProfile.teamMembers || '',
+        startupTitle: userProfile.startupTitle || '',
+        problemDefinition: userProfile.problemDefinition || '',
+        solutionDescription: userProfile.solutionDescription || '',
+        uniqueness: userProfile.uniqueness || '',
+        currentStage: userProfile.currentStage || undefined,
+        enrollmentNumber: userProfile.enrollmentNumber || '',
+        college: userProfile.college || '',
+        instituteName: userProfile.instituteName || '',
+      });
+    } else if (user) {
+      // For new profiles, pre-fill with Firebase Auth display name if available
+      reset({
+        ...control._formValues, // Keep existing form values if any (e.g. role)
+        fullName: user.displayName || '',
+        role: determinedRole, // Ensure role is set based on email
+      });
+    }
+  }, [userProfile, user, determinedRole, reset, control]);
+
+
+  useEffect(() => {
     if (initialLoadComplete && !user) {
-      router.push('/login');
+      router.push('/login'); // Redirect to login if not authenticated and auth state is fully loaded.
     }
-    if (initialLoadComplete && user && userProfile && determinedRole !== 'ADMIN_FACULTY') { 
-      router.push('/dashboard');
-    }
-  }, [user, userProfile, initialLoadComplete, router, determinedRole]);
-  
+    // DashboardLayout handles redirecting to /profile-setup if user is authenticated but profile is null.
+    // No need for an explicit redirect from here TO /dashboard if profile is complete,
+    // as the user might be intentionally visiting to edit.
+  }, [user, initialLoadComplete, router]);
+
   useEffect(() => {
     // Auto-submit profile for admin if not already done and auth is fully initialized.
     if (initialLoadComplete && user && determinedRole === 'ADMIN_FACULTY' && !userProfile && !isAutoSubmittingAdmin) {
       const autoSubmitAdminProfile = async () => {
         setIsAutoSubmittingAdmin(true);
         toast({ title: "Setting up Admin Account", description: "Please wait..." });
-        
-        // Default data for admin profile that satisfies the schema
+
         const adminDefaults: ProfileFormData = {
           role: 'ADMIN_FACULTY',
           fullName: user?.displayName || 'Admin User',
-          contactNumber: '0000000000', // Placeholder, admin can update later if needed
-          applicantCategory: 'OTHERS', // Admin is categorized as 'OTHERS'
-          instituteName: 'PIERC Administration', // Specific institute for admin
+          contactNumber: '0000000000',
+          applicantCategory: 'OTHERS',
+          instituteName: 'PIERC Administration',
           teamMembers: 'N/A',
           startupTitle: 'Administrative Account',
           problemDefinition: 'This is an administrative account, not applicable for startup details.',
           solutionDescription: 'This is an administrative account, not applicable for startup details.',
           uniqueness: 'This is an administrative account, not applicable for startup details.',
-          currentStage: 'IDEA', // Placeholder, not relevant for admin application
+          currentStage: 'IDEA',
         };
         try {
           await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
-          // AuthContext will handle redirection to dashboard upon successful profile creation.
         } catch (error) {
           console.error("Admin profile auto-setup failed", error);
           toast({ title: "Admin Setup Error", description: "Could not auto-setup admin profile. Please try again or contact support.", variant: "destructive" });
-          setIsAutoSubmittingAdmin(false); 
+          setIsAutoSubmittingAdmin(false);
         }
       };
       autoSubmitAdminProfile();
@@ -183,14 +210,16 @@ export default function ProfileSetupPage() {
 
 
   useEffect(() => {
-    if (user && !control._formValues.fullName && user.displayName) {
-       setValue('fullName', user.displayName);
+    // Ensure role is set based on email, and fullName is pre-filled if not already in form values
+    if (user) {
+      if (!control._formValues.fullName && user.displayName) {
+         setValue('fullName', user.displayName);
+      }
+      setValue('role', determinedRole);
     }
-    setValue('role', determinedRole); // Ensure role is set based on email
   }, [user, control, determinedRole, setValue]);
 
   useEffect(() => {
-    // Trigger validation for conditional fields when applicantCategory changes
     if (selectedApplicantCategory) {
         trigger(['enrollmentNumber', 'college', 'instituteName']);
     }
@@ -202,17 +231,13 @@ export default function ProfileSetupPage() {
       return;
     }
     try {
-      // The 'role' in 'data' should already be correctly set by `determinedRole` and form state.
-      // `setRoleAndCompleteProfile` will use this role.
       await setRoleAndCompleteProfile(data.role as Role, data);
-      // Redirection is handled by AuthContext or useEffect hooks upon profile creation
     } catch (error) {
-      // Error is usually toasted by setRoleAndCompleteProfile or AuthContext methods
       console.error("Profile setup failed on submit", error);
     }
   };
-  
-  if (!initialLoadComplete || (loading && !userProfile) || isAutoSubmittingAdmin) {
+
+  if (!initialLoadComplete || (loading && !isAutoSubmittingAdmin && !userProfile) || (isAutoSubmittingAdmin && !userProfile)) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <LoadingSpinner size={48} />
@@ -221,22 +246,12 @@ export default function ProfileSetupPage() {
     );
   }
 
-  if (!user) {
-    // Should be caught by the first useEffect, but as a fallback:
+  if (!user && initialLoadComplete) {
     return <div className="flex items-center justify-center min-h-screen"><p>Redirecting to login...</p><LoadingSpinner size={32}/></div>;
   }
 
-  // If admin role was determined, profile auto-setup was attempted.
-  // If profile now exists, AuthContext or other useEffects will redirect to dashboard.
-  // If profile *still* doesn't exist (e.g. auto-submit failed and isAutoSubmittingAdmin is false),
-  // then we might fall through. This state should ideally not be reached if auto-submit error handling is robust.
-  // However, if it *is* reached, we don't want to show the form to an admin.
   if (determinedRole === 'ADMIN_FACULTY') {
-     // If profile exists, router.push happens from other effects.
-     // If it doesn't exist and auto-submit failed, show a message or allow retry.
-     // For now, assume redirection or the loading spinner for auto-submit covers this.
-     // If `isAutoSubmittingAdmin` is false but `userProfile` is still null for an admin, it means an error occurred.
-     if (!userProfile && !isAutoSubmittingAdmin) {
+     if (!userProfile && !isAutoSubmittingAdmin) { // Admin setup failed
         return (
              <div className="flex flex-col items-center justify-center min-h-screen">
                 <p className="text-destructive mb-4">Administrator account setup encountered an issue.</p>
@@ -246,16 +261,18 @@ export default function ProfileSetupPage() {
             </div>
         );
      }
-     // If userProfile exists for admin, redirection to dashboard is handled by other useEffects.
-     // This return is a safety net during the brief period before redirection.
-     return (
-        <div className="flex items-center justify-center min-h-screen">
-            <p>Redirecting to dashboard...</p>
-            <LoadingSpinner size={32} />
-        </div>
-     );
+     // If admin profile exists or is being auto-submitted, AuthContext or other effects will redirect to dashboard.
+     // This return is a safety net during the brief period before redirection or while auto-submitting.
+     if (userProfile || isAutoSubmittingAdmin) {
+        return (
+            <div className="flex items-center justify-center min-h-screen">
+                <p>Redirecting to dashboard or completing setup...</p>
+                <LoadingSpinner size={32} />
+            </div>
+        );
+     }
   }
-  
+
   const getRoleDisplayString = (role: Role) => {
     if (role === 'ADMIN_FACULTY') return 'Administrator / Faculty';
     if (role === 'STUDENT') return 'Student (Parul University)';
@@ -267,8 +284,12 @@ export default function ProfileSetupPage() {
     <div className="flex items-center justify-center min-h-[calc(100vh-10rem)] py-12 animate-fade-in">
       <Card className="w-full max-w-2xl shadow-2xl">
         <CardHeader>
-          <CardTitle className="text-3xl font-headline">Complete Your PIERC Portal Profile</CardTitle>
-          <CardDescription>Welcome, {user?.displayName || 'User'}! Please provide these details to get started.</CardDescription>
+          <CardTitle className="text-3xl font-headline">
+            {userProfile ? 'Edit Your PIERC Portal Profile' : 'Complete Your PIERC Portal Profile'}
+          </CardTitle>
+          <CardDescription>
+            {userProfile ? 'Update your details as needed.' : `Welcome, ${user?.displayName || 'User'}! Please provide these details to get started.`}
+          </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
           <CardContent className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
@@ -295,7 +316,7 @@ export default function ProfileSetupPage() {
                 name="applicantCategory"
                 control={control}
                 render={({ field }) => (
-                  <RadioGroup onValueChange={field.onChange} defaultValue={field.value as ApplicantCategory | undefined} className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+                  <RadioGroup onValueChange={field.onChange} value={field.value as ApplicantCategory | undefined} className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
                     {applicantCategories.map(({value, label}) => (
                        <Label key={value} htmlFor={value} className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm">
                         <RadioGroupItem value={value} id={value} className="sr-only" /> {label}
@@ -366,7 +387,7 @@ export default function ProfileSetupPage() {
                 name="currentStage"
                 control={control}
                 render={({ field }) => (
-                  <RadioGroup onValueChange={field.onChange} defaultValue={field.value as CurrentStage | undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                  <RadioGroup onValueChange={field.onChange} value={field.value as CurrentStage | undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
                     {currentStages.map(({value, label}) => (
                        <Label key={value} htmlFor={`cs-${value}`} className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
                         <RadioGroupItem value={value} id={`cs-${value}`} className="sr-only" /> {label}
@@ -380,7 +401,7 @@ export default function ProfileSetupPage() {
           <CardFooter className="flex flex-col gap-4 pt-6">
             <Button type="submit" className="w-full" disabled={isSubmitting || loading}>
               {isSubmitting || loading ? <LoadingSpinner className="mr-2" /> : null}
-              Save Profile & Proceed
+              {userProfile ? 'Update Profile' : 'Save Profile & Proceed'}
             </Button>
             <Button variant="link" onClick={signOut} className="text-muted-foreground">
               Logout
@@ -391,5 +412,3 @@ export default function ProfileSetupPage() {
     </div>
   );
 }
-
-    
