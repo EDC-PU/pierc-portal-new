@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'; // Added CardFooter
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -142,7 +142,7 @@ export default function ProfileSetupPage() {
     if (initialLoadComplete && !user) {
       router.push('/login');
     }
-    if (initialLoadComplete && user && userProfile && determinedRole !== 'ADMIN_FACULTY') { // Don't redirect admin if auto-submitting
+    if (initialLoadComplete && user && userProfile && determinedRole !== 'ADMIN_FACULTY') { 
       router.push('/dashboard');
     }
   }, [user, userProfile, initialLoadComplete, router, determinedRole]);
@@ -155,7 +155,7 @@ export default function ProfileSetupPage() {
         const adminDefaults: ProfileFormData = {
           role: 'ADMIN_FACULTY',
           fullName: user?.displayName || 'Admin User',
-          contactNumber: '0000000000', // Placeholder
+          contactNumber: '0000000000', 
           applicantCategory: 'OTHERS',
           instituteName: 'PIERC Administration',
           teamMembers: 'N/A',
@@ -163,11 +163,10 @@ export default function ProfileSetupPage() {
           problemDefinition: 'This is an administrative account, not applicable for startup details.',
           solutionDescription: 'This is an administrative account, not applicable for startup details.',
           uniqueness: 'This is an administrative account, not applicable for startup details.',
-          currentStage: 'IDEA', // Default, not relevant for admin
+          currentStage: 'IDEA', 
         };
         try {
           await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
-          // AuthContext will handle redirect to dashboard upon profile update
         } catch (error) {
           console.error("Admin profile auto-setup failed", error);
           toast({ title: "Admin Setup Error", description: "Could not auto-setup admin profile.", variant: "destructive" });
@@ -201,7 +200,6 @@ export default function ProfileSetupPage() {
       await setRoleAndCompleteProfile(data.role as Role, data);
     } catch (error) {
       console.error("Profile setup failed", error);
-      // Toast is handled in AuthContext or setRoleAndCompleteProfile
     }
   };
   
@@ -218,7 +216,6 @@ export default function ProfileSetupPage() {
     return <div className="flex items-center justify-center min-h-screen"><p>Redirecting to login...</p><LoadingSpinner size={32}/></div>;
   }
 
-  // If admin role and profile setup is complete (or was just completed by auto-submit), redirect to dashboard
   if (determinedRole === 'ADMIN_FACULTY' && userProfile) {
      router.push('/dashboard');
      return (
@@ -365,3 +362,5 @@ export default function ProfileSetupPage() {
   );
 }
 
+
+    
