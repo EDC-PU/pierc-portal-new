@@ -74,7 +74,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     // The outer div now needs to handle the overall layout with the sidebar.
     // The `AppShell` handles the Navbar and Footer. This component is now for the dashboard's main content area + its own sidebar.
     <div className="flex flex-1"> {/* flex-1 to take remaining height within AppShell's flex-grow area */}
-      <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full fixed"> {/* `fixed` might need adjustment depending on AppShell structure */}
+      <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full"> {/* Removed 'fixed' */}
         <SidebarHeader className="flex items-center justify-between p-2 md:justify-center">
            <SidebarTrigger className="hidden md:flex" />
         </SidebarHeader>
@@ -130,7 +130,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </Sidebar>
       
       {/* Main content area for the dashboard pages */}
-      <div className="flex-1 w-0 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] group-data-[state=expanded]/sidebar-wrapper:md:ml-[var(--sidebar-width)]">
+      <div className="flex-1 w-0 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] peer-data-[state=expanded]:md:ml-[var(--sidebar-width)]">
          {/* The container and padding for dashboard pages go here now */}
         <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full"> {/* Added h-full here for children to potentially flex-grow */}
            {children}
