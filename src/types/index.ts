@@ -114,10 +114,10 @@ export interface IdeaSubmission {
 }
 
 export interface CohortScheduleEntry {
-  id: string; // Client-side generated unique ID (e.g., nanoid) for useFieldArray key and potential DB sub-collection key later
-  date: string; // e.g., "2024-06-16"
-  day: string; // e.g., "Day 1" or "1"
-  time: string; // e.g., "10:00 AM - 12:00 PM"
+  id: string; 
+  date: string; 
+  day: string; 
+  time: string; 
   category: string;
   topicActivity: string;
   content: string;
@@ -129,13 +129,13 @@ export interface Cohort {
   name: string;
   startDate: Timestamp;
   endDate: Timestamp;
-  batchSize: number; // Max number of ideas/teams this cohort can have
-  ideaIds: string[]; // List of IdeaSubmission IDs assigned to this cohort
-  schedule?: CohortScheduleEntry[]; // Array of schedule entries
+  batchSize: number; 
+  ideaIds: string[]; 
+  schedule?: CohortScheduleEntry[]; 
   createdAt: Timestamp;
-  createdByUid: string; // UID of the admin who created the cohort
+  createdByUid: string; 
   creatorDisplayName: string | null;
-  updatedAt?: Timestamp; // For future updates
+  updatedAt?: Timestamp; 
 }
 
 export interface Announcement {
@@ -214,3 +214,6 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>; // e.g., { fieldChanged: 'status', oldValue: 'SUBMITTED', newValue: 'SELECTED' }
 }
+
+
+    

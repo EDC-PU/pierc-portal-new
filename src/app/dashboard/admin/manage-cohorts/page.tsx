@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { CreateCohortForm, type CreateCohortFormData } from '@/components/admin/CreateCohortForm';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -23,10 +23,12 @@ import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { nanoid } from 'nanoid';
+import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 const scheduleEntrySchema = z.object({
   id: z.string().default(() => nanoid()),
-  date: z.string().min(1, "Date is required"),
+  date: z.string().min(1, "Date is required"), // Store as string, will be YYYY-MM-DD from <input type="date">
   day: z.string().min(1, "Day is required"),
   time: z.string().min(1, "Time is required"),
   category: z.string().min(1, "Category is required"),
@@ -91,7 +93,12 @@ export default function ManageCohortsPage() {
 
   useEffect(() => {
     if (selectedCohortForSchedule) {
-      resetScheduleForm({ schedule: selectedCohortForSchedule.schedule || [] });
+      // Ensure dates from Firestore (if they were Timestamps originally and converted to string) are in YYYY-MM-DD
+      const scheduleToReset = (selectedCohortForSchedule.schedule || []).map(entry => ({
+        ...entry,
+        date: entry.date ? (entry.date.includes('T') ? entry.date.split('T')[0] : entry.date) : '', // Basic check for ISO string vs simple date
+      }));
+      resetScheduleForm({ schedule: scheduleToReset });
     } else {
       resetScheduleForm({ schedule: [] });
     }
@@ -122,7 +129,7 @@ export default function ManageCohortsPage() {
     }
   };
   
-  const handleSaveSchedule = async (data: CohortScheduleFormData) => {
+  const onSaveScheduleSubmit: SubmitHandler<CohortScheduleFormData> = async (data) => {
     if (!selectedCohortForSchedule || !selectedCohortForSchedule.id || !userProfile) {
         toast({title: "Error", description: "No cohort selected or admin profile missing.", variant: "destructive"});
         return;
@@ -148,19 +155,32 @@ export default function ManageCohortsPage() {
     setIsScheduleDialogOpen(true);
   };
   
-  const formatDate = (timestamp: Timestamp | Date | undefined): string => {
-    if (!timestamp) return 'N/A';
+  const formatDateForDisplay = (timestampOrDateString: Timestamp | Date | string | undefined): string => {
+    if (!timestampOrDateString) return 'N/A';
+    
     let dateToFormat: Date;
-    if ((timestamp as Timestamp)?.toDate) {
-      dateToFormat = (timestamp as Timestamp).toDate();
-    } else if (timestamp instanceof Date) {
-      dateToFormat = timestamp;
+    if ((timestampOrDateString as Timestamp)?.toDate) { // Check if it's a Firestore Timestamp
+      dateToFormat = (timestampOrDateString as Timestamp).toDate();
+    } else if (timestampOrDateString instanceof Date) { // Check if it's already a Date object
+      dateToFormat = timestampOrDateString;
+    } else if (typeof timestampOrDateString === 'string') { // If it's a string
+        // Attempt to parse common date string formats, especially YYYY-MM-DD from input
+        const parts = timestampOrDateString.split('-');
+        if (parts.length === 3) {
+            // Create date in UTC to avoid timezone issues with simple YYYY-MM-DD
+            dateToFormat = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
+        } else {
+            // Try parsing as a generic date string (might be ISO with time)
+            dateToFormat = new Date(timestampOrDateString);
+        }
     } else {
-        return 'Invalid Date';
+        return 'Invalid Date Input';
     }
-     if (!isValid(dateToFormat)) return 'Invalid Date';
+    
+    if (!isValid(dateToFormat)) return 'Invalid Date';
     return format(dateToFormat, 'MMM d, yyyy');
   };
+
 
   const exportScheduleToCSV = (cohort: Cohort) => {
     if (!cohort.schedule || cohort.schedule.length === 0) {
@@ -270,10 +290,10 @@ export default function ManageCohortsPage() {
                     <TableRow key={cohort.id}>
                       <TableCell className="font-medium max-w-xs truncate" title={cohort.name}>{cohort.name}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                        {formatDate(cohort.startDate)}
+                        {formatDateForDisplay(cohort.startDate)}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                        {formatDate(cohort.endDate)}
+                        {formatDateForDisplay(cohort.endDate)}
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-sm">{cohort.batchSize}</TableCell>
                       <TableCell className="hidden lg:table-cell text-sm">{cohort.schedule?.length || 0}</TableCell>
@@ -297,51 +317,80 @@ export default function ManageCohortsPage() {
       {selectedCohortForSchedule && (
         <Dialog open={isScheduleDialogOpen} onOpenChange={(isOpen) => {
             if(!isOpen) {
-                setSelectedCohortForSchedule(null); // Clear selected cohort when dialog closes
+                setSelectedCohortForSchedule(null); 
             }
             setIsScheduleDialogOpen(isOpen);
         }}>
-          <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogContent className="max-w-6xl w-[95vw] h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle className="font-headline text-2xl">Manage Schedule for: {selectedCohortForSchedule.name}</DialogTitle>
               <DialogDescription>Add, edit, or remove schedule entries for this cohort.</DialogDescription>
             </DialogHeader>
             
-            <form onSubmit={handleScheduleSubmit(handleSaveSchedule)} className="flex-grow overflow-hidden flex flex-col">
-              <div className="flex-grow overflow-y-auto pr-2 space-y-4 py-4">
-                {scheduleFields.map((field, index) => (
-                  <Card key={field.id} className="p-4 space-y-3 bg-muted/30">
-                    <div className="flex justify-between items-center">
-                        <h4 className="font-semibold text-sm">Entry {index + 1}</h4>
-                        <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive h-7 w-7" onClick={() => removeScheduleEntry(index)}>
-                            <Trash2 className="h-4 w-4" />
-                        </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        <Controller name={`schedule.${index}.date`} control={scheduleControl} render={({ field: controllerField }) => (
-                            <div><Label>Date</Label><Input type="date" {...controllerField} className="text-xs" /></div> )}/>
-                        <Controller name={`schedule.${index}.day`} control={scheduleControl} render={({ field: controllerField }) => (
-                            <div><Label>Day</Label><Input {...controllerField} placeholder="e.g., Day 1 or Mon" className="text-xs" /></div> )}/>
-                        <Controller name={`schedule.${index}.time`} control={scheduleControl} render={({ field: controllerField }) => (
-                             <div><Label>Time</Label><Input {...controllerField} placeholder="e.g., 10 AM - 11 AM" className="text-xs" /></div> )}/>
-                    </div>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <Controller name={`schedule.${index}.category`} control={scheduleControl} render={({ field: controllerField }) => (
-                            <div><Label>Category</Label><Input {...controllerField} placeholder="e.g., Input Session" className="text-xs" /></div> )}/>
-                        <Controller name={`schedule.${index}.topicActivity`} control={scheduleControl} render={({ field: controllerField }) => (
-                            <div><Label>Topic/Activity</Label><Input {...controllerField} placeholder="e.g., Design Thinking" className="text-xs" /></div> )}/>
-                    </div>
-                    <Controller name={`schedule.${index}.content`} control={scheduleControl} render={({ field: controllerField }) => (
-                        <div><Label>Content (Optional)</Label><Textarea {...controllerField} placeholder="Brief description..." rows={2} className="text-xs" /></div> )}/>
-                    <Controller name={`schedule.${index}.speakerVenue`} control={scheduleControl} render={({ field: controllerField }) => (
-                         <div><Label>Speaker/Venue (Optional)</Label><Input {...controllerField} placeholder="e.g., John Doe / Seminar Hall" className="text-xs" /></div> )}/>
-                    {scheduleErrors.schedule?.[index] && <p className="text-xs text-destructive">Please fill all required fields for this entry.</p>}
-                  </Card>
-                ))}
-                <Button type="button" variant="outline" size="sm" onClick={() => appendScheduleEntry({ id: nanoid(), date: '', day: '', time: '', category: '', topicActivity: '', content: '', speakerVenue: '' })}>
+            <form onSubmit={handleScheduleSubmit(onSaveScheduleSubmit)} className="flex-grow overflow-hidden flex flex-col">
+              <ScrollArea className="flex-grow overflow-y-auto pr-2 py-4">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[130px]">Date</TableHead>
+                      <TableHead className="w-[100px]">Day</TableHead>
+                      <TableHead className="w-[150px]">Time</TableHead>
+                      <TableHead className="w-[150px]">Category</TableHead>
+                      <TableHead className="min-w-[200px]">Topic/Activity</TableHead>
+                      <TableHead className="min-w-[200px]">Content</TableHead>
+                      <TableHead className="w-[180px]">Speaker/Venue</TableHead>
+                      <TableHead className="w-[50px] text-right">Del</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scheduleFields.map((field, index) => (
+                      <TableRow key={field.id}>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.date`} control={scheduleControl} render={({ field: controllerField }) => (
+                            <Input type="date" {...controllerField} className="text-xs h-9"/> )}/>
+                            {scheduleErrors.schedule?.[index]?.date && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.date?.message}</p>}
+                        </TableCell>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.day`} control={scheduleControl} render={({ field: controllerField }) => (
+                            <Input {...controllerField} placeholder="Day #" className="text-xs h-9"/> )}/>
+                            {scheduleErrors.schedule?.[index]?.day && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.day?.message}</p>}
+                        </TableCell>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.time`} control={scheduleControl} render={({ field: controllerField }) => (
+                             <Input {...controllerField} placeholder="e.g., 10 AM - 11 AM" className="text-xs h-9"/> )}/>
+                             {scheduleErrors.schedule?.[index]?.time && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.time?.message}</p>}
+                        </TableCell>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.category`} control={scheduleControl} render={({ field: controllerField }) => (
+                            <Input {...controllerField} placeholder="e.g., Input Session" className="text-xs h-9"/> )}/>
+                            {scheduleErrors.schedule?.[index]?.category && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.category?.message}</p>}
+                        </TableCell>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.topicActivity`} control={scheduleControl} render={({ field: controllerField }) => (
+                            <Input {...controllerField} placeholder="e.g., Design Thinking" className="text-xs h-9"/> )}/>
+                            {scheduleErrors.schedule?.[index]?.topicActivity && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.topicActivity?.message}</p>}
+                        </TableCell>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.content`} control={scheduleControl} render={({ field: controllerField }) => (
+                            <Textarea {...controllerField} placeholder="Brief description..." rows={1} className="text-xs min-h-[2.25rem]"/> )}/>
+                        </TableCell>
+                        <TableCell className="p-1">
+                          <Controller name={`schedule.${index}.speakerVenue`} control={scheduleControl} render={({ field: controllerField }) => (
+                            <Input {...controllerField} placeholder="e.g., John Doe / Hall 1" className="text-xs h-9"/> )}/>
+                        </TableCell>
+                        <TableCell className="p-1 text-right">
+                          <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => removeScheduleEntry(index)}>
+                              <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <Button type="button" variant="outline" size="sm" className="mt-4" onClick={() => appendScheduleEntry({ id: nanoid(), date: '', day: '', time: '', category: '', topicActivity: '', content: '', speakerVenue: '' })}>
                   <PlusCircle className="mr-2 h-4 w-4" /> Add Schedule Entry
                 </Button>
-              </div>
+              </ScrollArea>
               <DialogFooter className="pt-4 border-t mt-auto">
                  <Button type="button" variant="outline" onClick={() => setIsScheduleDialogOpen(false)}>Cancel</Button>
                  <Button type="submit" disabled={isSubmittingSchedule}>
@@ -356,3 +405,6 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
+
+
+    
