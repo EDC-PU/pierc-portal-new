@@ -262,6 +262,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         { role: createdOrUpdatedProfile.role, isTeamMember: createdOrUpdatedProfile.isTeamMemberOnly }
       );
 
+      // ---> Critical section for idea creation <---
+      if (
+        !createdOrUpdatedProfile.isTeamMemberOnly &&
+        createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle.trim() !== '' &&
+        createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
+        !wasProfileExisting
+      ) {
+        try { // Specific try-catch for idea creation
+          console.log("AuthContext: Attempting to create idea from profile for user:", user.uid, "Profile Data:", createdOrUpdatedProfile);
+          const idea = await createIdeaFromProfile(user.uid, {
+              startupTitle: createdOrUpdatedProfile.startupTitle!,
+              problemDefinition: createdOrUpdatedProfile.problemDefinition!,
+              solutionDescription: createdOrUpdatedProfile.solutionDescription!,
+              uniqueness: createdOrUpdatedProfile.uniqueness!,
+              currentStage: createdOrUpdatedProfile.currentStage!,
+              applicantCategory: createdOrUpdatedProfile.applicantCategory!,
+              teamMembers: createdOrUpdatedProfile.teamMembers || '',
+          });
+          if (idea) {
+              console.log("AuthContext: Idea created successfully:", idea.id);
+              await logUserActivity(
+                  user.uid,
+                  createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
+                  'IDEA_SUBMITTED',
+                  { type: 'IDEA', id: idea.id!, displayName: idea.title },
+                  { title: idea.title }
+              );
+          } else {
+            console.warn("AuthContext: createIdeaFromProfile returned null or undefined, idea not created. This might be expected (e.g., for admin account or team member).");
+          }
+        } catch (ideaError: any) {
+            console.error("AuthContext: Error during createIdeaFromProfile call:", ideaError);
+            toast({ title: "Idea Creation Failed", description: `Your profile was saved, but we couldn't create the initial idea submission: ${ideaError.message}. Please contact support or try editing your profile again.`, variant: "destructive", duration: 10000 });
+            // Do not re-throw here, as the profile part might have succeeded.
+        }
+      }
+
+
       if (createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
         await updateTeamMemberDetailsInIdeaAfterProfileSetup(
           createdOrUpdatedProfile.associatedIdeaId,
@@ -281,31 +319,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const leader = await getUserProfile(updatedIdea.userId);
           setTeamLeaderProfileForMember(leader);
         }
-      } else if (
-        !createdOrUpdatedProfile.isTeamMemberOnly &&
-        createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle.trim() !== '' &&
-        createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
-        !wasProfileExisting
-      ) {
-        const idea = await createIdeaFromProfile(user.uid, {
-            startupTitle: createdOrUpdatedProfile.startupTitle!,
-            problemDefinition: createdOrUpdatedProfile.problemDefinition!,
-            solutionDescription: createdOrUpdatedProfile.solutionDescription!,
-            uniqueness: createdOrUpdatedProfile.uniqueness!,
-            currentStage: createdOrUpdatedProfile.currentStage!,
-            applicantCategory: createdOrUpdatedProfile.applicantCategory!,
-            teamMembers: createdOrUpdatedProfile.teamMembers || '',
-        });
-        if (idea) {
-            await logUserActivity(
-                user.uid,
-                createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
-                'IDEA_SUBMITTED',
-                { type: 'IDEA', id: idea.id!, displayName: idea.title },
-                { title: idea.title }
-            );
-        }
       }
+      // This part was inside the 'idea creation' block before, moved out.
+      // else if ( 
+      //   !createdOrUpdatedProfile.isTeamMemberOnly &&
+      //   createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle.trim() !== '' &&
+      //   createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
+      //   !wasProfileExisting 
+      // ) {
+      //   // This block is now handled by the specific try-catch above for idea creation.
+      // }
+
 
       router.push('/dashboard');
       toast({ title: "Profile Saved", description: "Your profile has been successfully set up." });
@@ -410,3 +434,4 @@ export const useAuth = (): AuthContextType => {
   return context;
 };
 
+    

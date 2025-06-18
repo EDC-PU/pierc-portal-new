@@ -432,32 +432,32 @@ export const createIdeaFromProfile = async (
     userId: string,
     profileIdeaData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
+  console.log("createIdeaFromProfile: Entered for user:", userId, "with data:", JSON.stringify(profileIdeaData, null, 2));
   const userProfile = await getUserProfile(userId);
   if (!userProfile) {
-    console.error("User profile not found, cannot create idea.");
+    console.error("createIdeaFromProfile: User profile not found for UID:", userId, "Cannot create idea.");
     return null;
   }
   if (userProfile.role === 'ADMIN_FACULTY' && profileIdeaData.startupTitle === 'Administrative Account') {
-    console.log("Skipping idea creation for admin administrative account profile.");
+    console.log("createIdeaFromProfile: Skipping idea creation for admin administrative account profile.");
     return null;
   }
   if (userProfile.isTeamMemberOnly) {
-    console.log("Skipping idea creation for a user who is only a team member.");
+    console.log("createIdeaFromProfile: Skipping idea creation for a user who is only a team member.");
     return null;
   }
   if (!profileIdeaData.startupTitle || !profileIdeaData.problemDefinition || !profileIdeaData.solutionDescription || !profileIdeaData.uniqueness || !profileIdeaData.currentStage || !profileIdeaData.applicantCategory) {
-    console.warn("Skipping idea creation due to missing essential idea fields in profileIdeaData:", profileIdeaData);
+    console.warn("createIdeaFromProfile: Skipping idea creation due to missing essential idea fields in profileIdeaData:", profileIdeaData);
     return null;
   }
 
   const ideaCol = collection(db, 'ideas');
   
-  // Construct the payload with only necessary and default fields for a new idea from profile
-  const newIdeaPayload: Pick<IdeaSubmission, 
-    'userId' | 'applicantDisplayName' | 'applicantEmail' | 'title' | 'problem' | 'solution' | 
-    'uniqueness' | 'developmentStage' | 'applicantType' | 'teamMembers' | 'structuredTeamMembers' | 
-    'teamMemberEmails' | 'status' | 'programPhase' | 'phase2Marks' | 'category'
-  > & { submittedAt: Timestamp, updatedAt: Timestamp } = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'updatedAt' | 'submittedAt' | 'userId' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'structuredTeamMembers' | 'teamMemberEmails' | 'phase2Marks' | 'programPhase' | 'status' | 'fileURL' | 'fileName' | 'studioLocation' | 'cohortId' | 'mentor' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines'> & {
+    userId: string; applicantDisplayName: string; applicantEmail: string; category: string;
+    structuredTeamMembers: TeamMember[]; teamMemberEmails: string[]; phase2Marks: Record<string, AdminMark>;
+    programPhase: null; status: 'SUBMITTED'; submittedAt: Timestamp; updatedAt: Timestamp;
+  } = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
@@ -473,28 +473,38 @@ export const createIdeaFromProfile = async (
     status: 'SUBMITTED',
     programPhase: null,
     phase2Marks: {},
-    category: 'General Profile Submission', // Default category for ideas from profile
-    submittedAt: serverTimestamp() as Timestamp, // These will be set by Firestore
-    updatedAt: serverTimestamp() as Timestamp,  // These will be set by Firestore
+    category: 'General Profile Submission',
+    submittedAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
   };
-  // Note: Optional fields like fileURL, fileName, studioLocation, cohortId, mentor, etc.,
-  // are intentionally_omitted_ from this initial payload. They will be undefined if not set,
-  // and Firestore will not write undefined fields. They can be added later via updates.
+  
+  console.log("createIdeaFromProfile: Payload for addDoc:", JSON.stringify(newIdeaPayload, null, 2));
 
-  const docRef = await addDoc(ideaCol, newIdeaPayload);
-  const newDocSnap = await getDoc(docRef);
-  if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
+  try {
+    const docRef = await addDoc(ideaCol, newIdeaPayload as any); 
+    const newDocSnap = await getDoc(docRef);
+    if (!newDocSnap.exists()) {
+      console.error("createIdeaFromProfile: Failed to create idea submission, document does not exist after addDoc.");
+      throw new Error("Could not create idea submission from profile.");
+    }
+    console.log("createIdeaFromProfile: Idea document created with ID:", newDocSnap.id);
 
-  const data = newDocSnap.data();
-  return {
-    id: newDocSnap.id,
-    ...(data as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt'>), // Cast to ensure types match
-    submittedAt: data?.submittedAt as Timestamp, // Ensure timestamps are correctly typed
-    updatedAt: data?.updatedAt as Timestamp,
-    structuredTeamMembers: data?.structuredTeamMembers || [], // Ensure arrays are initialized
-    teamMemberEmails: data?.teamMemberEmails || [],
-   } as IdeaSubmission;
+    const data = newDocSnap.data();
+    return {
+      id: newDocSnap.id,
+      ...(data as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'structuredTeamMembers' | 'teamMemberEmails' | 'phase2Marks'>),
+      submittedAt: data?.submittedAt as Timestamp,
+      updatedAt: data?.updatedAt as Timestamp,
+      structuredTeamMembers: data?.structuredTeamMembers || [],
+      teamMemberEmails: data?.teamMemberEmails || [],
+      phase2Marks: data?.phase2Marks || {},
+    } as IdeaSubmission;
+  } catch (error) {
+    console.error("createIdeaFromProfile: Error during addDoc to 'ideas' collection:", error);
+    throw error; 
+  }
 };
+
 
 
 export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission[]> => {
@@ -1190,3 +1200,4 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   return null;
 };
 
+    
