@@ -572,6 +572,30 @@ export const addTeamMemberToIdea = async (ideaId: string, newMember: TeamMember)
   });
 };
 
+export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: TeamMember): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaDoc = await getDoc(ideaRef);
+
+  if (!ideaDoc.exists()) {
+    throw new Error("Idea not found.");
+  }
+
+  const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
+  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id);
+
+  if (memberIndex === -1) {
+    throw new Error("Team member not found to update.");
+  }
+
+  const updatedMembers = [...currentMembers];
+  updatedMembers[memberIndex] = updatedMemberData;
+
+  await updateDoc(ideaRef, {
+    structuredTeamMembers: updatedMembers,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove: string): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
@@ -664,3 +688,4 @@ export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string
     updatedAt: serverTimestamp(),
   });
 };
+

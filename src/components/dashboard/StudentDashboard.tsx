@@ -7,14 +7,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   getUserIdeaSubmissionsWithStatus, 
   type IdeaSubmission, 
   updateIdeaPhase2PptDetails,
   addTeamMemberToIdea,
-  removeTeamMemberFromIdea
+  removeTeamMemberFromIdea,
+  updateTeamMemberInIdea // New import
 } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -75,9 +76,10 @@ export default function StudentDashboard() {
   const [selectedIdeaForTeamMgmt, setSelectedIdeaForTeamMgmt] = useState<IdeaSubmission | null>(null);
   const [isTeamMemberFormOpen, setIsTeamMemberFormOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
 
 
-  const { control, handleSubmit, reset: resetTeamMemberForm, formState: { errors: teamMemberErrors, isSubmitting: isSubmittingTeamMember } } = useForm<TeamMemberFormData>({
+  const { control, handleSubmit, reset: resetTeamMemberForm, formState: { errors: teamMemberErrors, isSubmitting: isSubmittingTeamMember }, setValue } = useForm<TeamMemberFormData>({
     resolver: zodResolver(teamMemberSchema),
     defaultValues: {
       name: '',
@@ -89,34 +91,37 @@ export default function StudentDashboard() {
     },
   });
 
-  useEffect(() => {
-    const fetchUserIdeas = async () => {
-      if (user?.uid) {
-        setLoadingIdeas(true);
-        try {
-          const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
-          setUserIdeas(ideas);
-           if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
-            // Optionally pre-select the first idea for team management
-            // setSelectedIdeaForTeamMgmt(ideas[0]);
-          }
-        } catch (error) {
-          console.error("Error fetching user ideas:", error);
-          toast({ title: "Error", description: "Could not load your idea submissions.", variant: "destructive" });
-          setUserIdeas([]);
-        } finally {
-          setLoadingIdeas(false);
-        }
-      } else {
-        setUserIdeas([]); 
+  const fetchUserIdeasAndUpdateState = async (currentSelectedIdeaId?: string) => {
+    if (!user?.uid) {
+        setUserIdeas([]);
         setLoadingIdeas(false);
-      }
-    };
-
-    if (user?.uid) {
-      fetchUserIdeas();
+        return;
     }
-  }, [user?.uid, toast, selectedIdeaForTeamMgmt]); 
+    setLoadingIdeas(true);
+    try {
+        const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
+        setUserIdeas(ideas);
+        if (currentSelectedIdeaId) {
+            const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaId);
+            setSelectedIdeaForTeamMgmt(updatedSelected || null);
+        } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
+            // Optionally pre-select or handle no selection
+        }
+    } catch (error) {
+        console.error("Error fetching user ideas:", error);
+        toast({ title: "Error", description: "Could not load your idea submissions.", variant: "destructive" });
+        setUserIdeas([]);
+    } finally {
+        setLoadingIdeas(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (user?.uid) {
+      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt?.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, toast]); 
   
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
     if (!status) return 'secondary';
@@ -203,10 +208,7 @@ export default function StudentDashboard() {
       await updateIdeaPhase2PptDetails(uploadingPptIdeaId, flowResult.pptUrl, flowResult.pptFileName);
       toast({ title: "Presentation Info Saved", description: `${flowResult.pptFileName} details recorded (Simulated Upload).` });
       
-      const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
-      setUserIdeas(ideas);
-      const updatedSelectedIdea = ideas.find(idea => idea.id === selectedIdeaForTeamMgmt?.id);
-      if (updatedSelectedIdea) setSelectedIdeaForTeamMgmt(updatedSelectedIdea);
+      fetchUserIdeasAndUpdateState(uploadingPptIdeaId);
 
 
     } catch (error) {
@@ -223,53 +225,77 @@ export default function StudentDashboard() {
     }
   };
 
-  const handleAddTeamMember: SubmitHandler<TeamMemberFormData> = async (data) => {
-    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id) {
-      toast({ title: "Error", description: "No idea selected for team management.", variant: "destructive" });
+  const handleSaveTeamMember: SubmitHandler<TeamMemberFormData> = async (data) => {
+    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !user?.uid) {
+      toast({ title: "Error", description: "No idea selected or user not found.", variant: "destructive" });
       return;
     }
-    if ((selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0) >= 4) {
-      toast({ title: "Limit Reached", description: "You can add a maximum of 4 team members.", variant: "destructive" });
-      return;
-    }
-
-    const newMember: TeamMember = {
-      id: nanoid(), // Generate unique ID for the member
-      ...data,
-    };
 
     try {
-      await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, newMember);
-      toast({ title: "Team Member Added", description: `${data.name} has been added to the team for "${selectedIdeaForTeamMgmt.title}".` });
+      if (editingMember) { // Editing existing member
+        const updatedMember: TeamMember = {
+          id: editingMember.id, // Keep the original ID
+          ...data,
+        };
+        await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, updatedMember);
+        toast({ title: "Team Member Updated", description: `${data.name}'s details have been updated.` });
+      } else { // Adding new member
+        if ((selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0) >= 4) {
+          toast({ title: "Limit Reached", description: "You can add a maximum of 4 team members.", variant: "destructive" });
+          return;
+        }
+        const newMember: TeamMember = {
+          id: nanoid(),
+          ...data,
+        };
+        await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, newMember);
+        toast({ title: "Team Member Added", description: `${data.name} has been added to the team.` });
+      }
+      
       resetTeamMemberForm();
       setIsTeamMemberFormOpen(false);
-      // Refresh ideas or just the selected one
-      const updatedIdeas = await getUserIdeaSubmissionsWithStatus(user!.uid);
-      setUserIdeas(updatedIdeas);
-      const updatedSelected = updatedIdeas.find(idea => idea.id === selectedIdeaForTeamMgmt.id);
-      setSelectedIdeaForTeamMgmt(updatedSelected || null);
+      setEditingMember(null);
+      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
+
     } catch (error) {
-      console.error("Error adding team member:", error);
-      toast({ title: "Error Adding Member", description: (error as Error).message || "Could not add team member.", variant: "destructive" });
+      console.error("Error saving team member:", error);
+      toast({ title: `Error ${editingMember ? 'Updating' : 'Adding'} Member`, description: (error as Error).message || `Could not ${editingMember ? 'update' : 'add'} team member.`, variant: "destructive" });
     }
   };
 
   const handleRemoveTeamMember = async (memberId: string) => {
-    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !memberId) return;
+    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !memberId || !user?.uid) return;
     
     try {
       await removeTeamMemberFromIdea(selectedIdeaForTeamMgmt.id, memberId);
-      toast({ title: "Team Member Removed", description: `Member has been removed from the team for "${selectedIdeaForTeamMgmt.title}".` });
-      // Refresh ideas or just the selected one
-      const updatedIdeas = await getUserIdeaSubmissionsWithStatus(user!.uid);
-      setUserIdeas(updatedIdeas);
-      const updatedSelected = updatedIdeas.find(idea => idea.id === selectedIdeaForTeamMgmt.id);
-      setSelectedIdeaForTeamMgmt(updatedSelected || null);
+      toast({ title: "Team Member Removed", description: `Member has been removed from the team.` });
+      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
     } catch (error) {
       console.error("Error removing team member:", error);
       toast({ title: "Error Removing Member", description: (error as Error).message || "Could not remove team member.", variant: "destructive" });
     }
-    setMemberToRemove(null); // Close dialog
+    setMemberToRemove(null); 
+  };
+
+  const handleEditTeamMember = (member: TeamMember) => {
+    setEditingMember(member);
+    setValue('name', member.name);
+    setValue('email', member.email);
+    setValue('phone', member.phone);
+    setValue('institute', member.institute);
+    setValue('department', member.department);
+    setValue('enrollmentNumber', member.enrollmentNumber || '');
+    setIsTeamMemberFormOpen(true);
+  };
+
+  const toggleTeamMemberForm = () => {
+    if (isTeamMemberFormOpen && editingMember) { // If editing, cancel edit
+      setEditingMember(null);
+    }
+    setIsTeamMemberFormOpen(prev => !prev);
+    if (!isTeamMemberFormOpen || editingMember) { // If opening form or was editing, reset
+        resetTeamMemberForm();
+    }
   };
 
 
@@ -483,14 +509,12 @@ export default function StudentDashboard() {
       </TabsContent>
 
       <TabsContent value="manageTeam" className="space-y-6">
-        {/* Simplified content for debugging */}
         <Card>
           <CardHeader>
-            <CardTitle className="font-headline text-xl">Manage Team Members - Placeholder</CardTitle>
-            <CardDescription>This is a placeholder for the team management interface. If you see this, the tab structure is working.</CardDescription>
+            <CardTitle className="font-headline text-xl">Manage Team Members</CardTitle>
+            <CardDescription>Add, edit, or remove team members for your submitted ideas. A maximum of 4 members can be added per idea.</CardDescription>
           </CardHeader>
           <CardContent>
-            <p>Team management functionality will be built here.</p>
              {loadingIdeas ? (
               <div className="flex items-center justify-center py-4"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading ideas...</div>
             ) : userIdeas.length === 0 ? (
@@ -508,6 +532,7 @@ export default function StudentDashboard() {
                       onClick={() => {
                         setSelectedIdeaForTeamMgmt(idea);
                         setIsTeamMemberFormOpen(false); 
+                        setEditingMember(null);
                         resetTeamMemberForm(); 
                       }}
                     >
@@ -528,17 +553,23 @@ export default function StudentDashboard() {
                     <h4 className="text-md font-medium">Current Team Members ({selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0}/4):</h4>
                     <ul className="space-y-2">
                       {selectedIdeaForTeamMgmt.structuredTeamMembers?.map(member => (
-                        <li key={member.id} className="flex justify-between items-center p-3 border rounded-md bg-card hover:bg-muted/50">
+                        <li key={member.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border rounded-md bg-card hover:bg-muted/50 gap-2">
                           <div>
                             <p className="font-semibold">{member.name} <span className="text-xs text-muted-foreground">({member.email})</span></p>
                             <p className="text-xs text-muted-foreground">{member.institute} - {member.department}</p>
                             {member.phone && <p className="text-xs text-muted-foreground">Phone: {member.phone}</p>}
                             {member.enrollmentNumber && <p className="text-xs text-muted-foreground">Enrollment: {member.enrollmentNumber}</p>}
                           </div>
+                          <div className="flex gap-1 self-start sm:self-center flex-shrink-0">
+                            <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-600 h-8 w-8" onClick={() => handleEditTeamMember(member)}>
+                                <Edit2 className="h-4 w-4" />
+                                <span className="sr-only">Edit {member.name}</span>
+                            </Button>
                            <AlertDialog>
                               <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => setMemberToRemove(member)}>
+                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => setMemberToRemove(member)}>
                                   <Trash2 className="h-4 w-4" />
+                                  <span className="sr-only">Remove {member.name}</span>
                                 </Button>
                               </AlertDialogTrigger>
                               {memberToRemove?.id === member.id && (
@@ -558,6 +589,7 @@ export default function StudentDashboard() {
                                 </AlertDialogContent>
                               )}
                             </AlertDialog>
+                          </div>
                         </li>
                       ))}
                     </ul>
@@ -566,18 +598,18 @@ export default function StudentDashboard() {
                   <p className="text-muted-foreground mb-4">No team members added yet for this idea.</p>
                 )}
 
-                {(!selectedIdeaForTeamMgmt.structuredTeamMembers || selectedIdeaForTeamMgmt.structuredTeamMembers.length < 4) && (
-                  <Button onClick={() => { setIsTeamMemberFormOpen(prev => !prev); resetTeamMemberForm(); }} variant="outline" className="mb-4">
-                    <PlusCircle className="mr-2 h-4 w-4"/> {isTeamMemberFormOpen ? 'Cancel Adding Member' : 'Add New Team Member'}
+                {((!selectedIdeaForTeamMgmt.structuredTeamMembers || selectedIdeaForTeamMgmt.structuredTeamMembers.length < 4) || editingMember) && (
+                  <Button onClick={toggleTeamMemberForm} variant="outline" className="mb-4">
+                    {editingMember ? <><Edit2 className="mr-2 h-4 w-4"/> Cancel Editing</> : isTeamMemberFormOpen ? <><PlusCircle className="mr-2 h-4 w-4"/> Cancel Adding</> : <><PlusCircle className="mr-2 h-4 w-4"/> Add New Team Member</>}
                   </Button>
                 )}
-                {selectedIdeaForTeamMgmt.structuredTeamMembers && selectedIdeaForTeamMgmt.structuredTeamMembers.length >= 4 && (
+                {selectedIdeaForTeamMgmt.structuredTeamMembers && selectedIdeaForTeamMgmt.structuredTeamMembers.length >= 4 && !editingMember && (
                     <p className="text-sm text-primary mb-4">Maximum of 4 team members reached.</p>
                 )}
 
-                {isTeamMemberFormOpen && (!selectedIdeaForTeamMgmt.structuredTeamMembers || selectedIdeaForTeamMgmt.structuredTeamMembers.length < 4) && (
-                  <form onSubmit={handleSubmit(handleAddTeamMember)} className="space-y-4 p-4 border rounded-md bg-muted/20">
-                    <h4 className="text-md font-medium mb-2">New Team Member Details:</h4>
+                {isTeamMemberFormOpen && ((!selectedIdeaForTeamMgmt.structuredTeamMembers || selectedIdeaForTeamMgmt.structuredTeamMembers.length < 4) || editingMember ) && (
+                  <form onSubmit={handleSubmit(handleSaveTeamMember)} className="space-y-4 p-4 border rounded-md bg-muted/20">
+                    <h4 className="text-md font-medium mb-2">{editingMember ? 'Edit Team Member Details:' : 'New Team Member Details:'}</h4>
                     <div>
                       <Label htmlFor="memberName">Full Name</Label>
                       <Controller name="name" control={control} render={({ field }) => <Input id="memberName" placeholder="Team member's full name" {...field} />} />
@@ -612,7 +644,7 @@ export default function StudentDashboard() {
                     </div>
                     <Button type="submit" disabled={isSubmittingTeamMember}>
                       {isSubmittingTeamMember && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Add Member to "{selectedIdeaForTeamMgmt.title}"
+                      {editingMember ? 'Update Member Details' : `Add Member to "${selectedIdeaForTeamMgmt.title}"`}
                     </Button>
                   </form>
                 )}
