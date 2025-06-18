@@ -1105,3 +1105,5 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+
+    
