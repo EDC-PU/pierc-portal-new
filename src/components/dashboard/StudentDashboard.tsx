@@ -483,13 +483,15 @@ export default function StudentDashboard() {
       </TabsContent>
 
       <TabsContent value="manageTeam" className="space-y-6">
+        {/* Simplified content for debugging */}
         <Card>
           <CardHeader>
-            <CardTitle className="font-headline text-xl">Manage Team Members</CardTitle>
-            <CardDescription>Add or remove team members for your submitted ideas. Max 4 members per idea (excluding yourself as leader).</CardDescription>
+            <CardTitle className="font-headline text-xl">Manage Team Members - Placeholder</CardTitle>
+            <CardDescription>This is a placeholder for the team management interface. If you see this, the tab structure is working.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {loadingIdeas ? (
+          <CardContent>
+            <p>Team management functionality will be built here.</p>
+             {loadingIdeas ? (
               <div className="flex items-center justify-center py-4"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading ideas...</div>
             ) : userIdeas.length === 0 ? (
               <p className="text-muted-foreground">You have no submitted ideas to manage teams for.</p>
@@ -505,8 +507,8 @@ export default function StudentDashboard() {
                       className="w-full justify-start text-left"
                       onClick={() => {
                         setSelectedIdeaForTeamMgmt(idea);
-                        setIsTeamMemberFormOpen(false); // Close form if open for another idea
-                        resetTeamMemberForm(); // Reset form when switching ideas
+                        setIsTeamMemberFormOpen(false); 
+                        resetTeamMemberForm(); 
                       }}
                     >
                       {idea.title}
@@ -622,4 +624,6 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
+    
+
     
