@@ -1,5 +1,5 @@
 
-import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
+import { db, functions as firebaseFunctions, auth } from './config'; // functions aliased to avoid conflict, auth added
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry } from '@/types';
 import { httpsCallable } from 'firebase/functions';
@@ -19,7 +19,7 @@ export const logUserActivity = async (
     const logEntry: Omit<ActivityLogEntry, 'id'> = {
       timestamp: serverTimestamp() as Timestamp,
       actorUid,
-      actorDisplayName: actorDisplayName || 'System/Unknown', // Default if null
+      actorDisplayName: actorDisplayName || 'System/Unknown', 
       action,
       ...(target && { target }),
       ...(details && { details }),
@@ -34,64 +34,67 @@ export const logUserActivity = async (
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
+  const currentAuthUser = auth.currentUser; // Get current auth user for email/displayName fallbacks
 
-  const profileDataToWrite: Partial<UserProfile> = {
+  const profileDataForWrite: any = {
     uid: userId,
-    email: data.email ?? null,
-    displayName: data.displayName || data.fullName || 'User', // Fallback for displayName
-    photoURL: data.photoURL ?? null,
+    email: data.email ?? currentAuthUser?.email ?? null,
+    displayName: data.displayName || data.fullName || currentAuthUser?.displayName || 'New User',
+    photoURL: data.photoURL ?? currentAuthUser?.photoURL ?? null,
     role: data.role ?? null,
-    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
-    createdAt: serverTimestamp() as Timestamp,
-    updatedAt: serverTimestamp() as Timestamp,
+    isSuperAdmin: (data.email ?? currentAuthUser?.email) === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
     
     fullName: data.fullName, 
     contactNumber: data.contactNumber, 
     
-    // Common optional fields, will be undefined if not in `data`, then cleaned
-    enrollmentNumber: data.enrollmentNumber,
-    college: data.college,
-    instituteName: data.instituteName,
-
-    isTeamMemberOnly: data.isTeamMemberOnly === true, // Ensure boolean
+    isTeamMemberOnly: data.isTeamMemberOnly === true,
   };
 
-  if (profileDataToWrite.isTeamMemberOnly) {
-    profileDataToWrite.associatedIdeaId = data.associatedIdeaId;
-    profileDataToWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid;
-    // Ensure idea-owner specific fields are explicitly null for team members
-    profileDataToWrite.startupTitle = null;
-    profileDataToWrite.problemDefinition = null;
-    profileDataToWrite.solutionDescription = null;
-    profileDataToWrite.uniqueness = null;
-    profileDataToWrite.applicantCategory = null; 
-    profileDataToWrite.currentStage = null;
-    profileDataToWrite.teamMembers = null; // The free-text field
-  } else { // Idea owner or Admin (not solely a team member)
-    profileDataToWrite.startupTitle = data.startupTitle;
-    profileDataToWrite.problemDefinition = data.problemDefinition;
-    profileDataToWrite.solutionDescription = data.solutionDescription;
-    profileDataToWrite.uniqueness = data.uniqueness;
-    profileDataToWrite.applicantCategory = data.applicantCategory;
-    profileDataToWrite.currentStage = data.currentStage;
-    profileDataToWrite.teamMembers = data.teamMembers || ''; // Default to empty string if not provided
-    // Ensure team-member specific fields are explicitly null
-    profileDataToWrite.associatedIdeaId = null;
-    profileDataToWrite.associatedTeamLeaderUid = null;
+  // Add common optional fields only if they have a value in 'data'
+  if (data.enrollmentNumber) profileDataForWrite.enrollmentNumber = data.enrollmentNumber;
+  if (data.college) profileDataForWrite.college = data.college;
+  if (data.instituteName) profileDataForWrite.instituteName = data.instituteName;
+
+  if (profileDataForWrite.isTeamMemberOnly) {
+    profileDataForWrite.associatedIdeaId = data.associatedIdeaId || null;
+    profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid || null;
+    // Ensure idea owner fields are explicitly null for team members
+    profileDataForWrite.startupTitle = null;
+    profileDataForWrite.problemDefinition = null;
+    profileDataForWrite.solutionDescription = null;
+    profileDataForWrite.uniqueness = null;
+    profileDataForWrite.applicantCategory = null; 
+    profileDataForWrite.currentStage = null;
+    profileDataForWrite.teamMembers = null; // free-text team members field
+  } else { // Idea owner or Admin
+    profileDataForWrite.startupTitle = data.startupTitle || null;
+    profileDataForWrite.problemDefinition = data.problemDefinition || null;
+    profileDataForWrite.solutionDescription = data.solutionDescription || null;
+    profileDataForWrite.uniqueness = data.uniqueness || null;
+    profileDataForWrite.applicantCategory = data.applicantCategory || null;
+    profileDataForWrite.currentStage = data.currentStage || null;
+    profileDataForWrite.teamMembers = data.teamMembers || ''; // Default to empty string for idea owner
+    // Ensure team member association fields are null for idea owners
+    profileDataForWrite.associatedIdeaId = null;
+    profileDataForWrite.associatedTeamLeaderUid = null;
   }
 
-  // Clean out any truly undefined values before setDoc, as Firestore doesn't like them.
-  // Null values are fine and will be written.
-  const cleanedProfileData = Object.fromEntries(
-    Object.entries(profileDataToWrite).filter(([, value]) => value !== undefined)
-  );
-
-  await setDoc(userProfileRef, cleanedProfileData);
-
+  // Timestamps
+  const existingProfileSnap = await getDoc(userProfileRef);
+  if (existingProfileSnap.exists()) {
+    profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
+    // `createdAt` should not be overwritten if profile exists
+    delete profileDataForWrite.createdAt; 
+    await updateDoc(userProfileRef, profileDataForWrite);
+  } else {
+    profileDataForWrite.createdAt = serverTimestamp() as Timestamp;
+    profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
+    await setDoc(userProfileRef, profileDataForWrite);
+  }
+  
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const rawData = docSnap.data();
-    // Construct the UserProfile object carefully, providing defaults for missing fields
     const fetchedProfile: UserProfile = {
         uid: docSnap.id,
         email: rawData.email ?? null,
@@ -100,13 +103,13 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         role: rawData.role ?? null,
         fullName: rawData.fullName ?? '',
         contactNumber: rawData.contactNumber ?? '',
-        applicantCategory: rawData.applicantCategory as ApplicantCategory, // Will be null if team member
-        currentStage: rawData.currentStage as CurrentStage, // Will be null if team member
-        startupTitle: rawData.startupTitle ?? '', // Will be null if team member
-        problemDefinition: rawData.problemDefinition ?? '', // Will be null if team member
-        solutionDescription: rawData.solutionDescription ?? '', // Will be null if team member
-        uniqueness: rawData.uniqueness ?? '', // Will be null if team member
-        teamMembers: rawData.teamMembers ?? '', // Will be null if team member
+        applicantCategory: rawData.applicantCategory ?? null, // Explicitly allow null
+        currentStage: rawData.currentStage ?? null, // Explicitly allow null
+        startupTitle: rawData.startupTitle ?? null, // Explicitly allow null
+        problemDefinition: rawData.problemDefinition ?? null, // Explicitly allow null
+        solutionDescription: rawData.solutionDescription ?? null, // Explicitly allow null
+        uniqueness: rawData.uniqueness ?? null, // Explicitly allow null
+        teamMembers: rawData.teamMembers ?? null, // Explicitly allow null for team members, string for owners
         enrollmentNumber: rawData.enrollmentNumber,
         college: rawData.college,
         instituteName: rawData.instituteName,
@@ -114,12 +117,12 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         updatedAt: rawData.updatedAt as Timestamp,
         isSuperAdmin: rawData.isSuperAdmin === true,
         isTeamMemberOnly: rawData.isTeamMemberOnly === true,
-        associatedIdeaId: rawData.associatedIdeaId, // Will be null if idea owner
-        associatedTeamLeaderUid: rawData.associatedTeamLeaderUid, // Will be null if idea owner
+        associatedIdeaId: rawData.associatedIdeaId ?? null, // Explicitly allow null
+        associatedTeamLeaderUid: rawData.associatedTeamLeaderUid ?? null, // Explicitly allow null
     };
     return fetchedProfile;
   }
-  throw new Error("Failed to create or retrieve user profile after creation.");
+  throw new Error("Failed to create or retrieve user profile after write operation.");
 };
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
@@ -135,28 +138,28 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         role: data.role ?? null,
         fullName: data.fullName ?? '',
         contactNumber: data.contactNumber ?? '',
-        applicantCategory: data.applicantCategory,
-        currentStage: data.currentStage,
-        startupTitle: data.startupTitle ?? '',
-        problemDefinition: data.problemDefinition ?? '',
-        solutionDescription: data.solutionDescription ?? '',
-        uniqueness: data.uniqueness ?? '',
-        teamMembers: data.teamMembers ?? '',
+        applicantCategory: data.applicantCategory ?? null,
+        currentStage: data.currentStage ?? null,
+        startupTitle: data.startupTitle ?? null,
+        problemDefinition: data.problemDefinition ?? null,
+        solutionDescription: data.solutionDescription ?? null,
+        uniqueness: data.uniqueness ?? null,
+        teamMembers: data.teamMembers ?? null,
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false,
+        isSuperAdmin: false, // Default, will be overridden if applicable
         isTeamMemberOnly: data.isTeamMemberOnly ?? false,
-        associatedIdeaId: data.associatedIdeaId,
-        associatedTeamLeaderUid: data.associatedTeamLeaderUid,
+        associatedIdeaId: data.associatedIdeaId ?? null,
+        associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
     };
 
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true;
         if (profile.role !== 'ADMIN_FACULTY') {
-            profile.role = 'ADMIN_FACULTY';
+            profile.role = 'ADMIN_FACULTY'; // Ensure role consistency for super admin
         }
     } else if (data.isSuperAdmin === true) {
         profile.isSuperAdmin = true;
@@ -169,7 +172,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 export const updateUserProfile = async (
   targetUserId: string,
   data: Partial<UserProfile>,
-  actorProfile?: UserProfile | null // Profile of the admin performing the action, or null if self-update
+  actorProfile?: UserProfile | null 
 ): Promise<void> => {
   const userProfileRef = doc(db, 'users', targetUserId);
   const { uid, email, createdAt, role, isSuperAdmin, ...updateData } = data;
@@ -211,13 +214,13 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         role: data.role ?? null,
         fullName: data.fullName ?? '',
         contactNumber: data.contactNumber ?? '',
-        applicantCategory: data.applicantCategory,
-        currentStage: data.currentStage,
-        startupTitle: data.startupTitle ?? '',
-        problemDefinition: data.problemDefinition ?? '',
-        solutionDescription: data.solutionDescription ?? '',
-        uniqueness: data.uniqueness ?? '',
-        teamMembers: data.teamMembers ?? '',
+        applicantCategory: data.applicantCategory ?? null,
+        currentStage: data.currentStage ?? null,
+        startupTitle: data.startupTitle ?? null,
+        problemDefinition: data.problemDefinition ?? null,
+        solutionDescription: data.solutionDescription ?? null,
+        uniqueness: data.uniqueness ?? null,
+        teamMembers: data.teamMembers ?? null,
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
@@ -225,8 +228,8 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         updatedAt: data.updatedAt,
         isSuperAdmin: false,
         isTeamMemberOnly: data.isTeamMemberOnly ?? false,
-        associatedIdeaId: data.associatedIdeaId,
-        associatedTeamLeaderUid: data.associatedTeamLeaderUid,
+        associatedIdeaId: data.associatedIdeaId ?? null,
+        associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
     };
      if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true;
@@ -268,7 +271,7 @@ export const updateUserRoleAndPermissionsFS = async (targetUserId: string, newRo
     updates.isSuperAdmin = true;
   }
 
-  await updateDoc(userProfileRef, updates);
+  await updateDoc(userProfileRef, updates as any); // Cast to any to avoid deep type checking issues with Partial
 
   await logUserActivity(
     adminProfile.uid,
@@ -425,34 +428,45 @@ export const createIdeaFromProfile = async (
     profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
   const userProfile = await getUserProfile(userId);
-  if (!userProfile || userProfile.role === 'ADMIN_FACULTY' || profileData.startupTitle === 'Administrative Account') {
-    console.log("Skipping idea creation for admin or administrative account profile.");
+  if (!userProfile) {
+    console.error("User profile not found, cannot create idea.");
+    return null;
+  }
+  if (userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Administrative Account') {
+    console.log("Skipping idea creation for admin administrative account profile.");
     return null;
   }
   if (userProfile.isTeamMemberOnly) {
     console.log("Skipping idea creation for a user who is only a team member.");
     return null;
   }
-   if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
-    console.warn("Skipping idea creation due to missing essential idea fields in profile data.");
+  if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
+    console.warn("Skipping idea creation due to missing essential idea fields in profile data:", profileData);
     return null;
   }
 
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMemberEmails' | 'mentor'> = {
+  // Ensure all required fields for IdeaSubmission (excluding server-generated ones) are present
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'mentor' | 'teamMemberEmails' | 'applicantDisplayName' | 'applicantEmail'> = {
     userId: userId,
     title: profileData.startupTitle,
-    category: 'General Profile Submission', // Default category
+    category: 'General Profile Submission', 
     problem: profileData.problemDefinition,
     solution: profileData.solutionDescription,
     uniqueness: profileData.uniqueness,
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
-    teamMembers: profileData.teamMembers || '', // Text field for team members
-    structuredTeamMembers: [], // Initialized as empty, to be populated by idea owner
+    teamMembers: profileData.teamMembers || '', 
+    structuredTeamMembers: [], 
     status: 'SUBMITTED',
     programPhase: null,
+    // Optional fields that might not be set at creation
+    fileURL: undefined,
+    fileName: undefined,
+    studioLocation: undefined,
+    cohortId: undefined,
   };
+
   const docRef = await addDoc(ideaCol, {
     ...newIdeaPayload,
     teamMemberEmails: [], // Initialized as empty
@@ -461,15 +475,15 @@ export const createIdeaFromProfile = async (
   });
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
+  
   const data = newDocSnap.data();
-  const createdIdea = {
+  return {
     id: newDocSnap.id,
     ...data,
+    // Ensure array fields are initialized if not present
     structuredTeamMembers: data?.structuredTeamMembers || [],
     teamMemberEmails: data?.teamMemberEmails || [],
    } as IdeaSubmission;
-
-  return createdIdea;
 };
 
 
@@ -591,7 +605,7 @@ export const updateIdeaStatusAndPhase = async (
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (!newPhase) {
+    } else if (!newPhase) { // If selected but no phase chosen, clear phase details
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
@@ -599,7 +613,7 @@ export const updateIdeaStatusAndPhase = async (
         updates.nextPhaseGuidelines = null;
         updates.mentor = deleteField();
     }
-  } else {
+  } else { // For any status other than 'SELECTED'
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -611,7 +625,7 @@ export const updateIdeaStatusAndPhase = async (
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminProfile.uid;
       updates.rejectedAt = serverTimestamp() as Timestamp;
-    } else {
+    } else { // For statuses like SUBMITTED, UNDER_REVIEW, IN_EVALUATION
       updates.rejectionRemarks = deleteField();
       updates.rejectedByUid = deleteField();
       updates.rejectedAt = deleteField();
@@ -645,7 +659,7 @@ export const assignMentorToIdea = async (ideaId: string, ideaTitle: string, ment
   } else {
     updates.mentor = mentorName;
   }
-  await updateDoc(ideaRef, updates);
+  await updateDoc(ideaRef, updates as any); // Cast to any to avoid complex type issues
 
   await logUserActivity(
     adminProfile.uid,
@@ -682,8 +696,9 @@ export const submitOrUpdatePhase2Mark = async (
     markedAt: serverTimestamp() as Timestamp,
   };
 
+  const updatePath = `phase2Marks.${adminProfile.uid}`;
   await updateDoc(ideaRef, {
-    [`phase2Marks.${adminProfile.uid}`]: mark !== null ? markData : deleteField(),
+    [updatePath]: mark !== null ? markData : deleteField(),
     updatedAt: serverTimestamp(),
   });
 
@@ -840,7 +855,20 @@ export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, 
 
 
   if (memberIndex === -1) {
-      throw new Error(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found to update.`);
+      // This could happen if the member was removed or email changed before this update.
+      // For simplicity, we'll log and potentially re-add if logic demands.
+      // However, if updating, they should exist.
+      console.warn(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found in idea ${ideaId} to update. Attempting to add if slots available.`);
+      // Fallback: try to add if not found, but this changes semantics of "update"
+      // For now, let's assume update means they must exist.
+      // throw new Error(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found to update.`);
+      // Alternative: add them if array not full
+       if (currentMembers.length < 4) {
+        await addTeamMemberToIdea(ideaId, ideaTitle, updatedMemberData, actorProfile); // Call add function
+        return;
+      } else {
+         throw new Error(`Team member not found for update, and team is full for idea ${ideaId}.`);
+      }
   }
 
 
@@ -857,6 +885,8 @@ export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, 
 
   
   if (oldEmail !== newEmail) {
+    // Firestore arrayUnion/arrayRemove are safer for managing unique email list if needed,
+    // but rewriting the whole list after client-side modification is also common.
     const newTeamMemberEmails = updatedMembersArray.map(m => m.email.toLowerCase());
     updates.teamMemberEmails = newTeamMemberEmails;
   }
@@ -884,29 +914,30 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   }
 ): Promise<void> => {
   if (!memberUser.email) {
-    throw new Error("Team member email is missing, cannot update idea.");
+    console.error("Team member email is missing, cannot update idea.");
+    return; 
   }
   const ideaRef = doc(db, 'ideas', ideaId);
-  const ideaDoc = await getDoc(ideaRef);
+  const ideaDocSnap = await getDoc(ideaRef);
 
-  if (!ideaDoc.exists()) {
-    throw new Error(`Idea with ID ${ideaId} not found.`);
+  if (!ideaDocSnap.exists()) {
+    console.error(`Idea with ID ${ideaId} not found for updating team member details.`);
+    return; 
   }
 
-  const ideaData = ideaDoc.data() as IdeaSubmission;
+  const ideaData = ideaDocSnap.data() as IdeaSubmission;
   const currentMembers = ideaData.structuredTeamMembers || [];
-  let memberUpdated = false;
+  let memberFoundAndUpdated = false;
 
-  const updatedMembersArray = currentMembers.map(member => {
-    // Match by email (case-insensitive) as the ID might still be a placeholder
+  const updatedStructuredMembersArray = currentMembers.map(member => {
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
-      memberUpdated = true;
+      memberFoundAndUpdated = true;
       return {
-        id: memberUser.uid, // IMPORTANT: Update ID to the member's actual Firebase UID
+        id: memberUser.uid, 
         name: memberProfileDataFromForm.fullName,
         email: memberUser.email!, 
         phone: memberProfileDataFromForm.contactNumber,
-        institute: memberProfileDataFromForm.instituteName || member.institute || '',
+        institute: memberProfileDataFromForm.instituteName || member.institute || '', 
         department: member.department || '', 
         enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
       };
@@ -914,17 +945,25 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
     return member; 
   });
 
-  if (!memberUpdated) {
-    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} structuredTeamMembers during profile setup update. Idea document not updated for this member's details.`);
+  if (!memberFoundAndUpdated) {
+    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} to update after profile setup. No changes made to idea document.`);
     return;
   }
 
   const updatePayload: { structuredTeamMembers: TeamMember[], updatedAt: Timestamp } = {
-    structuredTeamMembers: updatedMembersArray,
+    structuredTeamMembers: updatedStructuredMembersArray,
     updatedAt: serverTimestamp() as Timestamp,
   };
 
   await updateDoc(ideaRef, updatePayload);
+
+  await logUserActivity(
+    memberUser.uid,
+    memberProfileDataFromForm.fullName,
+    'IDEA_TEAM_MEMBER_UPDATED', 
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { memberEmail: memberUser.email, detailsUpdated: ['id', 'name', 'phone', 'institute', 'enrollmentNumber', 'college'] }
+  );
 };
 
 
@@ -958,10 +997,13 @@ export const removeTeamMemberFromIdea = async (ideaId: string, ideaTitle: string
 export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<IdeaSubmission | null> => {
   if (!userEmail) return null;
   const ideasCol = collection(db, 'ideas');
+  // Query for ideas where the user's email (case-insensitive match if possible, though Firestore is case-sensitive by default)
+  // is in the teamMemberEmails array.
   const q = query(ideasCol, where('teamMemberEmails', 'array-contains', userEmail.toLowerCase()));
   const querySnapshot = await getDocs(q);
 
   if (!querySnapshot.empty) {
+    // Assuming a user can only be a team member of one idea at a time through this mechanism for now
     const ideaDoc = querySnapshot.docs[0]; 
     const data = ideaDoc.data();
      const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
@@ -1046,7 +1088,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
