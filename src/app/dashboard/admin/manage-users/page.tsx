@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { getAllUsers, updateUserRoleAndPermissionsFS, deleteUserAccountAndProfile } from '@/lib/firebase/firestore';
+import { getAllUsers, updateUserRoleAndPermissionsFS, deleteUserAccountAndProfile, updateUserProfile } from '@/lib/firebase/firestore';
 import type { UserProfile, Role } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -12,7 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'; // Added Dialog
+import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2, Edit3 } from 'lucide-react'; // Added Edit3
+import { AdminEditUserProfileForm, type AdminEditableProfileFormData } from '@/components/admin/AdminEditUserProfileForm'; // Added Form
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,31 +24,32 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+} from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger as it's used with asChild
 
 export default function ManageUsersPage() {
-  const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
+  const { userProfile: adminUserProfile, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [actionUser, setActionUser] = useState<UserProfile | null>(null);
+  const [editingUserProfile, setEditingUserProfile] = useState<UserProfile | null>(null); // For edit dialog
   const [dialogAction, setDialogAction] = useState<'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper' | 'deleteUser' | null>(null);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [isEditProfileDialogOpen, setIsEditProfileDialogOpen] = useState(false);
 
 
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
-      if (!userProfile || userProfile.role !== 'ADMIN_FACULTY') {
+      if (!adminUserProfile || adminUserProfile.role !== 'ADMIN_FACULTY') {
         toast({ title: "Access Denied", description: "You are not authorized to view this page.", variant: "destructive" });
         router.push('/dashboard');
       } else {
         fetchUsers();
       }
     }
-  }, [userProfile, authLoading, initialLoadComplete, router, toast]);
+  }, [adminUserProfile, authLoading, initialLoadComplete, router, toast]);
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -120,6 +123,33 @@ export default function ManageUsersPage() {
     setDialogAction(null);
   };
 
+  const handleAdminUpdateProfile = async (updatedData: Partial<UserProfile>) => {
+    if (!editingUserProfile || !adminUserProfile) {
+      toast({ title: "Error", description: "Target user or admin profile not found.", variant: "destructive" });
+      return;
+    }
+    try {
+      await updateUserProfile(editingUserProfile.uid, updatedData);
+      toast({ title: "Profile Updated", description: `${editingUserProfile.displayName || editingUserProfile.email}'s profile has been updated.` });
+      setIsEditProfileDialogOpen(false);
+      setEditingUserProfile(null);
+      fetchUsers(); // Re-fetch users to reflect changes
+      // Potentially call a function here to propagate changes to IdeaSubmission if needed.
+    } catch (error: any) {
+      console.error("Error updating user profile by admin:", error);
+      toast({ title: "Profile Update Error", description: error.message || "Could not update user's profile.", variant: "destructive" });
+    }
+  };
+
+  const openEditProfileDialog = (user: UserProfile) => {
+    if (user.email === 'pranavrathi07@gmail.com' && adminUserProfile?.email !== 'pranavrathi07@gmail.com') {
+      toast({ title: "Action Restricted", description: "Only the primary super admin can edit their own profile directly via this interface.", variant: "default" });
+      return;
+    }
+    setEditingUserProfile(user);
+    setIsEditProfileDialogOpen(true);
+  };
+
   const getRoleBadge = (role: Role, isSuperAdmin?: boolean) => {
     if (isSuperAdmin) return <Badge variant="destructive" className="bg-red-600 hover:bg-red-700 text-white flex items-center gap-1"><ShieldAlert className="h-3 w-3" />Super Admin</Badge>;
     switch (role) {
@@ -148,7 +178,7 @@ export default function ManageUsersPage() {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
 
-  if (!userProfile || userProfile.role !== 'ADMIN_FACULTY') {
+  if (!adminUserProfile || adminUserProfile.role !== 'ADMIN_FACULTY') {
     return <div className="flex justify-center items-center h-screen"><p>Access Denied. Redirecting...</p></div>;
   }
   
@@ -192,7 +222,10 @@ export default function ManageUsersPage() {
                         {getRoleBadge(u.role, u.isSuperAdmin)}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
-                        {u.email !== 'pranavrathi07@gmail.com' && userProfile.isSuperAdmin && ( 
+                        <Button variant="outline" size="sm" onClick={() => openEditProfileDialog(u)}>
+                            <Edit3 className="h-4 w-4 mr-1 sm:mr-2" /> Edit Profile
+                        </Button>
+                        {u.email !== 'pranavrathi07@gmail.com' && adminUserProfile.isSuperAdmin && ( 
                             <>
                             {u.role !== 'ADMIN_FACULTY' && (
                                 <Button variant="outline" size="sm" onClick={() => openConfirmationDialog(u, 'promoteAdmin')}>Promote to Admin</Button>
@@ -209,9 +242,27 @@ export default function ManageUsersPage() {
                             </>
                         )}
                         {u.email !== 'pranavrathi07@gmail.com' && (
-                           <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'deleteUser')} className="ml-2">
-                             <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete User
-                           </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm" className="ml-2">
+                                  <Trash2 className="h-4 w-4 mr-1 sm:mr-2" /> Delete User
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Confirm Action: Delete User</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {`Delete user account and profile for ${u.displayName || u.email}? This action permanently removes their login account and all associated data from the system. This cannot be undone.`}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel onClick={() => { setActionUser(null); setDialogAction(null); }}>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => { setActionUser(u); setDialogAction('deleteUser'); handleUserAction(); }} className="bg-destructive hover:bg-destructive/90">
+                                    Proceed
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
                         )}
                         {u.email === 'pranavrathi07@gmail.com' && <Badge variant="default">Primary Super Admin</Badge>}
                       </TableCell>
@@ -223,7 +274,15 @@ export default function ManageUsersPage() {
           )}
         </CardContent>
       </Card>
-      <AlertDialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
+
+      {/* Confirmation Dialog for Role Changes */}
+      <AlertDialog open={isConfirmDialogOpen && dialogAction !== 'deleteUser'} onOpenChange={(isOpen) => {
+          if (!isOpen) {
+            setActionUser(null);
+            setDialogAction(null);
+          }
+          setIsConfirmDialogOpen(isOpen && dialogAction !== 'deleteUser');
+      }}>
         <AlertDialogContent>
             <AlertDialogHeader>
             <AlertDialogTitle>Confirm Action: {dialogAction?.replace(/([A-Z])/g, ' $1').trim()}</AlertDialogTitle>
@@ -239,8 +298,32 @@ export default function ManageUsersPage() {
             </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog for Editing User Profile */}
+      {editingUserProfile && (
+        <Dialog open={isEditProfileDialogOpen} onOpenChange={(isOpen) => {
+            if (!isOpen) {
+                setEditingUserProfile(null);
+            }
+            setIsEditProfileDialogOpen(isOpen);
+        }}>
+          <DialogContent className="sm:max-w-2xl"> {/* Adjusted max-width for better form layout */}
+            <DialogHeader>
+              <DialogTitle>Edit User Profile</DialogTitle>
+            </DialogHeader>
+            <AdminEditUserProfileForm
+              targetUserProfile={editingUserProfile}
+              onSave={handleAdminUpdateProfile}
+              onCancel={() => {
+                setIsEditProfileDialogOpen(false);
+                setEditingUserProfile(null);
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
-
+    

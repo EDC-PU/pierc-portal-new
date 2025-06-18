@@ -22,15 +22,14 @@ service cloud.firestore {
       let isAttemptingPrivilegeEscalation = data.isSuperAdmin == true || data.role == 'ADMIN_FACULTY';
       let isAllowedRoleAssignment = !isAttemptingPrivilegeEscalation || (isAttemptingPrivilegeEscalation && isPrimarySuperAdminEmail(request.auth.token.email));
 
-      // request.resource.data refers to the data being written in a create operation
-      return request.auth.uid == data.uid && // UID in document must match authenticated user
-             data.email == request.auth.token.email && // Email in document must match authenticated user
+      return request.auth.uid == data.uid &&
+             data.email == request.auth.token.email &&
              isAllowedRoleAssignment &&
              // Ensure team member specific fields are only set if isTeamMemberOnly is true
-             (data.isTeamMemberOnly == false || data.isTeamMemberOnly == null || (data.isTeamMemberOnly == true && data.associatedIdeaId != null && data.associatedTeamLeaderUid != null)) &&
+             (data.isTeamMemberOnly == false || (data.isTeamMemberOnly == true && data.associatedIdeaId != null && data.associatedTeamLeaderUid != null)) &&
              // Ensure idea owner specific fields are only set if isTeamMemberOnly is false (or not present, defaulting to false)
              (data.isTeamMemberOnly == true || (
-                (data.isTeamMemberOnly == false || data.isTeamMemberOnly == null) && // allow isTeamMemberOnly to be absent for non-team members
+                (data.isTeamMemberOnly == false || !('isTeamMemberOnly' in data)) &&
                  data.startupTitle != null &&
                  data.problemDefinition != null &&
                  data.solutionDescription != null &&
@@ -44,13 +43,14 @@ service cloud.firestore {
     function isUpdatingOwnValidProfile(newData, oldData) {
       return request.auth.uid == newData.uid &&
              newData.uid == oldData.uid &&
-             newData.email == oldData.email &&
-             newData.role == oldData.role && 
-             newData.isSuperAdmin == oldData.isSuperAdmin && 
+             newData.email == oldData.email && // Primary email cannot be changed by user
+             newData.role == oldData.role && // Role changes are admin-only for existing users
+             newData.isSuperAdmin == oldData.isSuperAdmin && // Super admin status is admin-only
+             // Team member association fields should not be editable by the user directly after initial setup this way
              newData.isTeamMemberOnly == oldData.isTeamMemberOnly &&
              newData.associatedIdeaId == oldData.associatedIdeaId &&
              newData.associatedTeamLeaderUid == oldData.associatedTeamLeaderUid &&
-             newData.createdAt.toMillis() == oldData.createdAt.toMillis(); // Compare millis for Timestamp
+             newData.createdAt == oldData.createdAt; // Cannot change creation timestamp
     }
 
     // Idea owner is updating their idea, not changing status, phase, or admin-controlled fields
@@ -61,26 +61,24 @@ service cloud.firestore {
         'fileURL', 'fileName', 'studioLocation',
         'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt'
       ];
-      // Get keys that are different between newData and oldData or new in newData
-      let affectedKeys = newData.keys().filter(key => newData[key] != oldData[key] || !(key in oldData));
-      
-      let onlyAllowedFieldsChanged = affectedKeys.hasOnly(allowedUserModifiableFields);
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      let onlyAllowedFieldsChanged = changedKeys.hasOnly(allowedUserModifiableFields);
 
       return onlyAllowedFieldsChanged &&
-             newData.userId == oldData.userId && 
-             newData.status == oldData.status && 
-             newData.programPhase == oldData.programPhase && 
-             newData.phase2Marks == oldData.phase2Marks && 
-             newData.mentor == oldData.mentor &&
-             newData.rejectionRemarks == oldData.rejectionRemarks && 
-             newData.rejectedByUid == oldData.rejectedByUid && 
-             newData.rejectedAt == oldData.rejectedAt && 
-             newData.nextPhaseDate == oldData.nextPhaseDate && 
-             newData.nextPhaseStartTime == oldData.nextPhaseStartTime && 
-             newData.nextPhaseEndTime == oldData.nextPhaseEndTime && 
-             newData.nextPhaseVenue == oldData.nextPhaseVenue && 
-             newData.nextPhaseGuidelines == oldData.nextPhaseGuidelines && 
-             newData.submittedAt.toMillis() == oldData.submittedAt.toMillis();
+             newData.userId == oldData.userId && // Owner cannot change
+             newData.status == oldData.status && // Status is admin-controlled
+             newData.programPhase == oldData.programPhase && // Phase is admin-controlled
+             newData.phase2Marks == oldData.phase2Marks && // Marks are admin-controlled
+             newData.mentor == oldData.mentor && // Mentor is admin-controlled
+             newData.rejectionRemarks == oldData.rejectionRemarks && // Admin-controlled
+             newData.rejectedByUid == oldData.rejectedByUid && // Admin-controlled
+             newData.rejectedAt == oldData.rejectedAt && // Admin-controlled
+             newData.nextPhaseDate == oldData.nextPhaseDate && // Admin-controlled
+             newData.nextPhaseStartTime == oldData.nextPhaseStartTime && // Admin-controlled
+             newData.nextPhaseEndTime == oldData.nextPhaseEndTime && // Admin-controlled
+             newData.nextPhaseVenue == oldData.nextPhaseVenue && // Admin-controlled
+             newData.nextPhaseGuidelines == oldData.nextPhaseGuidelines && // Admin-controlled
+             newData.submittedAt == oldData.submittedAt; // Cannot change submission timestamp
     }
 
     // Check if idea submission data is valid during creation by owner
@@ -91,85 +89,88 @@ service cloud.firestore {
              data.solution != null && data.solution.size() > 0 &&
              data.uniqueness != null && data.uniqueness.size() > 0 &&
              data.developmentStage != null &&
-             data.status == 'SUBMITTED' && 
-             data.programPhase == null && 
-             (data.teamMemberEmails == null || data.teamMemberEmails.size() >= 0) && 
-             (data.structuredTeamMembers == null || data.structuredTeamMembers.size() >= 0);
+             data.status == 'SUBMITTED' && // Initial status
+             data.programPhase == null && // Initial phase
+             data.teamMemberEmails.size() >= 0 && // Can be empty array
+             data.structuredTeamMembers.size() >= 0; // Can be empty array
     }
 
     // Team member is updating their own entry in an idea's structuredTeamMembers array
     function isTeamMemberUpdatingOwnDetailsInIdea(request, resource) {
-        let newData = request.resource.data; // Data being written
-        let oldData = resource.data;         // Existing data
+        let writeFields = request.writeFields;
 
-        // 1. Determine changed top-level fields. Only 'structuredTeamMembers' and 'updatedAt' are allowed to change.
-        let allTopLevelKeys = newData.keys().concat(oldData.keys()).toSet();
-        let changedTopLevelKeys = allTopLevelKeys.filter(key => newData[key] != oldData[key]);
-        
-        if (!changedTopLevelKeys.hasOnly(['structuredTeamMembers', 'updatedAt'])) {
-            return false;
+        if (!writeFields.hasOnly(['structuredTeamMembers', 'updatedAt'])) {
+          return false; // Only these top-level fields can be modified by a team member in this context.
         }
 
-        // 2. If 'structuredTeamMembers' is not even part of the write (only updatedAt changed), it's valid.
-        if (!changedTopLevelKeys.has('structuredTeamMembers')) {
-            return true; 
+        // Ensure critical idea fields are not being changed by the team member
+        if (request.resource.data.userId != resource.data.userId ||
+            request.resource.data.status != resource.data.status ||
+            request.resource.data.programPhase != resource.data.programPhase ||
+            !request.resource.data.teamMemberEmails.toSet().equals(resource.data.teamMemberEmails.toSet())) {
+           return false;
         }
 
-        // 3. Constraints on 'structuredTeamMembers' update
-        let newMembers = newData.structuredTeamMembers;
-        let oldMembers = oldData.structuredTeamMembers;
+        if (writeFields.has('structuredTeamMembers')) {
+            let newMembers = request.resource.data.structuredTeamMembers;
+            let oldMembers = resource.data.structuredTeamMembers;
 
-        if (newMembers == null || oldMembers == null) return false; 
-        if (newMembers.size() != oldMembers.size()) {
-            return false; // Team members cannot add or remove other members via this specific update path.
-        }
-
-        let selfUpdateValidated = false;
-        let otherMembersUnchangedCount = 0;
-
-        for (let i = 0; i < newMembers.size(); i++) {
-            let newMemberMap = newMembers[i]; // This is a map in security rules
-            
-            // Find corresponding old member by email. Assumes emails are unique within a team and don't change.
-            let originalMemberEntryList = oldMembers.filter(om => om.email == newMemberMap.email);
-            if (originalMemberEntryList.size() != 1) {
-                 return false; // Member not found or duplicate old emails.
+            if (newMembers.size() != oldMembers.size()) {
+              return false; // Team members cannot add or remove other members this way.
             }
-            let oldMemberMap = originalMemberEntryList[0];
 
-            if (newMemberMap.email == request.auth.token.email) {
-                // This is the authenticated user's entry.
-                if (newMemberMap.email != oldMemberMap.email) return false; // Email itself cannot be changed by member.
+            let selfModificationValid = false;
+            let modificationCount = 0;
 
-                // Key conditions:
-                // A) Member is "claiming" their spot: old ID was not their UID, new ID is their UID.
-                // B) Member is updating details: old ID was their UID, new ID is still their UID.
-                let isClaimingSpot = (newMemberMap.id == request.auth.uid && oldMemberMap.id != request.auth.uid);
-                let isUpdatingDetails = (newMemberMap.id == request.auth.uid && oldMemberMap.id == request.auth.uid);
+            for (let i = 0; i < newMembers.size(); i++) {
+                let newMember = newMembers[i];
+                // Find corresponding old member by original email (assuming email is stable for matching during this specific update)
+                // This is crucial because the 'id' of the member object might be changing from nanoid to UID.
+                let oldMemberCandidates = oldMembers.filter(om => om.email == newMember.email);
 
-                if (isClaimingSpot || isUpdatingDetails) {
-                    // Other fields (name, phone, etc.) can change.
-                    // We assume client sends correct details; rules don't cross-ref client form data.
-                    selfUpdateValidated = true;
+                if (oldMemberCandidates.size() == 1) {
+                    let oldMember = oldMemberCandidates[0];
+
+                    if (newMember.email == request.auth.token.email) { // Is this the authenticated user's entry?
+                        // Check if it's the first-time profile setup: ID changes from non-UID to UID
+                        if (newMember.id == request.auth.uid && oldMember.id != request.auth.uid) {
+                           // Allow update if ID becomes UID, and other fields (name, phone, etc.) are being set.
+                           // Email must remain the same as oldMember's email.
+                           if (newMember.name != null && newMember.phone != null && newMember.institute != null && newMember.department != null) {
+                             selfModificationValid = true;
+                             modificationCount++;
+                           } else { return false; /* Incomplete data during ID sync */ }
+                        }
+                        // Check if it's a subsequent update by the member to their own details (ID is already UID)
+                        else if (newMember.id == request.auth.uid && oldMember.id == request.auth.uid) {
+                            // Allow if only name, phone, institute, department, enrollmentNumber are changed. Email and ID must match.
+                            if (newMember.name != oldMember.name || newMember.phone != oldMember.phone ||
+                                newMember.institute != oldMember.institute || newMember.department != oldMember.department ||
+                                newMember.enrollmentNumber != oldMember.enrollmentNumber) {
+                               selfModificationValid = true;
+                               modificationCount++;
+                            } else if (newMember == oldMember) {
+                                // No change to this member, also valid.
+                            } else { return false; /* Invalid change to own data */ }
+                        } else if (newMember == oldMember) {
+                           // No change to this member's entry, this is fine.
+                        }
+                        else {
+                           return false; // Invalid change to own ID or non-matching scenario.
+                        }
+                    } else { // This is another team member's entry
+                        if (newMember != oldMember) {
+                           return false; // Cannot modify another team member's data.
+                        }
+                    }
                 } else {
-                    // Any other ID change for self, or trying to change an ID that isn't the placeholder or their own.
-                    return false;
+                    return false; // Email not found in old members or duplicate emails, structure changed unacceptably.
                 }
-            } else {
-                // This is another team member's entry. It must be entirely unchanged.
-                if (newMemberMap.id != oldMemberMap.id ||
-                    newMemberMap.name != oldMemberMap.name ||
-                    newMemberMap.email != oldMemberMap.email || 
-                    newMemberMap.phone != oldMemberMap.phone ||
-                    newMemberMap.institute != oldMemberMap.institute ||
-                    newMemberMap.department != oldMemberMap.department ||
-                    newMemberMap.enrollmentNumber != oldMemberMap.enrollmentNumber) {
-                    return false; // Other member's data was changed.
-                }
-                otherMembersUnchangedCount++;
             }
+            // Only one member's data (themselves) should have been modified, or no members if only updatedAt changed.
+            return modificationCount <= 1 && (modificationCount == 1 ? selfModificationValid : true);
         }
-        return selfUpdateValidated && (otherMembersUnchangedCount == (oldMembers.size() -1));
+        return true; // Valid if only 'updatedAt' changed or no change to 'structuredTeamMembers'.
     }
 
 
@@ -182,17 +183,22 @@ service cloud.firestore {
 
       allow update: if (request.auth.uid == userId &&
                        isUpdatingOwnValidProfile(request.resource.data, resource.data)) ||
-                      (isSuperAdmin() && !(isPrimarySuperAdminEmail(resource.data.email) && request.resource.data.isSuperAdmin == false && request.resource.data.role != 'ADMIN_FACULTY')) || // SuperAdmins can update
-                      (isAdmin() && !isSuperAdmin() && request.auth.uid != userId && !(isPrimarySuperAdminEmail(resource.data.email))); // Admins can update others, not primary, not self if not superAdmin
+                      (isAdmin() &&
+                       request.resource.data.uid == resource.data.uid && // Cannot change UID
+                       request.resource.data.email == resource.data.email && // Cannot change primary email
+                       request.resource.data.createdAt == resource.data.createdAt && // Cannot change creation time
+                       !(isPrimarySuperAdminEmail(resource.data.email) && request.resource.data.isSuperAdmin == false) && // Cannot demote primary super admin
+                       !(isPrimarySuperAdminEmail(resource.data.email) && request.resource.data.role != 'ADMIN_FACULTY') // Cannot change role of primary super admin
+                      );
 
-      allow delete: if isSuperAdmin() && !isPrimarySuperAdminEmail(resource.data.email); // Super Admin can delete, but not primary super admin
+      allow delete: if isAdmin() && !isPrimarySuperAdminEmail(resource.data.email); // Admin can delete, but not primary super admin
     }
 
     // Ideas Collection
     match /ideas/{ideaId} {
       allow read: if request.auth != null &&
                     (resource.data.userId == request.auth.uid ||
-                     (resource.data.teamMemberEmails != null && request.auth.token.email in resource.data.teamMemberEmails) ||
+                     request.auth.token.email in resource.data.teamMemberEmails ||
                      isAdmin());
 
       allow create: if request.auth.uid == request.resource.data.userId &&
@@ -201,8 +207,9 @@ service cloud.firestore {
       allow update: if isAdmin() ||
                      (request.auth.uid == resource.data.userId &&
                       isIdeaOwnerUpdatingValidFields(request.resource.data, resource.data)) ||
-                     ((resource.data.teamMemberEmails != null && request.auth.token.email in resource.data.teamMemberEmails) &&
+                     (request.auth.token.email in resource.data.teamMemberEmails &&
                       isTeamMemberUpdatingOwnDetailsInIdea(request, resource));
+
 
       allow delete: if isAdmin() || request.auth.uid == resource.data.userId;
     }
@@ -216,7 +223,7 @@ service cloud.firestore {
 
     // Cohorts Collection (Future Use)
     match /cohorts/{cohortId} {
-      allow read: if request.auth != null; 
+      allow read: if request.auth != null; // Or more specific rules like cohort members
       allow create, update, delete: if isAdmin();
     }
 

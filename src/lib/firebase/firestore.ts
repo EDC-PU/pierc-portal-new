@@ -156,7 +156,11 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
 
 export const updateUserProfile = async (userId: string, data: Partial<UserProfile>): Promise<void> => {
   const userProfileRef = doc(db, 'users', userId);
-  const cleanData = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
+  // Ensure sensitive fields like email, uid, createdAt are not in `data` or are handled by security rules
+  const { uid, email, createdAt, role, isSuperAdmin, ...updateData } = data;
+  
+  const cleanData = Object.fromEntries(Object.entries(updateData).filter(([, value]) => value !== undefined));
+
   await updateDoc(userProfileRef, {
     ...cleanData,
     updatedAt: serverTimestamp(),
@@ -934,3 +938,5 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   }
   return null;
 };
+
+    
