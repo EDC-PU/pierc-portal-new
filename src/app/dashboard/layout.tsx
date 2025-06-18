@@ -6,7 +6,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import {
-  // SidebarProvider, // Removed: SidebarProvider is now in AppShell
   Sidebar,
   SidebarHeader,
   SidebarContent,
@@ -39,7 +38,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (loading || !initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-5rem)]"> {/* Adjusted based on Navbar height */}
+      // Adjusted for new navbar height (h-16 = 4rem)
+      <div className="flex items-center justify-center h-full"> 
         <LoadingSpinner size={48} />
       </div>
     );
@@ -47,7 +47,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
   if (!user || !userProfile) {
      return (
-      <div className="flex items-center justify-center h-[calc(100vh-5rem)]">
+      <div className="flex items-center justify-center h-full">
         <p>Authenticating...</p>
         <LoadingSpinner size={32} />
       </div>
@@ -70,11 +70,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    // SidebarProvider removed from here
-    // The outer div now needs to handle the overall layout with the sidebar.
-    // The `AppShell` handles the Navbar and Footer. This component is now for the dashboard's main content area + its own sidebar.
-    <div className="flex flex-1"> {/* flex-1 to take remaining height within AppShell's flex-grow area */}
-      <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full"> {/* Removed 'fixed' */}
+    <div className="flex flex-1">
+      <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full">
         <SidebarHeader className="flex items-center justify-between p-2 md:justify-center">
            <SidebarTrigger className="hidden md:flex" />
         </SidebarHeader>
@@ -131,8 +128,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       
       {/* Main content area for the dashboard pages */}
       <div className="flex-1 w-0 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] peer-data-[state=expanded]:md:ml-[var(--sidebar-width)]">
-         {/* The container and padding for dashboard pages go here now */}
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full"> {/* Added h-full here for children to potentially flex-grow */}
+         {/* Removed 'container' and 'mx-auto' to allow full width utilization */}
+        <div className="px-4 sm:px-6 lg:px-8 py-8 h-full">
            {children}
         </div>
       </div>
