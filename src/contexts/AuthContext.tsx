@@ -68,7 +68,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       lastUserUid = firebaseUser?.uid || null;
       setUser(firebaseUser);
 
-      if (firebaseUser && auth.currentUser && firebaseUser.uid === auth.currentUser.uid) { // Added robustness check
+      if (firebaseUser && auth.currentUser && firebaseUser.uid === auth.currentUser.uid) { 
         let profile = await getUserProfile(firebaseUser.uid);
         let ideaMembership: IdeaSubmission | null = null;
         let leaderProfile: UserProfile | null = null;
@@ -211,8 +211,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       actualRole = 'ADMIN_FACULTY'; 
     }
 
+    // Determine if setting up as a team member based on AuthContext's state
+    // (isTeamMemberForIdea is set if the user's email was found in an existing idea's teamMemberEmails list)
     const settingUpAsTeamMember = isTeamMemberForIdea !== null;
 
+    // Construct the base profile data
     const profileDataForCreation: Partial<UserProfile> = {
         uid: user.uid,
         email: user.email,
@@ -220,14 +223,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         photoURL: user.photoURL,
         role: actualRole,
         isSuperAdmin: isSuperAdminEmail,
-        ...additionalData,
+        fullName: additionalData.fullName,
+        contactNumber: additionalData.contactNumber,
+        // Common optional fields
+        enrollmentNumber: additionalData.enrollmentNumber || undefined,
+        college: additionalData.college || undefined,
+        instituteName: additionalData.instituteName || undefined,
         isTeamMemberOnly: settingUpAsTeamMember, 
     };
-
+    
     if (settingUpAsTeamMember && isTeamMemberForIdea) {
+        // Team Member specific fields
         profileDataForCreation.associatedIdeaId = isTeamMemberForIdea.id;
         profileDataForCreation.associatedTeamLeaderUid = isTeamMemberForIdea.userId;
+        // Explicitly nullify idea owner fields
+        profileDataForCreation.startupTitle = null;
+        profileDataForCreation.problemDefinition = null;
+        profileDataForCreation.solutionDescription = null;
+        profileDataForCreation.uniqueness = null;
+        profileDataForCreation.currentStage = null;
+        profileDataForCreation.applicantCategory = null;
+        profileDataForCreation.teamMembers = null; // The free-text field for team members
     } else {
+        // Idea Owner specific fields (or Admin who is not a team member)
         profileDataForCreation.startupTitle = additionalData.startupTitle;
         profileDataForCreation.problemDefinition = additionalData.problemDefinition;
         profileDataForCreation.solutionDescription = additionalData.solutionDescription;
@@ -235,6 +253,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         profileDataForCreation.currentStage = additionalData.currentStage;
         profileDataForCreation.applicantCategory = additionalData.applicantCategory;
         profileDataForCreation.teamMembers = additionalData.teamMembers || '';
+        // Explicitly nullify team member association fields
+        profileDataForCreation.associatedIdeaId = null;
+        profileDataForCreation.associatedTeamLeaderUid = null;
     }
 
 
@@ -272,6 +293,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setTeamLeaderProfileForMember(leader);
         }
       } else if (!createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle !== 'Administrative Account') {
+        // Only create an idea if the user is NOT a team member and has a valid startup title
         const idea = await createIdeaFromProfile(user.uid, {
             startupTitle: createdOrUpdatedProfile.startupTitle!,
             problemDefinition: createdOrUpdatedProfile.problemDefinition!,
@@ -316,7 +338,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       const userProfileRef = doc(db, 'users', user.uid);
-      await deleteDoc(userProfileRef); // This should now be allowed by rules
+      await deleteDoc(userProfileRef); 
       toast({ title: "Profile Data Deleted", description: "Your profile information has been removed."});
 
       const deleteAuthFn = httpsCallable(firebaseFunctions, 'deleteMyAuthAccountCallable');
