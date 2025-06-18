@@ -46,12 +46,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
-  if (!phase) return '';
+  if (!phase) return 'N/A';
   switch (phase) {
     case 'PHASE_1': return 'Phase 1';
     case 'PHASE_2': return 'Phase 2';
     case 'COHORT': return 'Cohort';
-    default: return '';
+    default: return 'N/A';
   }
 };
 
@@ -150,11 +150,14 @@ export default function StudentDashboard() {
   };
 
   useEffect(() => {
+    // Only fetch ideas if the user is NOT primarily a team member
+    // The isTeamMemberForIdea context indicates if they are associated with an idea as a member
     if (user?.uid && !isTeamMemberForIdea) {
       fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt?.id);
-    } else if (isTeamMemberForIdea) {
+    } else {
+      // If they are a team member, or no user, don't fetch ideas for "My Idea Submissions"
       setLoadingIdeas(false);
-      setUserIdeas([]); 
+      setUserIdeas([]);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, isTeamMemberForIdea]); 
@@ -314,9 +317,6 @@ export default function StudentDashboard() {
                 const currentIdeaMemberCount = currentIdeaData?.structuredTeamMembers?.length || 0;
                 
                 if (currentIdeaMemberCount < 4) {
-                   // For a new member, the ID is the nanoid generated above.
-                   // If the user later signs up, AuthContext's `setRoleAndCompleteProfile`
-                   // will call `updateTeamMemberDetailsInIdeaAfterProfileSetup` to update this nanoid to their Firebase UID.
                    await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
                    membersAddedOrUpdatedCount++;
                 } else {
@@ -363,7 +363,7 @@ export default function StudentDashboard() {
     );
   }
 
-  if (isTeamMemberForIdea && userProfile?.isTeamMemberOnly) {
+  if (isTeamMemberForIdea) {
     // TEAM MEMBER DASHBOARD VIEW
     return (
       <div className="space-y-6 animate-slide-in-up">
@@ -373,7 +373,8 @@ export default function StudentDashboard() {
               <Briefcase className="mr-3 h-7 w-7 text-primary" /> Team Member Dashboard
             </CardTitle>
             <CardDescription>
-              Welcome, {userProfile?.displayName || userProfile?.fullName || 'Team Member'}! You are part of the following project.
+              Welcome, {userProfile?.displayName || userProfile?.fullName || user?.displayName || 'Team Member'}!
+              You are part of the project: <span className="font-semibold text-primary">{isTeamMemberForIdea.title}</span>.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -381,7 +382,7 @@ export default function StudentDashboard() {
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl text-primary">{isTeamMemberForIdea.title}</CardTitle>
-            <CardDescription>Project Details & Status</CardDescription>
+            <CardDescription>Project Details & Current Status</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
@@ -410,11 +411,11 @@ export default function StudentDashboard() {
                     <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{isTeamMemberForIdea.mentor}</p>
                 </div>
             )}
-             {isTeamMemberForIdea.nextPhaseDate && (
+             {isTeamMemberForIdea.status === 'SELECTED' && isTeamMemberForIdea.programPhase && isTeamMemberForIdea.nextPhaseDate && (
                 <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
                     <CardHeader className="pb-2 pt-4 px-4">
                         <CardTitle className="text-lg font-semibold text-primary flex items-center">
-                        <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(isTeamMemberForIdea.programPhase)} Meeting
+                            <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(isTeamMemberForIdea.programPhase)} Meeting
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
@@ -472,6 +473,9 @@ export default function StudentDashboard() {
               </Button>
               <Button variant="outline" onClick={() => router.push('/dashboard/announcements')}>
                 Check Announcements <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+               <Button variant="outline" onClick={() => router.push('/profile-setup')}>
+                My Profile <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
           </CardContent>
         </Card>
