@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark } from '@/types';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 
 // User Profile Functions
@@ -22,7 +22,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     problemDefinition: data.problemDefinition!,
     solutionDescription: data.solutionDescription!,
     uniqueness: data.uniqueness!,
-    teamMembers: data.teamMembers || '',
+    teamMembers: data.teamMembers || '', // This is the free-text field
     enrollmentNumber: data.enrollmentNumber,
     college: data.college,
     instituteName: data.instituteName,
@@ -54,7 +54,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         problemDefinition: rawData.problemDefinition ?? '',
         solutionDescription: rawData.solutionDescription ?? '',
         uniqueness: rawData.uniqueness ?? '',
-        teamMembers: rawData.teamMembers ?? '',
+        teamMembers: rawData.teamMembers ?? '', // Free-text field
         enrollmentNumber: rawData.enrollmentNumber,
         college: rawData.college,
         instituteName: rawData.instituteName,
@@ -85,7 +85,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         problemDefinition: data.problemDefinition ?? '',
         solutionDescription: data.solutionDescription ?? '',
         uniqueness: data.uniqueness ?? '',
-        teamMembers: data.teamMembers ?? '',
+        teamMembers: data.teamMembers ?? '', // Free-text field
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
@@ -138,7 +138,7 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         problemDefinition: data.problemDefinition ?? '',
         solutionDescription: data.solutionDescription ?? '',
         uniqueness: data.uniqueness ?? '',
-        teamMembers: data.teamMembers ?? '',
+        teamMembers: data.teamMembers ?? '', // Free-text field
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
@@ -307,7 +307,8 @@ export const createIdeaFromProfile = async (
     uniqueness: profileData.uniqueness,
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
-    teamMembers: profileData.teamMembers || '', // Copy team members
+    teamMembers: profileData.teamMembers || '', // Free-text field
+    structuredTeamMembers: [], // Initialize as empty array
     status: 'SUBMITTED',
     programPhase: null,
     submittedAt: serverTimestamp() as Timestamp,
@@ -316,7 +317,12 @@ export const createIdeaFromProfile = async (
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
-  return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
+  const data = newDocSnap.data();
+  return { 
+    id: newDocSnap.id, 
+    ...data,
+    structuredTeamMembers: data?.structuredTeamMembers || [],
+   } as IdeaSubmission;
 };
 
 
@@ -352,7 +358,8 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       updatedAt,
       applicantDisplayName,
       applicantEmail,
-      teamMembers: ideaData.teamMembers || '', // Ensure teamMembers is included
+      teamMembers: ideaData.teamMembers || '', // Free-text field
+      structuredTeamMembers: ideaData.structuredTeamMembers || [],
       rejectionRemarks: ideaData.rejectionRemarks,
       rejectedByUid: ideaData.rejectedByUid,
       rejectedAt: ideaData.rejectedAt,
@@ -478,7 +485,8 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         ...data, 
         programPhase: data.programPhase || null,
         phase2Marks: data.phase2Marks || {},
-        teamMembers: data.teamMembers || '', // Ensure teamMembers is included
+        teamMembers: data.teamMembers || '', // Free-text field
+        structuredTeamMembers: data.structuredTeamMembers || [],
         submittedAt, 
         updatedAt,
         rejectionRemarks: data.rejectionRemarks,
@@ -541,13 +549,46 @@ export const getIdeasCountByApplicantCategory = async (): Promise<Record<Applica
   const ideasCol = collection(db, 'ideas');
 
   for (const category of categories) {
-    // Note: Firestore queries on fields that might not exist on all documents (like applicantType if ideas can be created without it)
-    // will not return documents lacking that field. Assuming 'applicantType' is consistently set.
     const q = query(ideasCol, where('applicantType', '==', category));
     const snapshot = await getCountFromServer(q);
     counts[category] = snapshot.data().count;
   }
   return counts;
+};
+
+export const addTeamMemberToIdea = async (ideaId: string, newMember: TeamMember): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaDoc = await getDoc(ideaRef);
+  if (!ideaDoc.exists()) {
+    throw new Error("Idea not found.");
+  }
+  const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
+  if (currentMembers.length >= 4) {
+    throw new Error("Maximum of 4 team members already reached for this idea.");
+  }
+  await updateDoc(ideaRef, {
+    structuredTeamMembers: arrayUnion(newMember),
+    updatedAt: serverTimestamp(),
+  });
+};
+
+export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove: string): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaDoc = await getDoc(ideaRef);
+  if (ideaDoc.exists()) {
+    const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
+    const memberToRemove = currentMembers.find(m => m.id === memberIdToRemove);
+    if (memberToRemove) {
+      await updateDoc(ideaRef, {
+        structuredTeamMembers: arrayRemove(memberToRemove),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      console.warn(`Team member with ID ${memberIdToRemove} not found in idea ${ideaId} for removal.`);
+    }
+  } else {
+    throw new Error("Idea not found.");
+  }
 };
 
 
@@ -591,21 +632,27 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers'> & { teamMembers?: string }): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[] }): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
     status: 'SUBMITTED',
     programPhase: null,
     phase2Marks: {}, 
-    teamMembers: ideaData.teamMembers || '', // Ensure teamMembers is included
+    teamMembers: ideaData.teamMembers || '', // Free-text field
+    structuredTeamMembers: ideaData.structuredTeamMembers || [], // Initialize as empty array
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const; 
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
-  return { id: newDocSnap.id, ...newDocSnap.data() } as IdeaSubmission;
+   const data = newDocSnap.data();
+  return { 
+    id: newDocSnap.id, 
+    ...data,
+    structuredTeamMembers: data?.structuredTeamMembers || [],
+   } as IdeaSubmission;
 };
 
 export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string, fileName: string): Promise<void> => {
@@ -617,4 +664,3 @@ export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string
     updatedAt: serverTimestamp(),
   });
 };
-

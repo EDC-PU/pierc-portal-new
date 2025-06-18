@@ -22,7 +22,7 @@ export interface UserProfile {
   solutionDescription: string;
   uniqueness: string;
   
-  teamMembers: string; // Comma-separated names, or descriptive text like "Solo"
+  teamMembers: string; // Comma-separated names, or descriptive text like "Solo". This is the original free-text field.
 
   enrollmentNumber?: string; 
   college?: string; 
@@ -42,6 +42,16 @@ export interface AdminMark {
   markedAt: Timestamp;
 }
 
+export interface TeamMember {
+  id: string; // Unique ID for the team member entry, generated client-side (e.g., nanoid)
+  name: string;
+  email: string;
+  phone: string;
+  institute: string;
+  department: string;
+  enrollmentNumber?: string; // Optional
+}
+
 export interface IdeaSubmission {
   id?: string;
   userId: string; 
@@ -52,7 +62,8 @@ export interface IdeaSubmission {
   uniqueness: string;
   developmentStage: CurrentStage;
   applicantType?: ApplicantCategory; 
-  teamMembers?: string; // Added for storing team member names associated with this idea
+  teamMembers?: string; // Original free-text field for initial team description from profile
+  structuredTeamMembers?: TeamMember[]; // New field for structured team member data
   
   fileURL?: string; 
   fileName?: string;
@@ -119,4 +130,3 @@ export interface SystemSettings {
   updatedAt?: Timestamp;
   updatedByUid?: string;
 }
-
