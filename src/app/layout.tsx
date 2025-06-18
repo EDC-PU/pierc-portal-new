@@ -1,34 +1,45 @@
 
 import type { Metadata } from 'next';
+import { Inter, Space_Grotesk } from 'next/font/google';
 import './globals.css';
-import { AuthProvider } from '@/contexts/AuthContext'; // Client Component
-import { Toaster } from '@/components/ui/toaster';   // Client Component
-import { AuthInitializer } from '@/components/AuthInitializer'; // Client Component
-import { AppShell } from '@/components/AppShell'; // New Client Component wrapper
+import { AuthProvider } from '@/contexts/AuthContext';
+import { Toaster } from '@/components/ui/toaster';
+import { AppShell } from '@/components/AppShell';
+import { AuthInitializer } from '@/components/AuthInitializer';
+
+const inter = Inter({ 
+  subsets: ['latin'], 
+  variable: '--font-inter',
+  display: 'swap',
+});
+const spaceGrotesk = Space_Grotesk({ 
+  subsets: ['latin'], 
+  variable: '--font-space-grotesk',
+  weight: ['300', '400', '500', '600', '700'],
+  display: 'swap',
+});
 
 export const metadata: Metadata = {
   title: 'PIERC Portal',
-  description: 'Portal for PIERC Incubation and Research',
+  description: 'Parul Innovation & Entrepreneurship Research Centre Portal. Your hub for incubation, research, and innovation.',
+  icons: {
+    icon: '/favicon.ico', // Assuming you might add a favicon later
+  },
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
-    <html lang="en" className="dark">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-        <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-      </head>
-      <body className="font-body antialiased flex flex-col min-h-screen bg-background text-foreground">
+    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} h-full`}>
+      <body className="font-body bg-background text-foreground flex flex-col h-full">
         <AuthProvider>
-          <AuthInitializer>
-            {/* AppShell now wraps the main structural elements that need SidebarContext */}
-            <AppShell>{children}</AppShell>
+          <AuthInitializer> {/* Ensures Firebase auth is checked before rendering children */}
+            <AppShell> {/* AppShell includes SidebarProvider, Navbar, Footer */}
+              {children}
+            </AppShell>
             <Toaster />
           </AuthInitializer>
         </AuthProvider>

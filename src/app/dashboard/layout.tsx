@@ -31,25 +31,32 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       if (!user) {
         router.replace('/login');
       } else if (!userProfile) {
-        router.replace('/profile-setup');
+        // If user exists but no profile, redirect to profile setup
+        // This check might also be handled by individual pages or AuthContext itself,
+        // but it's good to have a safeguard in the dashboard layout.
+        if (pathname !== '/profile-setup') { // Avoid redirect loop if already on profile-setup
+          router.replace('/profile-setup');
+        }
       }
     }
-  }, [user, userProfile, initialLoadComplete, router]);
+  }, [user, userProfile, initialLoadComplete, router, pathname]);
 
   if (loading || !initialLoadComplete) {
     return (
-      // Adjusted for new navbar height (h-16 = 4rem)
+      // Use h-full to take available height from parent (which is AppShell's flex-grow div)
       <div className="flex items-center justify-center h-full"> 
         <LoadingSpinner size={48} />
       </div>
     );
   }
 
+  // This case should ideally be handled by the useEffect redirecting to /login or /profile-setup
+  // but it's a fallback.
   if (!user || !userProfile) {
      return (
       <div className="flex items-center justify-center h-full">
-        <p>Authenticating...</p>
-        <LoadingSpinner size={32} />
+        <p className="text-muted-foreground">Verifying session or redirecting...</p>
+        <LoadingSpinner size={32} className="ml-2" />
       </div>
     );
   }
@@ -70,8 +77,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   ];
 
   return (
-    <div className="flex flex-1">
-      <Sidebar side="left" variant="sidebar" collapsible="icon" className="h-full">
+    // This div will be a direct child of AppShell's flex-grow div. It should be flex itself.
+    <div className="flex flex-1 h-full overflow-hidden"> 
+      <Sidebar 
+        side="left" 
+        variant="sidebar" 
+        collapsible="icon" 
+        className="h-full" // Sidebar handles its own height relative to viewport due to fixed pos
+        >
         <SidebarHeader className="flex items-center justify-between p-2 md:justify-center">
            <SidebarTrigger className="hidden md:flex" />
         </SidebarHeader>
@@ -81,7 +94,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <SidebarMenuItem key={item.label}>
                 <SidebarMenuButton
                   onClick={() => router.push(item.href)}
-                  isActive={pathname === item.href || (item.href === '/dashboard' && pathname.startsWith('/dashboard/(main)'))}
+                  // Adjusted isActive check for root dashboard page
+                  isActive={pathname === item.href || (item.href === '/dashboard' && pathname === '/dashboard')}
                   tooltip={item.label}
                 >
                   <item.icon />
@@ -127,9 +141,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </Sidebar>
       
       {/* Main content area for the dashboard pages */}
-      <div className="flex-1 w-0 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] peer-data-[state=expanded]:md:ml-[var(--sidebar-width)]">
-         {/* Removed 'container' and 'mx-auto' to allow full width utilization */}
-        <div className="px-4 sm:px-6 lg:px-8 py-8 h-full">
+      {/* w-0 is important for flex-1 to correctly shrink/grow */}
+      <div className="flex-1 w-0 overflow-y-auto transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] peer-data-[state=expanded]:md:ml-[var(--sidebar-width)]">
+        {/* Removed 'container' and 'mx-auto' to allow full width utilization */}
+        {/* Padding is applied here to the scrollable content area */}
+        <div className="px-4 sm:px-6 lg:px-8 py-8 h-full"> 
            {children}
         </div>
       </div>

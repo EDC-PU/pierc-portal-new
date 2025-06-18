@@ -8,12 +8,15 @@ import { Footer } from '@/components/common/Footer';
 
 export function AppShell({ children }: { children: ReactNode }) {
   return (
-    <SidebarProvider defaultOpen={false}> {/* Changed defaultOpen to false */}
-      <div className="flex flex-col min-h-screen"> {/* Ensure full height for flex */}
+    // SidebarProvider needs to be inside AuthProvider, which is now in RootLayout
+    // defaultOpen={false} ensures sidebar is collapsed on desktop initially for SidebarProvider
+    <SidebarProvider defaultOpen={false}> 
+      {/* This div is the main flex container for the AppShell content (Navbar, children, Footer) */}
+      <div className="flex flex-col flex-1 min-h-0"> {/* min-h-0 is important for flex children that scroll */}
         <Navbar />
-        {/* The main content area now directly takes children. Height management needs to be correct. */}
-        {/* The 'flex-grow container...' was previously in RootLayout's main, now part of the page itself or dashboard layout */}
-        <div className="flex-grow"> 
+        {/* flex-1 allows this children container to grow and take available space */}
+        {/* overflow-auto allows content within children (like DashboardLayout's main area) to scroll if needed */}
+        <div className="flex-1 overflow-auto"> 
           {children}
         </div>
         <Footer />
