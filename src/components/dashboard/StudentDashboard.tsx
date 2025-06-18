@@ -25,7 +25,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ProgramPhase, TeamMember, UserProfile } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
@@ -54,6 +54,19 @@ const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string =>
     case 'COHORT': return 'Cohort';
     default: return 'N/A';
   }
+};
+
+const applicantCategoryLabels: Record<ApplicantCategory, string> = {
+  PARUL_STUDENT: 'Parul University Student',
+  PARUL_STAFF: 'Parul University Staff',
+  PARUL_ALUMNI: 'Parul University Alumni',
+  OTHERS: 'Others',
+};
+
+const currentStageLabels: Record<CurrentStage, string> = {
+  IDEA: 'Idea Stage',
+  PROTOTYPE_STAGE: 'Prototype Stage',
+  STARTUP_STAGE: 'Startup Stage',
 };
 
 const teamMemberSchema = z.object({
@@ -586,6 +599,36 @@ export default function StudentDashboard() {
                               )}
                           </div>
                       </div>
+
+                        {/* Added Idea Details Section */}
+                        <div className="mt-3 pt-3 border-t border-border/50 space-y-2 text-sm">
+                            {idea.applicantType && (
+                                <div className="flex">
+                                    <Label className="w-1/3 font-semibold text-muted-foreground">Applicant Category:</Label>
+                                    <p className="w-2/3">{applicantCategoryLabels[idea.applicantType] || idea.applicantType.replace(/_/g, ' ')}</p>
+                                </div>
+                            )}
+                            {idea.developmentStage && (
+                                <div className="flex">
+                                    <Label className="w-1/3 font-semibold text-muted-foreground">Current Stage:</Label>
+                                    <p className="w-2/3">{currentStageLabels[idea.developmentStage] || idea.developmentStage.replace(/_/g, ' ')}</p>
+                                </div>
+                            )}
+                             <div className="mt-2">
+                                <Label className="font-semibold text-muted-foreground">Problem Definition:</Label>
+                                <p className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5">{idea.problem || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <Label className="font-semibold text-muted-foreground">Solution Description:</Label>
+                                <p className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5">{idea.solution || 'N/A'}</p>
+                            </div>
+                            <div>
+                                <Label className="font-semibold text-muted-foreground">Uniqueness:</Label>
+                                <p className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5">{idea.uniqueness || 'N/A'}</p>
+                            </div>
+                        </div>
+
+
                       {idea.status === 'NOT_SELECTED' && idea.rejectionRemarks && (
                           <Card className="mt-3 bg-destructive/10 border-destructive/30">
                               <CardHeader className="pb-2 pt-3 px-4">
