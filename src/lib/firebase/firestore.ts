@@ -36,7 +36,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   const userProfileRef = doc(db, 'users', userId);
   const currentAuthUser = auth.currentUser; // Get current auth user for email/displayName fallbacks
 
-  const profileDataForWrite: any = {
+  const profileDataForWrite: any = { // Using 'any' here for flexibility but ensuring correct fields are written
     uid: userId,
     email: data.email ?? currentAuthUser?.email ?? null,
     displayName: data.displayName || data.fullName || currentAuthUser?.displayName || 'New User',
@@ -47,18 +47,19 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     fullName: data.fullName, 
     contactNumber: data.contactNumber, 
     
-    isTeamMemberOnly: data.isTeamMemberOnly === true,
+    isTeamMemberOnly: data.isTeamMemberOnly === true, // Ensures boolean
   };
 
-  // Add common optional fields only if they have a value in 'data'
-  if (data.enrollmentNumber) profileDataForWrite.enrollmentNumber = data.enrollmentNumber;
-  if (data.college) profileDataForWrite.college = data.college;
-  if (data.instituteName) profileDataForWrite.instituteName = data.instituteName;
+  // Optional base fields - ensure they are explicitly null if not provided or empty
+  profileDataForWrite.enrollmentNumber = data.enrollmentNumber || null;
+  profileDataForWrite.college = data.college || null;
+  profileDataForWrite.instituteName = data.instituteName || null;
 
   if (profileDataForWrite.isTeamMemberOnly) {
-    profileDataForWrite.associatedIdeaId = data.associatedIdeaId || null;
-    profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid || null;
-    // Ensure idea owner fields are explicitly null for team members
+    profileDataForWrite.associatedIdeaId = data.associatedIdeaId ?? null;
+    profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid ?? null;
+    
+    // Explicitly set idea-owner fields to null for team members
     profileDataForWrite.startupTitle = null;
     profileDataForWrite.problemDefinition = null;
     profileDataForWrite.solutionDescription = null;
@@ -67,14 +68,14 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     profileDataForWrite.currentStage = null;
     profileDataForWrite.teamMembers = null; // free-text team members field
   } else { // Idea owner or Admin
-    profileDataForWrite.startupTitle = data.startupTitle || null;
-    profileDataForWrite.problemDefinition = data.problemDefinition || null;
-    profileDataForWrite.solutionDescription = data.solutionDescription || null;
-    profileDataForWrite.uniqueness = data.uniqueness || null;
-    profileDataForWrite.applicantCategory = data.applicantCategory || null;
-    profileDataForWrite.currentStage = data.currentStage || null;
+    profileDataForWrite.startupTitle = data.startupTitle ?? null;
+    profileDataForWrite.problemDefinition = data.problemDefinition ?? null;
+    profileDataForWrite.solutionDescription = data.solutionDescription ?? null;
+    profileDataForWrite.uniqueness = data.uniqueness ?? null;
+    profileDataForWrite.applicantCategory = data.applicantCategory ?? null;
+    profileDataForWrite.currentStage = data.currentStage ?? null;
     profileDataForWrite.teamMembers = data.teamMembers || ''; // Default to empty string for idea owner
-    // Ensure team member association fields are null for idea owners
+
     profileDataForWrite.associatedIdeaId = null;
     profileDataForWrite.associatedTeamLeaderUid = null;
   }
@@ -110,9 +111,9 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         solutionDescription: rawData.solutionDescription ?? null, // Explicitly allow null
         uniqueness: rawData.uniqueness ?? null, // Explicitly allow null
         teamMembers: rawData.teamMembers ?? null, // Explicitly allow null for team members, string for owners
-        enrollmentNumber: rawData.enrollmentNumber,
-        college: rawData.college,
-        instituteName: rawData.instituteName,
+        enrollmentNumber: rawData.enrollmentNumber || null, // Ensure null if not present
+        college: rawData.college || null, // Ensure null if not present
+        instituteName: rawData.instituteName || null, // Ensure null if not present
         createdAt: rawData.createdAt as Timestamp,
         updatedAt: rawData.updatedAt as Timestamp,
         isSuperAdmin: rawData.isSuperAdmin === true,
@@ -145,9 +146,9 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         solutionDescription: data.solutionDescription ?? null,
         uniqueness: data.uniqueness ?? null,
         teamMembers: data.teamMembers ?? null,
-        enrollmentNumber: data.enrollmentNumber,
-        college: data.college,
-        instituteName: data.instituteName,
+        enrollmentNumber: data.enrollmentNumber || null,
+        college: data.college || null,
+        instituteName: data.instituteName || null,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
         isSuperAdmin: false, // Default, will be overridden if applicable
@@ -177,25 +178,36 @@ export const updateUserProfile = async (
   const userProfileRef = doc(db, 'users', targetUserId);
   const { uid, email, createdAt, role, isSuperAdmin, ...updateData } = data;
 
-  const cleanData = Object.fromEntries(Object.entries(updateData).filter(([, value]) => value !== undefined));
+  // Ensure optional fields are explicitly set to null if they are being cleared via an empty string or undefined
+  const cleanedUpdateData: Partial<UserProfile> = { ...updateData };
+  if (cleanedUpdateData.enrollmentNumber === '') cleanedUpdateData.enrollmentNumber = null;
+  if (cleanedUpdateData.college === '') cleanedUpdateData.college = null;
+  if (cleanedUpdateData.instituteName === '') cleanedUpdateData.instituteName = null;
+  // For idea-specific fields, ensure they are handled correctly based on context (e.g., admin editing an idea owner)
+  // If admin clears startupTitle, it should become null, not an empty string if your type expects string | null
+  if ('startupTitle' in cleanedUpdateData && cleanedUpdateData.startupTitle === '') cleanedUpdateData.startupTitle = null;
+
+
+  const finalCleanData = Object.fromEntries(Object.entries(cleanedUpdateData).filter(([, value]) => value !== undefined));
+
 
   await updateDoc(userProfileRef, {
-    ...cleanData,
+    ...finalCleanData,
     updatedAt: serverTimestamp(),
   });
 
-  const actorUid = actorProfile ? actorProfile.uid : targetUserId;
-  const actorDisplayName = actorProfile ? (actorProfile.displayName || actorProfile.fullName) : (data.displayName || data.fullName);
+  const actorUidToLog = actorProfile ? actorProfile.uid : targetUserId;
+  const actorDisplayNameToLog = actorProfile ? (actorProfile.displayName || actorProfile.fullName) : (data.displayName || data.fullName);
   const targetUserSnap = await getDoc(userProfileRef);
   const targetUserDisplayName = targetUserSnap.exists() ? (targetUserSnap.data().displayName || targetUserSnap.data().fullName) : targetUserId;
 
 
   await logUserActivity(
-    actorUid,
-    actorDisplayName,
+    actorUidToLog,
+    actorDisplayNameToLog,
     'USER_PROFILE_UPDATED',
     { type: 'USER_PROFILE', id: targetUserId, displayName: targetUserDisplayName || undefined },
-    { fieldsUpdated: Object.keys(cleanData) }
+    { fieldsUpdated: Object.keys(finalCleanData) }
   );
 };
 
@@ -221,9 +233,9 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         solutionDescription: data.solutionDescription ?? null,
         uniqueness: data.uniqueness ?? null,
         teamMembers: data.teamMembers ?? null,
-        enrollmentNumber: data.enrollmentNumber,
-        college: data.college,
-        instituteName: data.instituteName,
+        enrollmentNumber: data.enrollmentNumber || null,
+        college: data.college || null,
+        instituteName: data.instituteName || null,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
         isSuperAdmin: false,
@@ -851,20 +863,15 @@ export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, 
   }
 
   const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
-  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id || member.email.toLowerCase() === updatedMemberData.email.toLowerCase());
+  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id || (member.email.toLowerCase() === updatedMemberData.email.toLowerCase() && !updatedMemberData.id)); // Check by ID first, then email if ID isn't set (e.g. before first save with ID)
 
 
   if (memberIndex === -1) {
-      // This could happen if the member was removed or email changed before this update.
-      // For simplicity, we'll log and potentially re-add if logic demands.
-      // However, if updating, they should exist.
       console.warn(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found in idea ${ideaId} to update. Attempting to add if slots available.`);
-      // Fallback: try to add if not found, but this changes semantics of "update"
-      // For now, let's assume update means they must exist.
-      // throw new Error(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found to update.`);
-      // Alternative: add them if array not full
        if (currentMembers.length < 4) {
-        await addTeamMemberToIdea(ideaId, ideaTitle, updatedMemberData, actorProfile); // Call add function
+        // Ensure new members get a new ID if they don't have one.
+        const memberToAdd = updatedMemberData.id ? updatedMemberData : {...updatedMemberData, id: nanoid()};
+        await addTeamMemberToIdea(ideaId, ideaTitle, memberToAdd, actorProfile); 
         return;
       } else {
          throw new Error(`Team member not found for update, and team is full for idea ${ideaId}.`);
@@ -885,8 +892,6 @@ export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, 
 
   
   if (oldEmail !== newEmail) {
-    // Firestore arrayUnion/arrayRemove are safer for managing unique email list if needed,
-    // but rewriting the whole list after client-side modification is also common.
     const newTeamMemberEmails = updatedMembersArray.map(m => m.email.toLowerCase());
     updates.teamMemberEmails = newTeamMemberEmails;
   }
@@ -908,9 +913,9 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   memberProfileDataFromForm: { 
     fullName: string;
     contactNumber: string;
-    enrollmentNumber?: string;
-    college?: string;
-    instituteName?: string;
+    enrollmentNumber?: string | null; // Allow null
+    college?: string | null; // Allow null
+    instituteName?: string | null; // Allow null
   }
 ): Promise<void> => {
   if (!memberUser.email) {
@@ -932,14 +937,14 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   const updatedStructuredMembersArray = currentMembers.map(member => {
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
       memberFoundAndUpdated = true;
-      return {
-        id: memberUser.uid, 
+      return { // This becomes the new TeamMember object in the array
+        id: memberUser.uid, // Key update: assign the user's actual Firebase UID as the ID
         name: memberProfileDataFromForm.fullName,
         email: memberUser.email!, 
         phone: memberProfileDataFromForm.contactNumber,
         institute: memberProfileDataFromForm.instituteName || member.institute || '', 
-        department: member.department || '', 
-        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
+        department: member.department || '', // Preserve existing if not in form
+        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '', // Preserve existing or use from form
       };
     }
     return member; 
@@ -962,7 +967,7 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
     memberProfileDataFromForm.fullName,
     'IDEA_TEAM_MEMBER_UPDATED', 
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
-    { memberEmail: memberUser.email, detailsUpdated: ['id', 'name', 'phone', 'institute', 'enrollmentNumber', 'college'] }
+    { memberEmail: memberUser.email, detailsUpdated: ['id (to UID)', 'name', 'phone', 'institute', 'enrollmentNumber', 'college (via institute)'] }
   );
 };
 
