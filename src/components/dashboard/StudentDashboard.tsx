@@ -22,6 +22,8 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
+import { getDoc, doc } from 'firebase/firestore'; // Added import for getDoc and doc
+import { db } from '@/lib/firebase/config'; // Added import for db
 import type { ProgramPhase, TeamMember, UserProfile } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
@@ -291,17 +293,13 @@ export default function StudentDashboard() {
     let membersAddedOrUpdatedCount = 0;
 
     try {
-        // Process updates and additions
-        for (const formMember of formData.members) { // Iterate through all 4 form slots
+        for (const formMember of formData.members) { 
             if (!formMember.name || formMember.name.trim() === '') {
-                // If name is empty, but there was a persistent ID, it means an existing member was cleared.
-                // For now, we'll rely on explicit delete. This row will be skipped for add/update.
-                // If it's a new empty row, it's also skipped.
                 continue;
             }
 
             const memberData: TeamMember = {
-                id: formMember.id || nanoid(), // Use existing ID or generate new one
+                id: formMember.id || nanoid(), 
                 name: formMember.name,
                 email: formMember.email!,
                 phone: formMember.phone!,
@@ -312,11 +310,14 @@ export default function StudentDashboard() {
             
             const isExistingMemberInForm = formMember.id && existingMembers.some(em => em.id === formMember.id);
 
-            if (isExistingMemberInForm) { // Update existing member
+            if (isExistingMemberInForm) { 
                 await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, memberData);
                 membersAddedOrUpdatedCount++;
-            } else { // Add new member (if name is present and ID was empty)
-                const currentIdeaMemberCount = (await (await getDoc(doc(db, 'ideas', selectedIdeaForTeamMgmt.id))).data() as IdeaSubmission)?.structuredTeamMembers?.length || 0;
+            } else { 
+                const ideaDocRef = doc(db, 'ideas', selectedIdeaForTeamMgmt.id);
+                const ideaDocSnap = await getDoc(ideaDocRef);
+                const currentIdeaMemberCount = (ideaDocSnap.exists() ? (ideaDocSnap.data() as IdeaSubmission).structuredTeamMembers?.length : 0) || 0;
+                
                 if (currentIdeaMemberCount < 4) {
                    await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
                    membersAddedOrUpdatedCount++;
@@ -765,7 +766,6 @@ export default function StudentDashboard() {
                                     <TableCell className="p-1 text-right">
                                         <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
                                         
-                                        {/* Show delete button only if this row corresponds to an existing saved member (i.e., has a persistent ID) */}
                                         {getValues(`members.${index}.id`) && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
@@ -778,7 +778,6 @@ export default function StudentDashboard() {
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </AlertDialogTrigger>
-                                                {/* Conditional rendering of AlertDialogContent based on memberToRemove */}
                                                 {memberToRemove && memberToRemove.id === getValues(`members.${index}.id`) && (
                                                     <AlertDialogContent>
                                                         <AlertDialogHeader>
@@ -823,3 +822,4 @@ export default function StudentDashboard() {
   );
 }
 
+    
