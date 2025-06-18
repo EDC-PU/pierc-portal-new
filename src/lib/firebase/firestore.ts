@@ -391,22 +391,38 @@ export const createIdeaFromProfile = async (
 
 export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission[]> => {
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, orderBy('submittedAt', 'desc'));
-  const querySnapshot = await getDocs(q);
+  const ideasQuery = query(ideasCol, orderBy('submittedAt', 'desc'));
+  const ideasSnapshot = await getDocs(ideasQuery);
   const ideaSubmissions: IdeaSubmission[] = [];
 
-  for (const ideaDoc of querySnapshot.docs) {
-    const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
-    let applicantDisplayName = 'N/A';
-    let applicantEmail = 'N/A';
+  if (ideasSnapshot.empty) {
+    return [];
+  }
 
+  const applicantIds = new Set<string>();
+  ideasSnapshot.docs.forEach(doc => {
+    const ideaData = doc.data() as Omit<IdeaSubmission, 'id'>;
     if (ideaData.userId) {
-      const userProfile = await getUserProfile(ideaData.userId);
-      if (userProfile) {
-        applicantDisplayName = userProfile.displayName || userProfile.fullName || 'Unknown User';
-        applicantEmail = userProfile.email || 'No Email';
-      }
+      applicantIds.add(ideaData.userId);
     }
+  });
+
+  const profilesMap = new Map<string, UserProfile | null>();
+  if (applicantIds.size > 0) {
+    const profilePromises = Array.from(applicantIds).map(id => getUserProfile(id));
+    const profiles = await Promise.all(profilePromises);
+    profiles.forEach((profile, index) => {
+      profilesMap.set(Array.from(applicantIds)[index], profile);
+    });
+  }
+
+  ideasSnapshot.docs.forEach(ideaDoc => {
+    const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
+    const userProfile = ideaData.userId ? profilesMap.get(ideaData.userId) : null;
+
+    const applicantDisplayName = userProfile ? (userProfile.displayName || userProfile.fullName || 'Unknown User') : 'N/A';
+    const applicantEmail = userProfile ? (userProfile.email || 'No Email') : 'N/A';
+    
     const submittedAt = (ideaData.submittedAt as any) instanceof Timestamp ? (ideaData.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (ideaData.updatedAt as any) instanceof Timestamp ? (ideaData.updatedAt as Timestamp) : Timestamp.now();
     const nextPhaseDate = (ideaData.nextPhaseDate as any) instanceof Timestamp ? (ideaData.nextPhaseDate as Timestamp) : null;
@@ -437,7 +453,8 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines,
       mentor: ideaData.mentor,
     } as IdeaSubmission);
-  }
+  });
+
   return ideaSubmissions;
 };
 
@@ -938,5 +955,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   }
   return null;
 };
+
+    
 
     
