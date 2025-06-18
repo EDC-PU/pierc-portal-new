@@ -121,6 +121,29 @@ export default function ViewApplicationsPage() {
     }
   }, [selectedApplication, userProfile]);
 
+  useEffect(() => {
+    if (isDetailModalOpen && selectedApplication?.id) {
+        const updatedVersionInList = applications.find(app => app.id === selectedApplication.id);
+        if (updatedVersionInList) {
+            const hasChanged = 
+                updatedVersionInList.programPhase !== selectedApplication.programPhase ||
+                updatedVersionInList.status !== selectedApplication.status ||
+                updatedVersionInList.mentor !== selectedApplication.mentor ||
+                (updatedVersionInList.phase2Marks && selectedApplication.phase2Marks && JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks)) ||
+                (updatedVersionInList.updatedAt && selectedApplication.updatedAt && updatedVersionInList.updatedAt.toMillis() !== selectedApplication.updatedAt.toMillis());
+
+            if (hasChanged) {
+                setSelectedApplication(updatedVersionInList);
+            }
+        } else {
+            // The selected application is no longer in the list, e.g., it was deleted.
+            setIsDetailModalOpen(false);
+            setSelectedApplication(null);
+        }
+    }
+  }, [applications, isDetailModalOpen, selectedApplication]);
+
+
   const fetchApplications = async () => {
     setLoadingApplications(true);
     try {
@@ -191,32 +214,32 @@ export default function ViewApplicationsPage() {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
 
+    // Optimistically update local state for select dropdowns before opening dialogs
+    const updatedApplications = applications.map(app =>
+        app.id === idea.id ? {...app, status: newStatus, programPhase: actualNewPhase } : app
+    );
+    setApplications(updatedApplications);
+
+
     if (newStatus === 'SELECTED' && actualNewPhase) {
         openPhaseDetailsDialog(idea, actualNewPhase);
-        setApplications(prevApps => prevApps.map(app =>
-            app.id === idea.id ? {...app, status: newStatus, programPhase: actualNewPhase } : app
-        ));
-        return;
-    }
-
-    if (newStatus === 'NOT_SELECTED') {
+        // No immediate return, allow optimistic update to reflect, then dialog handles final save.
+    } else if (newStatus === 'NOT_SELECTED') {
         setCurrentIdeaForRejection(idea);
         setRejectionRemarksInput(idea.rejectionRemarks || '');
         setIsRejectionDialogVisible(true);
-         setApplications(prevApps => prevApps.map(app =>
-            app.id === idea.id ? {...app, status: newStatus, programPhase: null } : app
-        ));
-        return;
-    }
-
-    try {
-      await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined);
-      toast({ title: "Update Successful", description: `Application updated.` });
-      fetchApplications();
-    } catch (error) {
-      console.error("Error updating status/phase:", error);
-      toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-      fetchApplications();
+        // No immediate return, allow optimistic update, dialog handles final save.
+    } else {
+        // For other status changes that don't open a dialog (e.g., to UNDER_REVIEW)
+        try {
+          await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined);
+          toast({ title: "Update Successful", description: `Application updated.` });
+          fetchApplications(); // Re-fetch to confirm and get latest timestamps
+        } catch (error) {
+          console.error("Error updating status/phase:", error);
+          toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
+          fetchApplications(); // Revert optimistic update by re-fetching
+        }
     }
   };
 
@@ -251,6 +274,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
         console.error("Error saving phase details:", error);
         toast({ title: "Save Error", description: "Could not save phase details.", variant: "destructive" });
+        fetchApplications(); // Revert optimistic updates if save fails
     }
   };
 
@@ -278,7 +302,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
         console.error("Error submitting rejection:", error);
         toast({ title: "Rejection Error", description: "Could not submit rejection.", variant: "destructive" });
-        fetchApplications();
+        fetchApplications(); // Revert optimistic updates if save fails
     }
   };
 
@@ -317,16 +341,27 @@ export default function ViewApplicationsPage() {
         await submitOrUpdatePhase2Mark(selectedApplication.id, selectedApplication.title, userProfile, markValue);
         toast({ title: "Mark Saved", description: "Your mark has been successfully submitted." });
 
-        const appDocRef = doc(db, 'ideas', selectedApplication.id);
-        const updatedAppSnap = await getDoc(appDocRef);
-        const updatedAppData = updatedAppSnap.exists() ? ({ id: updatedAppSnap.id, ...updatedAppSnap.data() } as IdeaSubmission) : null;
-
-        if (updatedAppData) {
-          setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedAppData.phase2Marks, updatedAt: updatedAppData.updatedAt} : null);
-          setApplications(prevApps => prevApps.map(app => app.id === updatedAppData.id ? {...app, phase2Marks: updatedAppData.phase2Marks, updatedAt: updatedAppData.updatedAt} : app));
-        } else {
-          fetchApplications();
+        // No need to re-fetch all applications here, the useEffect will update selectedApplication
+        // if 'applications' list is a dependency, or simply update selectedApplication directly:
+        const updatedMarks = {
+            ...(selectedApplication.phase2Marks || {}),
+            [userProfile.uid]: {
+                mark: markValue,
+                adminDisplayName: userProfile.displayName || userProfile.fullName || 'Admin',
+                markedAt: Timestamp.now() // Approximate, server will set actual
+            }
+        };
+        if(markValue === null) {
+            delete updatedMarks[userProfile.uid];
         }
+        
+        setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedMarks, updatedAt: Timestamp.now()} : null);
+        // Also update the main list for consistency if other modals might be opened
+        setApplications(prevApps => prevApps.map(app => 
+            app.id === selectedApplication.id ? {...app, phase2Marks: updatedMarks, updatedAt: Timestamp.now()} : app
+        ));
+
+
     } catch (error) {
         console.error("Error saving mark:", error);
         toast({ title: "Save Mark Error", description: (error as Error).message || "Could not save your mark.", variant: "destructive" });
@@ -345,16 +380,12 @@ export default function ViewApplicationsPage() {
         await assignMentorFS(ideaId, ideaTitle, mentorName, userProfile);
         toast({title: "Mentor Assignment Updated", description: `Mentor ${mentorName ? 'assigned: '+mentorName : 'unassigned'}.`});
 
-        const appDocRef = doc(db, 'ideas', ideaId);
-        const updatedAppSnap = await getDoc(appDocRef);
-        const updatedAppData = updatedAppSnap.exists() ? ({ id: updatedAppSnap.id, ...updatedAppSnap.data() } as IdeaSubmission) : null;
+        // Update local state immediately
+        setSelectedApplication(prev => prev ? {...prev, mentor: mentorName || undefined, updatedAt: Timestamp.now()} : null);
+        setApplications(prevApps => prevApps.map(app => 
+            app.id === ideaId ? {...app, mentor: mentorName || undefined, updatedAt: Timestamp.now()} : app
+        ));
 
-        if (updatedAppData) {
-          setSelectedApplication(prev => prev ? {...prev, mentor: updatedAppData.mentor, updatedAt: updatedAppData.updatedAt} : null);
-          setApplications(prevApps => prevApps.map(app => app.id === updatedAppData.id ? {...app, mentor: updatedAppData.mentor, updatedAt: updatedAppData.updatedAt} : app));
-        } else {
-          fetchApplications();
-        }
     } catch (error) {
         console.error("Error assigning mentor:", error);
         toast({title: "Mentor Assignment Error", description: (error as Error).message || "Could not update mentor assignment.", variant: "destructive"});
@@ -468,11 +499,16 @@ export default function ViewApplicationsPage() {
         adminMarkAdminUIDs.push(...Array.from(allAdminUIDsInMarks).sort());
         adminMarkAdminUIDs.forEach(uid => {
             let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`;
-            for (const app of applications) {
-                if (app.phase2Marks?.[uid]?.adminDisplayName) {
-                    adminDisplayName = `Mark by ${app.phase2Marks[uid].adminDisplayName}`;
-                    break;
-                }
+            // Attempt to find a display name for this admin UID from any application
+            const adminProfileEntry = applications.find(app => app.phase2Marks?.[uid]?.adminDisplayName);
+            if (adminProfileEntry && adminProfileEntry.phase2Marks?.[uid]?.adminDisplayName) {
+                 adminDisplayName = `Mark by ${adminProfileEntry.phase2Marks[uid].adminDisplayName}`;
+            } else {
+                 // Fallback if no display name found for this UID across all marks (less likely with current logic)
+                 const profileForUID = applications.find(app => app.userId === uid); // Check if this admin is an applicant
+                 if (profileForUID) {
+                     adminDisplayName = `Mark by ${profileForUID.applicantDisplayName || `Admin ${uid.substring(0,5)}...`}`;
+                 }
             }
             headers.push(adminDisplayName);
         });
@@ -780,7 +816,7 @@ export default function ViewApplicationsPage() {
                     <div>
                         <h4 className="font-semibold text-muted-foreground text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4>
                         <p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90">{selectedApplication.rejectionRemarks}</p>
-                        {selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByUid.substring(0,5)}... on {formatDateOnly(selectedApplication.rejectedAt)}</p>}
+                        {selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByDisplayName || `UID ${selectedApplication.rejectedByUid.substring(0,5)}...`} on {formatDateOnly(selectedApplication.rejectedAt)}</p>}
                     </div>
                 )}
                  {selectedApplication.programPhase === 'PHASE_2' && selectedApplication.phase2PptUrl && (
@@ -886,38 +922,39 @@ export default function ViewApplicationsPage() {
                       const displayName = markEntry.adminDisplayName || 'Admin';
                       const isCurrentUserMark = adminUid === userProfile.uid;
 
-                      if (userProfile.isSuperAdmin || !isCurrentUserMark) {
+                      // Show other admins' marks only if current user is SuperAdmin OR it's not the current user's mark
+                      // (This logic was a bit complex, let's simplify: SuperAdmins see all. Regular admins only see their own edit field below)
+                      if (userProfile.isSuperAdmin && !isCurrentUserMark) {
                         return (
                             <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
                             <span className="flex items-center">
                                 <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" />
                                 {displayName}
-                                {userProfile.isSuperAdmin && isCurrentUserMark && <span className="text-xs text-primary ml-1">(Your Mark)</span>}
                             </span>
                             <Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge>
                             </div>
                         );
                       }
-                      return null;
+                      return null; // Regular admins don't see other admin's marks listed here
                     })}
                     {(() => {
                         const marksObject = selectedApplication.phase2Marks || {};
                         const totalMarksCount = Object.keys(marksObject).length;
+                        const currentUserHasMarked = !!marksObject[userProfile.uid];
 
                         if (userProfile.isSuperAdmin) {
                             if (totalMarksCount === 0) {
                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
                             }
-                        } else {
-                            const otherAdminMarksCount = Object.keys(marksObject).filter(uid => uid !== userProfile.uid).length;
-                            if (otherAdminMarksCount === 0 && totalMarksCount > 0 && selectedApplication.phase2Marks?.[userProfile.uid]) {
-                               return <p className="text-sm text-muted-foreground text-center py-2">You are the only admin who has submitted a mark.</p>;
+                            // SuperAdmins see their own mark in the input field if they've marked.
+                            // Other admin marks are listed above if they exist.
+                        } else { // Regular Admin
+                            if (!currentUserHasMarked && totalMarksCount > 0) {
+                                // A regular admin hasn't marked, but others might have (they won't see those marks directly)
+                                return <p className="text-sm text-muted-foreground text-center py-2">Other marks may exist. Submit yours below.</p>;
                             }
-                            if (otherAdminMarksCount === 0 && totalMarksCount === 0) {
-                                return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
-                            }
-                             if (otherAdminMarksCount === 0 && totalMarksCount > 0 && !selectedApplication.phase2Marks?.[userProfile.uid]) {
-                                return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by other admins yet.</p>;
+                            if (totalMarksCount === 0) {
+                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted yet. Submit yours below.</p>;
                             }
                         }
                         return null;
@@ -925,9 +962,7 @@ export default function ViewApplicationsPage() {
 
                     <div className="pt-3 space-y-2">
                         <Label htmlFor="adminMarkInput" className="font-semibold">
-                           {userProfile.isSuperAdmin && Object.keys(selectedApplication.phase2Marks || {}).some(uid => uid === userProfile.uid)
-                             ? "Your Mark (Super Admin View - Update if needed)"
-                             : "Your Mark"} (0-100):
+                           Your Mark (0-100):
                         </Label>
                         <div className="flex items-center gap-2">
                         <Input
@@ -935,7 +970,7 @@ export default function ViewApplicationsPage() {
                             type="number"
                             min="0"
                             max="100"
-                            value={currentAdminMark}
+                            value={currentAdminMark} // This is already state-managed based on selectedApplication & userProfile.uid
                             onChange={(e) => setCurrentAdminMark(e.target.value)}
                             placeholder="Enter your mark"
                             className="max-w-[150px]"
@@ -967,7 +1002,7 @@ export default function ViewApplicationsPage() {
                 setIsRejectionDialogVisible(false);
                 setCurrentIdeaForRejection(null);
                 setRejectionRemarksInput('');
-                fetchApplications();
+                fetchApplications(); // Re-fetch to ensure UI consistency if cancel
             } else {
                 setIsRejectionDialogVisible(isOpen);
             }
@@ -995,7 +1030,7 @@ export default function ViewApplicationsPage() {
                         setIsRejectionDialogVisible(false);
                         setCurrentIdeaForRejection(null);
                         setRejectionRemarksInput('');
-                        fetchApplications();
+                        fetchApplications(); // Re-fetch as the optimistic update might have changed table
                     }}>Cancel</Button>
                     <Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button>
                 </DialogFooter>
@@ -1009,7 +1044,7 @@ export default function ViewApplicationsPage() {
                 setIsPhaseDetailsDialogVisible(false);
                 setCurrentIdeaForPhaseDetails(null);
                 setCurrentPhaseForDialog(null);
-                fetchApplications();
+                fetchApplications(); // Re-fetch to ensure UI consistency if cancel
             } else {
                 setIsPhaseDetailsDialogVisible(isOpen);
             }
@@ -1095,7 +1130,7 @@ export default function ViewApplicationsPage() {
                         setIsPhaseDetailsDialogVisible(false);
                         setCurrentIdeaForPhaseDetails(null);
                         setCurrentPhaseForDialog(null);
-                        fetchApplications();
+                        fetchApplications(); // Re-fetch as the optimistic update might have changed table
                     }}>Cancel</Button>
                     <Button onClick={handleSubmitPhaseDetails}>Save Details</Button>
                 </DialogFooter>
