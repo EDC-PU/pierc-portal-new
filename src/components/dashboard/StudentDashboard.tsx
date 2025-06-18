@@ -57,7 +57,7 @@ const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string =>
 };
 
 const teamMemberSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().optional(), // Firestore doc ID for existing members, or client-generated for new form rows
   name: z.string().min(1, "Name is required").max(100).optional().or(z.literal('')),
   email: z.string().email("Invalid email address").optional().or(z.literal('')),
   phone: z.string().min(10, "Contact number must be at least 10 digits").max(15).optional().or(z.literal('')),
@@ -65,16 +65,20 @@ const teamMemberSchema = z.object({
   department: z.string().min(1, "Department is required").max(100).optional().or(z.literal('')),
   enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
 }).refine(data => {
+    // If name is provided, all other fields (except enrollmentNumber) become required
     if (data.name && data.name.trim() !== '') {
         return !!(data.email && data.email.trim() !== '' &&
                   data.phone && data.phone.trim() !== '' &&
                   data.institute && data.institute.trim() !== '' &&
                   data.department && data.department.trim() !== '');
     }
+    // If name is not provided, the row is considered empty and valid
     return true;
 }, {
     message: "If member name is provided, then email, phone, institute, and department are also required.",
-    path: ['name'],
+    // Apply this refinement error to a common path or a specific field that makes sense e.g. 'name'
+    // or handle it as a form-level error. For simplicity, let's use 'name' as the path.
+    path: ['name'], 
 });
 
 
@@ -99,9 +103,10 @@ export default function StudentDashboard() {
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
 
 
-  const { control, handleSubmit, reset: resetTeamManagementForm, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
+  const { control, handleSubmit, reset: resetTeamManagementFormInternal, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
     resolver: zodResolver(teamManagementSchema),
     defaultValues: {
+      // Initialize with 4 empty member slots
       members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })),
     },
   });
@@ -112,7 +117,7 @@ export default function StudentDashboard() {
   });
 
 
-  const fetchUserIdeasAndUpdateState = async (currentSelectedIdeaId?: string) => {
+  const fetchUserIdeasAndUpdateState = async (currentSelectedIdeaIdToPreserve?: string) => {
     if (!user?.uid) {
         setUserIdeas([]);
         setLoadingIdeas(false);
@@ -122,28 +127,22 @@ export default function StudentDashboard() {
     try {
         const ideas = await getUserIdeaSubmissionsWithStatus(user.uid);
         setUserIdeas(ideas);
-        if (currentSelectedIdeaId) {
-            const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaId);
-            setSelectedIdeaForTeamMgmt(updatedSelected || null);
-            if (updatedSelected) {
-                const currentMembers = updatedSelected.structuredTeamMembers || [];
-                const formMembers = Array(4).fill(null).map((_, i) => {
-                    const member = currentMembers[i];
-                    return member
-                        ? { ...member, id: member.id || nanoid() }
-                        : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
-                });
-                resetTeamManagementForm({ members: formMembers });
-            } else {
-                 resetTeamManagementForm({ members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })) });
-            }
+
+        if (currentSelectedIdeaIdToPreserve) {
+            const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaIdToPreserve);
+            setSelectedIdeaForTeamMgmt(updatedSelected || null); // Update or clear if no longer exists
+            // Form reset for team management is handled by the useEffect watching selectedIdeaForTeamMgmt
         } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
-             resetTeamManagementForm({ members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })) });
+            // If no idea was previously selected, don't auto-select one, let user choose.
+            // Form reset for empty state is handled by useEffect.
+        } else if (ideas.length === 0) {
+            setSelectedIdeaForTeamMgmt(null); // Clear selection if no ideas
         }
     } catch (error) {
         console.error("Error fetching user ideas:", error);
         toast({ title: "Error", description: "Could not load your idea submissions.", variant: "destructive" });
         setUserIdeas([]);
+        setSelectedIdeaForTeamMgmt(null);
     } finally {
         setLoadingIdeas(false);
     }
@@ -155,24 +154,27 @@ export default function StudentDashboard() {
     } else {
       setLoadingIdeas(false);
       setUserIdeas([]);
+      setSelectedIdeaForTeamMgmt(null); // Ensure selection is cleared if user becomes team member or logs out
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, isTeamMemberForIdea]);
+  }, [user?.uid, isTeamMemberForIdea]); // Re-fetch if user or team member status changes
 
+  // Effect to reset team management form when selectedIdeaForTeamMgmt changes
   useEffect(() => {
     if (selectedIdeaForTeamMgmt && !isTeamMemberForIdea) {
         const currentMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
         const formMembersData = Array(4).fill(null).map((_, i) => {
             const member = currentMembers[i];
             return member
-                ? { ...member, id: member.id || nanoid() }
+                ? { ...member, id: member.id || nanoid() } // Ensure member.id exists for existing members
                 : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
         });
-        resetTeamManagementForm({ members: formMembersData });
+        replace(formMembersData); // Use replace to correctly update the field array
     } else if (!isTeamMemberForIdea) {
-        resetTeamManagementForm({ members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })) });
+        // If no idea is selected, reset to 4 empty slots
+        replace(Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })));
     }
-  }, [selectedIdeaForTeamMgmt, resetTeamManagementForm, isTeamMemberForIdea]);
+  }, [selectedIdeaForTeamMgmt, replace, isTeamMemberForIdea]);
 
 
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
@@ -228,15 +230,22 @@ export default function StudentDashboard() {
       const file = event.target.files[0];
       if (file.type === "application/vnd.ms-powerpoint" || file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
         setSelectedPptFile(file);
-        setUploadingPptIdeaId(ideaId);
+        setUploadingPptIdeaId(ideaId); // Target this specific idea for upload
         setUploadError(null);
       } else {
         toast({ title: "Invalid File Type", description: "Please upload a PPT or PPTX file.", variant: "destructive" });
         setSelectedPptFile(null);
         setUploadingPptIdeaId(null);
         setUploadError("Invalid file type. Please upload PPT or PPTX.");
-        event.target.value = '';
+        event.target.value = ''; // Clear the input
       }
+    } else { // No file selected or selection cancelled
+      setSelectedPptFile(null);
+      // If the current upload target matches this idea, clear it
+      if (uploadingPptIdeaId === ideaId) {
+        setUploadingPptIdeaId(null);
+      }
+      setUploadError(null);
     }
   };
 
@@ -250,24 +259,26 @@ export default function StudentDashboard() {
     setUploadError(null);
     const ideaToUpdate = userIdeas.find(idea => idea.id === uploadingPptIdeaId);
     if (!ideaToUpdate) {
-        toast({ title: "Upload Error", description: "Idea context not found.", variant: "destructive" });
+        toast({ title: "Upload Error", description: "Idea context not found for upload.", variant: "destructive" });
         setIsUploadingPpt(false);
         return;
     }
 
     try {
       const fileDataUri = await fileToDataUri(selectedPptFile);
+      // The uploadPresentation flow now simulates the upload and returns a dummy URL
       const flowResult = await uploadPresentation({
         ideaId: uploadingPptIdeaId,
         fileName: selectedPptFile.name,
         fileDataUri: fileDataUri,
       });
 
+      // Now, update Firestore with the simulated URL and filename
       await updateIdeaPhase2PptDetails(uploadingPptIdeaId, ideaToUpdate.title, flowResult.pptUrl, flowResult.pptFileName, userProfile);
       toast({ title: "Presentation Info Saved", description: `${flowResult.pptFileName} details recorded (Simulated Upload).` });
-
+      
+      // Refresh ideas to show updated PPT info
       fetchUserIdeasAndUpdateState(uploadingPptIdeaId);
-
 
     } catch (error) {
       console.error("Error during PPT upload process:", error);
@@ -277,9 +288,10 @@ export default function StudentDashboard() {
     } finally {
       setIsUploadingPpt(false);
       setSelectedPptFile(null);
+      // Clear the file input after attempt
       const fileInput = document.getElementById(`ppt-upload-${uploadingPptIdeaId}`) as HTMLInputElement;
       if (fileInput) fileInput.value = '';
-      setUploadingPptIdeaId(null);
+      setUploadingPptIdeaId(null); // Clear upload target
     }
   };
 
@@ -289,52 +301,59 @@ export default function StudentDashboard() {
       return;
     }
 
-    const existingMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
-    let membersAddedOrUpdatedCount = 0;
+    const ideaId = selectedIdeaForTeamMgmt.id;
+    const ideaTitle = selectedIdeaForTeamMgmt.title;
+    let membersProcessedCount = 0;
 
     try {
+        const ideaDocRef = doc(db, 'ideas', ideaId);
+        const ideaDocSnap = await getDoc(ideaDocRef);
+        if (!ideaDocSnap.exists()) {
+            throw new Error("Selected idea could not be found for team update.");
+        }
+        const currentIdeaData = ideaDocSnap.data() as IdeaSubmission;
+        const existingStructuredMembers = currentIdeaData.structuredTeamMembers || [];
+
         for (const formMember of formData.members) {
+            // Only process rows where a name is actually entered
             if (!formMember.name || formMember.name.trim() === '') {
-                continue;
+                continue; 
             }
 
-            const memberData: TeamMember = {
-                id: formMember.id || nanoid(),
+            // This memberData is what we intend to save or update
+            const memberDataToSave: TeamMember = {
+                id: formMember.id || nanoid(), // Use existing ID or generate new for potential add
                 name: formMember.name,
-                email: formMember.email!,
+                email: formMember.email!, // Schema ensures these are present if name is
                 phone: formMember.phone!,
                 institute: formMember.institute!,
                 department: formMember.department!,
                 enrollmentNumber: formMember.enrollmentNumber || '',
             };
 
-            const isExistingMemberInForm = formMember.id && existingMembers.some(em => em.id === formMember.id);
-
-            if (isExistingMemberInForm) {
-                await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, selectedIdeaForTeamMgmt.title, memberData, userProfile);
-                membersAddedOrUpdatedCount++;
-            } else {
-                const ideaDocRef = doc(db, 'ideas', selectedIdeaForTeamMgmt.id);
-                const ideaDocSnap = await getDoc(ideaDocRef);
-                const currentIdeaData = ideaDocSnap.exists() ? ideaDocSnap.data() as IdeaSubmission : null;
-                const currentIdeaMemberCount = currentIdeaData?.structuredTeamMembers?.length || 0;
-
-                if (currentIdeaMemberCount < 4) {
-                   await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, selectedIdeaForTeamMgmt.title, memberData, userProfile);
-                   membersAddedOrUpdatedCount++;
+            const existingMemberInIdea = existingStructuredMembers.find(em => em.id === memberDataToSave.id || (em.email.toLowerCase() === memberDataToSave.email.toLowerCase() && !formMember.id));
+            
+            if (existingMemberInIdea) { // This form entry corresponds to an already structured member
+                await updateTeamMemberInIdea(ideaId, ideaTitle, memberDataToSave, userProfile);
+                membersProcessedCount++;
+            } else { // This form entry is for a new member
+                const currentTeamSize = (await getDoc(doc(db, 'ideas', ideaId))).data()?.structuredTeamMembers?.length || 0;
+                if (currentTeamSize < 4) {
+                    await addTeamMemberToIdea(ideaId, ideaTitle, memberDataToSave, userProfile);
+                    membersProcessedCount++;
                 } else {
-                   toast({title: "Team Full", description: `Could not add member ${memberData.name}. Maximum 4 members allowed.`, variant: "default"});
+                   toast({title: "Team Full", description: `Could not add new member ${memberDataToSave.name}. Maximum 4 members allowed for "${ideaTitle}".`, variant: "default"});
                 }
             }
         }
 
-        if (membersAddedOrUpdatedCount > 0) {
-            toast({ title: "Team Updated", description: "Team member details have been saved." });
+        if (membersProcessedCount > 0) {
+            toast({ title: "Team Updated", description: "Team member details have been saved successfully." });
         } else {
-            toast({ title: "No Changes", description: "No new or modified team member information was provided to save.", variant: "default" });
+            toast({ title: "No Changes", description: "No new or modified team member information was submitted to save.", variant: "default" });
         }
 
-        fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
+        fetchUserIdeasAndUpdateState(ideaId); // Refresh the view
 
     } catch (error) {
         console.error("Error saving team table:", error);
@@ -344,17 +363,21 @@ export default function StudentDashboard() {
 
 
   const handleRemoveTeamMember = async (memberId: string) => {
-    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !memberId || !userProfile) return;
-
+    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !memberId || !userProfile) {
+        toast({ title: "Error", description: "Cannot remove member. Context missing.", variant: "destructive" });
+        return;
+    }
+    const ideaId = selectedIdeaForTeamMgmt.id;
+    const ideaTitle = selectedIdeaForTeamMgmt.title;
     try {
-      await removeTeamMemberFromIdea(selectedIdeaForTeamMgmt.id, selectedIdeaForTeamMgmt.title, memberId, userProfile);
-      toast({ title: "Team Member Removed", description: `Member has been removed from the team.` });
-      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
+      await removeTeamMemberFromIdea(ideaId, ideaTitle, memberId, userProfile);
+      toast({ title: "Team Member Removed", description: `Member has been removed from the team for "${ideaTitle}".` });
+      fetchUserIdeasAndUpdateState(ideaId); // Refresh data and form
     } catch (error) {
       console.error("Error removing team member:", error);
       toast({ title: "Error Removing Member", description: (error as Error).message || "Could not remove team member.", variant: "destructive" });
     }
-    setMemberToRemove(null);
+    setMemberToRemove(null); // Close dialog
   };
 
   if (loadingIdeas) {
@@ -512,10 +535,10 @@ export default function StudentDashboard() {
             <CardDescription>Track the status and phase of your innovative ideas submitted to PIERC.</CardDescription>
           </CardHeader>
           <CardContent>
-            {isUploadingPpt ? (
+            {isUploadingPpt && uploadingPptIdeaId ? ( // Show spinner only if an upload is active for ANY idea
                  <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="ml-2 text-muted-foreground">Uploading presentation...</p>
+                    <p className="ml-2 text-muted-foreground">Uploading presentation for selected idea...</p>
                 </div>
             ) : userIdeas.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
@@ -624,12 +647,12 @@ export default function StudentDashboard() {
                                           accept=".ppt, .pptx"
                                           onChange={(e) => handlePptFileChange(e, idea.id!)}
                                           className="text-xs h-8 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                                          disabled={isUploadingPpt}
+                                          disabled={isUploadingPpt && uploadingPptIdeaId === idea.id}
                                       />
                                       <Button
                                           size="sm"
                                           onClick={handlePptUpload}
-                                          disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || isUploadingPpt}
+                                          disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || (isUploadingPpt && uploadingPptIdeaId === idea.id)}
                                           className="h-8"
                                       >
                                           {isUploadingPpt && uploadingPptIdeaId === idea.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <UploadCloud className="h-4 w-4 mr-1"/>}
@@ -734,7 +757,7 @@ export default function StudentDashboard() {
                 <h3 className="text-lg font-semibold mb-1">Edit Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
                 <p className="text-sm text-muted-foreground mb-3">
                     Current Members: {selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0} / 4.
-                    Fill in the table below. Empty rows with no name will be ignored.
+                    Fill in the table below. Empty rows (no name) will be ignored.
                 </p>
 
                 {teamManagementErrors.members?.root && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.root.message}</p>}
@@ -757,13 +780,13 @@ export default function StudentDashboard() {
                         </TableHeader>
                         <TableBody>
                             {fields.map((item, index) => (
-                                <TableRow key={item.id}>
+                                <TableRow key={item.id}> {/* useFieldArray provides a stable key */}
                                     <TableCell className="p-1 font-medium text-muted-foreground">Member {index + 1}</TableCell>
                                     <TableCell className="p-1">
                                         <Controller
                                             name={`members.${index}.name`}
                                             control={control}
-                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} placeholder="Full Name" className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.name && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.name?.message}</p>}
                                         {teamManagementErrors.members?.[index]?.root && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.root?.message}</p>}
@@ -772,7 +795,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.email`}
                                             control={control}
-                                            render={({ field }) => <Input type="email" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input type="email" {...field} placeholder="Email Address" className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.email && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.email?.message}</p>}
                                     </TableCell>
@@ -780,7 +803,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.phone`}
                                             control={control}
-                                            render={({ field }) => <Input type="tel" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input type="tel" {...field} placeholder="Phone Number" className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.phone && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.phone?.message}</p>}
                                     </TableCell>
@@ -788,7 +811,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.institute`}
                                             control={control}
-                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} placeholder="Institute Name" className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.institute && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.institute?.message}</p>}
                                     </TableCell>
@@ -796,7 +819,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.department`}
                                             control={control}
-                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} placeholder="Department" className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.department && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.department?.message}</p>}
                                     </TableCell>
@@ -804,19 +827,26 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.enrollmentNumber`}
                                             control={control}
-                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} placeholder="Enrollment (Optional)" className="text-xs h-9" />}
                                         />
                                     </TableCell>
                                     <TableCell className="p-1 text-right">
-                                        <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
-
-                                        {getValues(`members.${index}.id`) && (
+                                        {/* Hidden input for the member's existing ID (from Firestore) */}
+                                        <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} /> 
+                                        
+                                        {/* Show delete button only if the row represents an actual existing member (has an ID from Firestore) */}
+                                        {getValues(`members.${index}.id`) && selectedIdeaForTeamMgmt.structuredTeamMembers?.some(m => m.id === getValues(`members.${index}.id`)) && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
-                                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => {
-                                                        const memberDataForThisRow = getValues(`members.${index}`);
-                                                        if(memberDataForThisRow && memberDataForThisRow.id) {
-                                                            setMemberToRemove(memberDataForThisRow as TeamMember);
+                                                    <Button 
+                                                      variant="ghost" 
+                                                      size="icon" 
+                                                      className="text-destructive hover:text-destructive h-8 w-8" 
+                                                      onClick={() => {
+                                                        const memberIdInRow = getValues(`members.${index}.id`);
+                                                        const memberData = selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === memberIdInRow);
+                                                        if(memberData) {
+                                                            setMemberToRemove(memberData);
                                                         }
                                                     }}>
                                                         <Trash2 className="h-4 w-4" />
