@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2 } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   getUserIdeaSubmissionsWithStatus, 
@@ -15,7 +15,7 @@ import {
   updateIdeaPhase2PptDetails,
   addTeamMemberToIdea,
   removeTeamMemberFromIdea,
-  updateTeamMemberInIdea // New import
+  updateTeamMemberInIdea
 } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -25,7 +25,7 @@ import type { Timestamp } from 'firebase/firestore';
 import type { ProgramPhase, TeamMember } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
-import { useForm, Controller, type SubmitHandler } from 'react-hook-form';
+import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { nanoid } from 'nanoid';
@@ -40,6 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -53,14 +54,36 @@ const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string =>
 };
 
 const teamMemberSchema = z.object({
-  name: z.string().min(3, "Full name must be at least 3 characters").max(100),
-  email: z.string().email("Invalid email address"),
-  phone: z.string().min(10, "Contact number must be at least 10 digits").max(15),
-  institute: z.string().min(2, "Institute name is required").max(100),
-  department: z.string().min(2, "Department name is required").max(100),
-  enrollmentNumber: z.string().max(50).optional(),
+  id: z.string().optional(), // Optional: will exist for loaded members, not for new ones in table
+  name: z.string().min(1, "Name is required").max(100).optional().or(z.literal('')),
+  email: z.string().email("Invalid email address").optional().or(z.literal('')),
+  phone: z.string().min(10, "Contact number must be at least 10 digits").max(15).optional().or(z.literal('')),
+  institute: z.string().min(1, "Institute is required").max(100).optional().or(z.literal('')),
+  department: z.string().min(1, "Department is required").max(100).optional().or(z.literal('')),
+  enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
+}).refine(data => {
+    // If a name is provided, then email, phone, institute, and department must also be provided.
+    if (data.name && data.name.trim() !== '') {
+        return !!(data.email && data.email.trim() !== '' &&
+                  data.phone && data.phone.trim() !== '' &&
+                  data.institute && data.institute.trim() !== '' &&
+                  data.department && data.department.trim() !== '');
+    }
+    // If name is empty, other fields can be empty (representing an empty row)
+    return true;
+}, {
+    message: "If member name is provided, then email, phone, institute, and department are also required.",
+    // Path can be more specific if needed, but generally applies to the whole object
+    // when a name is present but other fields are missing.
+    path: ['name'], 
 });
-type TeamMemberFormData = z.infer<typeof teamMemberSchema>;
+
+
+const teamManagementSchema = z.object({
+  members: z.array(teamMemberSchema).max(4),
+});
+type TeamManagementFormData = z.infer<typeof teamManagementSchema>;
+
 
 export default function StudentDashboard() {
   const { user } = useAuth(); 
@@ -74,22 +97,21 @@ export default function StudentDashboard() {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [selectedIdeaForTeamMgmt, setSelectedIdeaForTeamMgmt] = useState<IdeaSubmission | null>(null);
-  const [isTeamMemberFormOpen, setIsTeamMemberFormOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
-  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
 
 
-  const { control, handleSubmit, reset: resetTeamMemberForm, formState: { errors: teamMemberErrors, isSubmitting: isSubmittingTeamMember }, setValue } = useForm<TeamMemberFormData>({
-    resolver: zodResolver(teamMemberSchema),
+  const { control, handleSubmit, reset: resetTeamManagementForm, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable } } = useForm<TeamManagementFormData>({
+    resolver: zodResolver(teamManagementSchema),
     defaultValues: {
-      name: '',
-      email: '',
-      phone: '',
-      institute: '',
-      department: '',
-      enrollmentNumber: '',
+      members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }),
     },
   });
+
+  const { fields, replace } = useFieldArray({
+    control,
+    name: "members",
+  });
+
 
   const fetchUserIdeasAndUpdateState = async (currentSelectedIdeaId?: string) => {
     if (!user?.uid) {
@@ -104,8 +126,21 @@ export default function StudentDashboard() {
         if (currentSelectedIdeaId) {
             const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaId);
             setSelectedIdeaForTeamMgmt(updatedSelected || null);
+            // Repopulate form if an idea is selected
+            if (updatedSelected) {
+                const currentMembers = updatedSelected.structuredTeamMembers || [];
+                const formMembers = Array(4).fill(null).map((_, i) => 
+                    currentMembers[i] || { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }
+                );
+                resetTeamManagementForm({ members: formMembers });
+            } else {
+                 resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
+            }
         } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
-            // Optionally pre-select or handle no selection
+             // If no idea was previously selected for team mgmt, but ideas exist,
+             // you might want to auto-select the first one or clear the form.
+             // For now, clearing:
+             resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
         }
     } catch (error) {
         console.error("Error fetching user ideas:", error);
@@ -121,8 +156,25 @@ export default function StudentDashboard() {
       fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt?.id);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, toast]); 
+  }, [user?.uid]); 
   
+  // Effect to update form when selectedIdeaForTeamMgmt changes
+  useEffect(() => {
+    if (selectedIdeaForTeamMgmt) {
+        const currentMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
+        const formMembersData = Array(4).fill(null).map((_, i) => {
+            const member = currentMembers[i];
+            return member 
+                ? { ...member, id: member.id || nanoid() } // Ensure ID exists for existing members
+                : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
+        });
+        resetTeamManagementForm({ members: formMembersData });
+    } else {
+        resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
+    }
+  }, [selectedIdeaForTeamMgmt, resetTeamManagementForm]);
+
+
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
     if (!status) return 'secondary';
     switch (status) {
@@ -225,43 +277,70 @@ export default function StudentDashboard() {
     }
   };
 
-  const handleSaveTeamMember: SubmitHandler<TeamMemberFormData> = async (data) => {
+  const handleSaveTeamTable: SubmitHandler<TeamManagementFormData> = async (formData) => {
     if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !user?.uid) {
       toast({ title: "Error", description: "No idea selected or user not found.", variant: "destructive" });
       return;
     }
 
+    let membersProcessedCount = 0;
+    const existingMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
+    
+    // Filter out invalid entries from the form before processing
+    const validFormMembers = formData.members.filter(member => member.name && member.name.trim() !== '');
+
+    if (validFormMembers.length > 4) {
+        toast({ title: "Limit Exceeded", description: "You can save a maximum of 4 team members.", variant: "destructive" });
+        return;
+    }
+
     try {
-      if (editingMember) { // Editing existing member
-        const updatedMember: TeamMember = {
-          id: editingMember.id, // Keep the original ID
-          ...data,
-        };
-        await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, updatedMember);
-        toast({ title: "Team Member Updated", description: `${data.name}'s details have been updated.` });
-      } else { // Adding new member
-        if ((selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0) >= 4) {
-          toast({ title: "Limit Reached", description: "You can add a maximum of 4 team members.", variant: "destructive" });
-          return;
+        // This simplified loop processes adds and updates based on presence of ID.
+        // It does not handle removals by clearing rows, keep separate remove buttons for that.
+        for (const formMember of validFormMembers) {
+            if (!formMember.name || formMember.name.trim() === '') continue; // Skip empty name entries just in case
+
+            // Validate again with refined schema for individual member if needed, or rely on array item schema.
+            // The .refine in teamMemberSchema should catch if name is present but others are not.
+
+            const memberData = {
+                name: formMember.name,
+                email: formMember.email!, // Assert non-null due to refine or ensure schema makes them non-optional if name is present
+                phone: formMember.phone!,
+                institute: formMember.institute!,
+                department: formMember.department!,
+                enrollmentNumber: formMember.enrollmentNumber || '',
+            };
+
+            if (formMember.id && existingMembers.some(em => em.id === formMember.id)) { // Existing member, update
+                await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, { ...memberData, id: formMember.id });
+                membersProcessedCount++;
+            } else { // New member, add
+                 if ((existingMembers.length + (membersProcessedCount - existingMembers.filter(em => validFormMembers.some(fm => fm.id === em.id)).length)) < 4) {
+                    await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, { ...memberData, id: nanoid() });
+                    membersProcessedCount++;
+                 } else {
+                    toast({title: "Info", description: `Could not add member ${formMember.name} as team limit of 4 is reached.`, variant: "default"});
+                 }
+            }
         }
-        const newMember: TeamMember = {
-          id: nanoid(),
-          ...data,
-        };
-        await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, newMember);
-        toast({ title: "Team Member Added", description: `${data.name} has been added to the team.` });
-      }
-      
-      resetTeamMemberForm();
-      setIsTeamMemberFormOpen(false);
-      setEditingMember(null);
-      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
+
+        if (membersProcessedCount > 0) {
+            toast({ title: "Team Updated", description: "Team member details have been saved." });
+        } else if (validFormMembers.length === 0 && existingMembers.length > 0) {
+             toast({ title: "No Changes", description: "No new member information was provided to save. To remove members, use the delete icon.", variant: "default" });
+        } else {
+            toast({ title: "No Changes", description: "No team member information was provided to save.", variant: "default" });
+        }
+        
+        fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
 
     } catch (error) {
-      console.error("Error saving team member:", error);
-      toast({ title: `Error ${editingMember ? 'Updating' : 'Adding'} Member`, description: (error as Error).message || `Could not ${editingMember ? 'update' : 'add'} team member.`, variant: "destructive" });
+        console.error("Error saving team table:", error);
+        toast({ title: "Error Saving Team", description: (error as Error).message || "Could not save team member details.", variant: "destructive" });
     }
   };
+
 
   const handleRemoveTeamMember = async (memberId: string) => {
     if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !memberId || !user?.uid) return;
@@ -277,33 +356,12 @@ export default function StudentDashboard() {
     setMemberToRemove(null); 
   };
 
-  const handleEditTeamMember = (member: TeamMember) => {
-    setEditingMember(member);
-    setValue('name', member.name);
-    setValue('email', member.email);
-    setValue('phone', member.phone);
-    setValue('institute', member.institute);
-    setValue('department', member.department);
-    setValue('enrollmentNumber', member.enrollmentNumber || '');
-    setIsTeamMemberFormOpen(true);
-  };
-
-  const toggleTeamMemberForm = () => {
-    if (isTeamMemberFormOpen && editingMember) { // If editing, cancel edit
-      setEditingMember(null);
-    }
-    setIsTeamMemberFormOpen(prev => !prev);
-    if (!isTeamMemberFormOpen || editingMember) { // If opening form or was editing, reset
-        resetTeamMemberForm();
-    }
-  };
-
 
   return (
     <Tabs defaultValue="overview" className="space-y-6">
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
         <TabsTrigger value="overview">Overview & Submissions</TabsTrigger>
-        <TabsTrigger value="manageTeam">Manage Team</TabsTrigger>
+        <TabsTrigger value="manageTeam">Manage Team (Max 4)</TabsTrigger>
       </TabsList>
 
       <TabsContent value="overview" className="space-y-6">
@@ -512,7 +570,7 @@ export default function StudentDashboard() {
         <Card>
           <CardHeader>
             <CardTitle className="font-headline text-xl">Manage Team Members</CardTitle>
-            <CardDescription>Add, edit, or remove team members for your submitted ideas. A maximum of 4 members can be added per idea.</CardDescription>
+            <CardDescription>Select an idea to add, edit, or view its team members. You can add up to 4 members.</CardDescription>
           </CardHeader>
           <CardContent>
              {loadingIdeas ? (
@@ -520,7 +578,7 @@ export default function StudentDashboard() {
             ) : userIdeas.length === 0 ? (
               <p className="text-muted-foreground">You have no submitted ideas to manage teams for.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2 mb-6">
                 <Label>Select an Idea to Manage its Team:</Label>
                 <ScrollArea className="h-auto max-h-40 border rounded-md">
                   <div className="p-2 space-y-1">
@@ -529,12 +587,7 @@ export default function StudentDashboard() {
                       key={idea.id} 
                       variant={selectedIdeaForTeamMgmt?.id === idea.id ? "default" : "outline"} 
                       className="w-full justify-start text-left"
-                      onClick={() => {
-                        setSelectedIdeaForTeamMgmt(idea);
-                        setIsTeamMemberFormOpen(false); 
-                        setEditingMember(null);
-                        resetTeamMemberForm(); 
-                      }}
+                      onClick={() => setSelectedIdeaForTeamMgmt(idea)}
                     >
                       {idea.title}
                     </Button>
@@ -545,110 +598,131 @@ export default function StudentDashboard() {
             )}
 
             {selectedIdeaForTeamMgmt && (
-              <div className="mt-6 pt-6 border-t">
-                <h3 className="text-lg font-semibold mb-3">Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
-                
-                {(selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0) > 0 ? (
-                  <div className="space-y-3 mb-4">
-                    <h4 className="text-md font-medium">Current Team Members ({selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0}/4):</h4>
-                    <ul className="space-y-2">
-                      {selectedIdeaForTeamMgmt.structuredTeamMembers?.map(member => (
-                        <li key={member.id} className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-3 border rounded-md bg-card hover:bg-muted/50 gap-2">
-                          <div>
-                            <p className="font-semibold">{member.name} <span className="text-xs text-muted-foreground">({member.email})</span></p>
-                            <p className="text-xs text-muted-foreground">{member.institute} - {member.department}</p>
-                            {member.phone && <p className="text-xs text-muted-foreground">Phone: {member.phone}</p>}
-                            {member.enrollmentNumber && <p className="text-xs text-muted-foreground">Enrollment: {member.enrollmentNumber}</p>}
-                          </div>
-                          <div className="flex gap-1 self-start sm:self-center flex-shrink-0">
-                            <Button variant="ghost" size="icon" className="text-blue-500 hover:text-blue-600 h-8 w-8" onClick={() => handleEditTeamMember(member)}>
-                                <Edit2 className="h-4 w-4" />
-                                <span className="sr-only">Edit {member.name}</span>
-                            </Button>
-                           <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => setMemberToRemove(member)}>
-                                  <Trash2 className="h-4 w-4" />
-                                  <span className="sr-only">Remove {member.name}</span>
-                                </Button>
-                              </AlertDialogTrigger>
-                              {memberToRemove?.id === member.id && (
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>Remove {member.name}?</AlertDialogTitle>
-                                    <AlertDialogDescription>
-                                      Are you sure you want to remove {member.name} from the team for "{selectedIdeaForTeamMgmt.title}"?
-                                    </AlertDialogDescription>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel onClick={() => setMemberToRemove(null)}>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => handleRemoveTeamMember(member.id)} className="bg-destructive hover:bg-destructive/90">
-                                      Remove Member
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              )}
-                            </AlertDialog>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground mb-4">No team members added yet for this idea.</p>
+              <form onSubmit={handleSubmit(handleSaveTeamTable)} className="space-y-6">
+                <h3 className="text-lg font-semibold mb-1">Edit Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
+                <p className="text-sm text-muted-foreground mb-3">
+                    Current Members: {selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0} / 4. 
+                    Fill in the table below. Empty rows with no name will be ignored.
+                </p>
+
+                {teamManagementErrors.members?.root && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.root.message}</p>}
+                {teamManagementErrors.members?.message && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.message}</p>}
+
+
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead className="min-w-[150px]">Name</TableHead>
+                                <TableHead className="min-w-[200px]">Email</TableHead>
+                                <TableHead className="min-w-[120px]">Phone</TableHead>
+                                <TableHead className="min-w-[150px]">Institute</TableHead>
+                                <TableHead className="min-w-[150px]">Department</TableHead>
+                                <TableHead className="min-w-[150px]">Enrollment No. (Optional)</TableHead>
+                                <TableHead className="w-[50px] text-right">Del</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {fields.map((item, index) => (
+                                <TableRow key={item.id}>
+                                    <TableCell className="p-1">
+                                        <Controller
+                                            name={`members.${index}.name`}
+                                            control={control}
+                                            render={({ field }) => <Input placeholder="Full Name" {...field} className="text-xs h-9" />}
+                                        />
+                                        {teamManagementErrors.members?.[index]?.name && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.name?.message}</p>}
+                                    </TableCell>
+                                    <TableCell className="p-1">
+                                        <Controller
+                                            name={`members.${index}.email`}
+                                            control={control}
+                                            render={({ field }) => <Input type="email" placeholder="Email" {...field} className="text-xs h-9" />}
+                                        />
+                                        {teamManagementErrors.members?.[index]?.email && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.email?.message}</p>}
+                                    </TableCell>
+                                    <TableCell className="p-1">
+                                        <Controller
+                                            name={`members.${index}.phone`}
+                                            control={control}
+                                            render={({ field }) => <Input type="tel" placeholder="Phone" {...field} className="text-xs h-9" />}
+                                        />
+                                        {teamManagementErrors.members?.[index]?.phone && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.phone?.message}</p>}
+                                    </TableCell>
+                                    <TableCell className="p-1">
+                                        <Controller
+                                            name={`members.${index}.institute`}
+                                            control={control}
+                                            render={({ field }) => <Input placeholder="Institute" {...field} className="text-xs h-9" />}
+                                        />
+                                        {teamManagementErrors.members?.[index]?.institute && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.institute?.message}</p>}
+                                    </TableCell>
+                                    <TableCell className="p-1">
+                                        <Controller
+                                            name={`members.${index}.department`}
+                                            control={control}
+                                            render={({ field }) => <Input placeholder="Department" {...field} className="text-xs h-9" />}
+                                        />
+                                        {teamManagementErrors.members?.[index]?.department && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.department?.message}</p>}
+                                    </TableCell>
+                                     <TableCell className="p-1">
+                                        <Controller
+                                            name={`members.${index}.enrollmentNumber`}
+                                            control={control}
+                                            render={({ field }) => <Input placeholder="Enrollment No." {...field} className="text-xs h-9" />}
+                                        />
+                                    </TableCell>
+                                    <TableCell className="p-1 text-right">
+                                        {/* Hidden ID field for existing members */}
+                                        <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
+                                        
+                                        {selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === item.id || (m.id === fields[index].id && fields[index].id)) && ( // Check if this row corresponds to a saved member
+                                            <AlertDialog>
+                                                <AlertDialogTrigger asChild>
+                                                    <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => {
+                                                        const memberId = fields[index].id; // This ID should be from the loaded data
+                                                        const member = selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === memberId);
+                                                        if(member) setMemberToRemove(member);
+                                                    }}>
+                                                        <Trash2 className="h-4 w-4" />
+                                                    </Button>
+                                                </AlertDialogTrigger>
+                                                {memberToRemove?.id === fields[index].id && (
+                                                <AlertDialogContent>
+                                                    <AlertDialogHeader>
+                                                    <AlertDialogTitle>Remove {memberToRemove?.name || 'this member'}?</AlertDialogTitle>
+                                                    <AlertDialogDescription>
+                                                        Are you sure you want to remove {memberToRemove?.name || 'this member'} from the team for "{selectedIdeaForTeamMgmt.title}"? This action is permanent.
+                                                    </AlertDialogDescription>
+                                                    </AlertDialogHeader>
+                                                    <AlertDialogFooter>
+                                                    <AlertDialogCancel onClick={() => setMemberToRemove(null)}>Cancel</AlertDialogCancel>
+                                                    <AlertDialogAction onClick={() => handleRemoveTeamMember(memberToRemove!.id)} className="bg-destructive hover:bg-destructive/90">
+                                                        Remove Member
+                                                    </AlertDialogAction>
+                                                    </AlertDialogFooter>
+                                                </AlertDialogContent>
+                                                )}
+                                            </AlertDialog>
+                                        )}
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+                 {teamManagementErrors && Object.keys(teamManagementErrors).length > 0 && !teamManagementErrors.members && (
+                    <p className="text-sm text-destructive mt-1">
+                        Please correct the errors in the form. Remember, if a name is provided for a member, all other fields (except Enrollment No.) for that member become required.
+                    </p>
                 )}
 
-                {((!selectedIdeaForTeamMgmt.structuredTeamMembers || selectedIdeaForTeamMgmt.structuredTeamMembers.length < 4) || editingMember) && (
-                  <Button onClick={toggleTeamMemberForm} variant="outline" className="mb-4">
-                    {editingMember ? <><Edit2 className="mr-2 h-4 w-4"/> Cancel Editing</> : isTeamMemberFormOpen ? <><PlusCircle className="mr-2 h-4 w-4"/> Cancel Adding</> : <><PlusCircle className="mr-2 h-4 w-4"/> Add New Team Member</>}
-                  </Button>
-                )}
-                {selectedIdeaForTeamMgmt.structuredTeamMembers && selectedIdeaForTeamMgmt.structuredTeamMembers.length >= 4 && !editingMember && (
-                    <p className="text-sm text-primary mb-4">Maximum of 4 team members reached.</p>
-                )}
 
-                {isTeamMemberFormOpen && ((!selectedIdeaForTeamMgmt.structuredTeamMembers || selectedIdeaForTeamMgmt.structuredTeamMembers.length < 4) || editingMember ) && (
-                  <form onSubmit={handleSubmit(handleSaveTeamMember)} className="space-y-4 p-4 border rounded-md bg-muted/20">
-                    <h4 className="text-md font-medium mb-2">{editingMember ? 'Edit Team Member Details:' : 'New Team Member Details:'}</h4>
-                    <div>
-                      <Label htmlFor="memberName">Full Name</Label>
-                      <Controller name="name" control={control} render={({ field }) => <Input id="memberName" placeholder="Team member's full name" {...field} />} />
-                      {teamMemberErrors.name && <p className="text-sm text-destructive mt-1">{teamMemberErrors.name.message}</p>}
-                    </div>
-                    <div>
-                      <Label htmlFor="memberEmail">Email</Label>
-                      <Controller name="email" control={control} render={({ field }) => <Input id="memberEmail" type="email" placeholder="member@example.com" {...field} />} />
-                      {teamMemberErrors.email && <p className="text-sm text-destructive mt-1">{teamMemberErrors.email.message}</p>}
-                    </div>
-                    <div>
-                      <Label htmlFor="memberPhone">Phone Number</Label>
-                      <Controller name="phone" control={control} render={({ field }) => <Input id="memberPhone" type="tel" placeholder="+91 XXXXXXXXXX" {...field} />} />
-                      {teamMemberErrors.phone && <p className="text-sm text-destructive mt-1">{teamMemberErrors.phone.message}</p>}
-                    </div>
-                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="memberInstitute">Institute/Organization</Label>
-                          <Controller name="institute" control={control} render={({ field }) => <Input id="memberInstitute" placeholder="e.g., Parul University" {...field} />} />
-                          {teamMemberErrors.institute && <p className="text-sm text-destructive mt-1">{teamMemberErrors.institute.message}</p>}
-                        </div>
-                        <div>
-                          <Label htmlFor="memberDepartment">Department/Branch</Label>
-                          <Controller name="department" control={control} render={({ field }) => <Input id="memberDepartment" placeholder="e.g., Computer Engineering" {...field} />} />
-                          {teamMemberErrors.department && <p className="text-sm text-destructive mt-1">{teamMemberErrors.department.message}</p>}
-                        </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="memberEnrollmentNumber">Enrollment Number (Optional)</Label>
-                      <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="memberEnrollmentNumber" placeholder="If applicable" {...field} />} />
-                      {teamMemberErrors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{teamMemberErrors.enrollmentNumber.message}</p>}
-                    </div>
-                    <Button type="submit" disabled={isSubmittingTeamMember}>
-                      {isSubmittingTeamMember && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      {editingMember ? 'Update Member Details' : `Add Member to "${selectedIdeaForTeamMgmt.title}"`}
-                    </Button>
-                  </form>
-                )}
-              </div>
+                <Button type="submit" disabled={isSubmittingTeamTable} className="mt-4">
+                    {isSubmittingTeamTable && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    <Save className="mr-2 h-4 w-4"/> Save Team Changes
+                </Button>
+              </form>
             )}
           </CardContent>
         </Card>
@@ -659,3 +733,4 @@ export default function StudentDashboard() {
     
 
     
+
