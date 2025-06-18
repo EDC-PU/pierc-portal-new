@@ -438,7 +438,7 @@ export const createIdeaFromProfile = async (
   const userProfile = await getUserProfile(userId);
   if (!userProfile) {
     console.error("[createIdeaFromProfile] User profile not found for UID:", userId);
-    return null;
+    throw new Error("User profile not found, cannot create idea submission.");
   }
 
   if ((userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Administrative Account') || userProfile.isTeamMemberOnly) {
@@ -448,7 +448,7 @@ export const createIdeaFromProfile = async (
 
   if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
     console.warn("[createIdeaFromProfile] Skipping: missing essential idea fields in profileData:", profileData);
-    return null;
+    throw new Error("Missing essential idea fields in profile data for idea submission.");
   }
 
   const finalPayload: Omit<IdeaSubmission, 'id'> = {
@@ -456,25 +456,24 @@ export const createIdeaFromProfile = async (
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
     title: profileData.startupTitle!,
-    category: profileData.applicantCategory || 'GENERAL',
+    category: profileData.applicantCategory, // Assuming category can be directly mapped or is a string type
     problem: profileData.problemDefinition!,
     solution: profileData.solutionDescription!,
     uniqueness: profileData.uniqueness!,
     developmentStage: profileData.currentStage!,
-    applicantType: profileData.applicantCategory!,
-    teamMembers: profileData.teamMembers || '',
-    structuredTeamMembers: [],
-    teamMemberEmails: [],
+    applicantType: profileData.applicantCategory,
+    teamMembers: profileData.teamMembers || '', // Original free-text from profile
+    structuredTeamMembers: [], // Initialize as empty array
+    teamMemberEmails: [], // Initialize as empty array
     status: 'SUBMITTED',
-    programPhase: null,
-    phase2Marks: {},
+    programPhase: null, // Initialize as null
+    phase2Marks: {}, // Initialize as empty object
+    // No fileURL, fileName, studioLocation, mentor, cohortId, rejectionRemarks, etc., at this stage
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
-    // Optional fields like fileURL, fileName, studioLocation, mentor, cohortId, rejectionRemarks etc., are intentionally OMITTED
-    // as they are not set at this initial stage. They will not have 'undefined' values.
   };
 
-  console.log("[createIdeaFromProfile] Final payload for addDoc:", finalPayload);
+  console.log("[createIdeaFromProfile] Final payload for addDoc:", JSON.stringify(finalPayload, null, 2));
 
   try {
     const docRef = await addDoc(collection(db, 'ideas'), finalPayload);
@@ -488,7 +487,7 @@ export const createIdeaFromProfile = async (
     return { id: newDocSnap.id, ...data } as IdeaSubmission;
   } catch (error) {
     console.error("[createIdeaFromProfile] Firestore addDoc error:", error);
-    throw error;
+    throw error; // Re-throw to be caught by AuthContext
   }
 };
 
