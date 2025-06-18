@@ -104,7 +104,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (isNewAuthUser) {
              logUserActivity(firebaseUser.uid, profile.displayName || profile.fullName, 'USER_SIGNED_IN', undefined, { ipAddress: 'N/A', userAgent: 'N/A' });
           }
-          if (router && (window.location.pathname === '/login' || (window.location.pathname === '/profile-setup' && !profile.isTeamMemberOnly && profile.startupTitle))) {
+          // Conditional navigation: if profile exists and current page is login, or profile-setup when it shouldn't be, redirect.
+          // The check for idea submission before redirecting to dashboard from profile-setup will be handled in setRoleAndCompleteProfile.
+          if (router && (window.location.pathname === '/login' || (window.location.pathname === '/profile-setup' && profile.startupTitle && !profile.isTeamMemberOnly))) {
             router.push('/dashboard');
           }
         } else {
@@ -261,17 +263,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         { type: 'USER_PROFILE', id: user.uid, displayName: createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName || undefined },
         { role: createdOrUpdatedProfile.role, isTeamMember: createdOrUpdatedProfile.isTeamMemberOnly }
       );
+      
+      let ideaCreationSuccessfulOrNotApplicable = true;
 
       // ---> Critical section for idea creation <---
       if (
         !createdOrUpdatedProfile.isTeamMemberOnly &&
         createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle.trim() !== '' &&
         createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
-        !wasProfileExisting
+        !wasProfileExisting // Only for brand new profiles of idea owners
       ) {
-        try { // Specific try-catch for idea creation
-          console.log("AuthContext: Attempting to create idea from profile for user:", user.uid, "Profile Data:", createdOrUpdatedProfile);
-          const idea = await createIdeaFromProfile(user.uid, {
+        console.log("AuthContext: Attempting to create idea from profile for new idea owner:", user.uid);
+        try {
+          const profileIdeaDataForCreation = {
               startupTitle: createdOrUpdatedProfile.startupTitle!,
               problemDefinition: createdOrUpdatedProfile.problemDefinition!,
               solutionDescription: createdOrUpdatedProfile.solutionDescription!,
@@ -279,9 +283,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               currentStage: createdOrUpdatedProfile.currentStage!,
               applicantCategory: createdOrUpdatedProfile.applicantCategory!,
               teamMembers: createdOrUpdatedProfile.teamMembers || '',
-          });
-          if (idea) {
-              console.log("AuthContext: Idea created successfully:", idea.id);
+          };
+          const idea = await createIdeaFromProfile(user.uid, profileIdeaDataForCreation);
+          if (idea && idea.id) {
+              console.log("AuthContext: Idea created successfully from profile:", idea.id);
               await logUserActivity(
                   user.uid,
                   createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
@@ -290,12 +295,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   { title: idea.title }
               );
           } else {
-            console.warn("AuthContext: createIdeaFromProfile returned null or undefined, idea not created. This might be expected (e.g., for admin account or team member).");
+            console.error("AuthContext: createIdeaFromProfile returned null or no ID, idea creation failed.");
+            toast({
+              title: "Profile Saved, Idea Submission Issue",
+              description: "Your profile was saved, but the initial idea submission could not be completed. Please try saving your profile again or contact support if the issue persists.",
+              variant: "destructive",
+              duration: 10000,
+            });
+            ideaCreationSuccessfulOrNotApplicable = false; // Mark as failed
           }
         } catch (ideaError: any) {
             console.error("AuthContext: Error during createIdeaFromProfile call:", ideaError);
-            toast({ title: "Idea Creation Failed", description: `Your profile was saved, but we couldn't create the initial idea submission: ${ideaError.message}. Please contact support or try editing your profile again.`, variant: "destructive", duration: 10000 });
-            // Do not re-throw here, as the profile part might have succeeded.
+            toast({
+              title: "Profile Saved, Idea Submission Failed",
+              description: `Your profile was saved, but we couldn't create the initial idea submission: ${ideaError.message}. Please try saving your profile again or contact support.`,
+              variant: "destructive",
+              duration: 10000,
+            });
+            ideaCreationSuccessfulOrNotApplicable = false; // Mark as failed
         }
       }
 
@@ -320,23 +337,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setTeamLeaderProfileForMember(leader);
         }
       }
-      // This part was inside the 'idea creation' block before, moved out.
-      // else if ( 
-      //   !createdOrUpdatedProfile.isTeamMemberOnly &&
-      //   createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle.trim() !== '' &&
-      //   createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
-      //   !wasProfileExisting 
-      // ) {
-      //   // This block is now handled by the specific try-catch above for idea creation.
-      // }
+      
+      if (ideaCreationSuccessfulOrNotApplicable) {
+          router.push('/dashboard');
+          toast({ title: "Profile Saved", description: "Your profile has been successfully set up." });
+      } else {
+          // If idea creation failed, we do not navigate. The user stays on profile-setup.
+          // The toast from the idea creation failure block above has already informed them.
+      }
 
-
-      router.push('/dashboard');
-      toast({ title: "Profile Saved", description: "Your profile has been successfully set up." });
     } catch (error: any) {
       console.error("Profile setup failed", error);
       toast({ title: "Profile Setup Error", description: error.message || "Failed to set up profile.", variant: "destructive" });
-      throw error;
+      // Do not navigate to dashboard if general profile save fails
+      // throw error; // re-throwing might be too aggressive if partial success is possible, rely on toast and no navigation
     } finally {
       setLoading(false);
     }
