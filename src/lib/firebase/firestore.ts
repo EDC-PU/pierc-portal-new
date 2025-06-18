@@ -291,7 +291,7 @@ export const deleteAnnouncement = async (announcementId: string): Promise<void> 
 // Idea Submission functions
 export const createIdeaFromProfile = async (
     userId: string, 
-    profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory'>
+    profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
   if (profileData.startupTitle === 'Administrative Account') {
     return null;
@@ -307,6 +307,7 @@ export const createIdeaFromProfile = async (
     uniqueness: profileData.uniqueness,
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
+    teamMembers: profileData.teamMembers || '', // Copy team members
     status: 'SUBMITTED',
     programPhase: null,
     submittedAt: serverTimestamp() as Timestamp,
@@ -351,6 +352,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       updatedAt,
       applicantDisplayName,
       applicantEmail,
+      teamMembers: ideaData.teamMembers || '', // Ensure teamMembers is included
       rejectionRemarks: ideaData.rejectionRemarks,
       rejectedByUid: ideaData.rejectedByUid,
       rejectedAt: ideaData.rejectedAt,
@@ -476,6 +478,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         ...data, 
         programPhase: data.programPhase || null,
         phase2Marks: data.phase2Marks || {},
+        teamMembers: data.teamMembers || '', // Ensure teamMembers is included
         submittedAt, 
         updatedAt,
         rejectionRemarks: data.rejectionRemarks,
@@ -588,13 +591,14 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines'>): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers'> & { teamMembers?: string }): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
     status: 'SUBMITTED',
     programPhase: null,
     phase2Marks: {}, 
+    teamMembers: ideaData.teamMembers || '', // Ensure teamMembers is included
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const; 

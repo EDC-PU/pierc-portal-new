@@ -35,7 +35,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore'; 
 import { getDoc, doc } from 'firebase/firestore'; 
@@ -404,7 +404,7 @@ export default function ViewApplicationsPage() {
     }
 
     const headers = [
-      'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category',
+      'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
       'Status', 'Program Phase', 'Rejection Remarks', 'Studio Location', 
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
@@ -443,6 +443,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.applicantDisplayName),
         escapeCsvField(app.applicantEmail),
         escapeCsvField(app.applicantType?.replace(/_/g, ' ')),
+        escapeCsvField(app.teamMembers),
         escapeCsvField(app.developmentStage.replace(/_/g, ' ')),
         escapeCsvField(app.problem),
         escapeCsvField(app.solution),
@@ -674,6 +675,12 @@ export default function ViewApplicationsPage() {
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Development Stage</h4>
                   <p>{selectedApplication.developmentStage.replace(/_/g, ' ') || 'N/A'}</p>
+                </div>
+                <div>
+                    <h4 className="font-semibold text-muted-foreground flex items-center"><Users className="h-4 w-4 mr-1.5"/> Team Members</h4>
+                    <p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">
+                        {selectedApplication.teamMembers || 'N/A (No team members listed or Solo innovator)'}
+                    </p>
                 </div>
                 <div>
                   <h4 className="font-semibold text-muted-foreground">Submitted At</h4>
@@ -977,5 +984,4 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
-
 

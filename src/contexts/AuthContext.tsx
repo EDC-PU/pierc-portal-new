@@ -185,10 +185,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         photoURL: user.photoURL,
         role: actualRole,
         isSuperAdmin: isSuperAdminEmail,
-        ...additionalData,
+        ...additionalData, // includes teamMembers
       };
       const createdProfile = await createUserProfileFS(user.uid, profileDataForCreation);
       
+      // Pass teamMembers to createIdeaFromProfile
       if (additionalData.startupTitle && additionalData.startupTitle !== 'Administrative Account') {
         await createIdeaFromProfile(user.uid, {
             startupTitle: additionalData.startupTitle,
@@ -197,6 +198,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             uniqueness: additionalData.uniqueness,
             currentStage: additionalData.currentStage,
             applicantCategory: additionalData.applicantCategory,
+            teamMembers: additionalData.teamMembers || '', // Pass teamMembers here
         });
       }
       

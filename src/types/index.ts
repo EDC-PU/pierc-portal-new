@@ -22,7 +22,7 @@ export interface UserProfile {
   solutionDescription: string;
   uniqueness: string;
   
-  teamMembers: string;
+  teamMembers: string; // Comma-separated names, or descriptive text like "Solo"
 
   enrollmentNumber?: string; 
   college?: string; 
@@ -52,6 +52,7 @@ export interface IdeaSubmission {
   uniqueness: string;
   developmentStage: CurrentStage;
   applicantType?: ApplicantCategory; 
+  teamMembers?: string; // Added for storing team member names associated with this idea
   
   fileURL?: string; 
   fileName?: string;

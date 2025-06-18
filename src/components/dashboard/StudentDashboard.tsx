@@ -207,6 +207,11 @@ export default function StudentDashboard() {
                             <p className="text-xs text-muted-foreground">
                                 Submitted: {formatDate(idea.submittedAt)} | Last Updated: {formatDate(idea.updatedAt)}
                             </p>
+                             {idea.teamMembers && idea.teamMembers.trim() !== '' && (
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    <span className="font-medium">Team:</span> {idea.teamMembers}
+                                </p>
+                            )}
                         </div>
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
                             <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs py-1 px-2.5">
@@ -365,3 +370,4 @@ export default function StudentDashboard() {
     </div>
   );
 }
+
