@@ -10,7 +10,7 @@ import {
     deleteIdeaSubmission as deleteIdeaSubmissionFS,
     submitOrUpdatePhase2Mark 
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,7 +35,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore'; 
 import { getDoc, doc } from 'firebase/firestore'; 
@@ -404,13 +404,21 @@ export default function ViewApplicationsPage() {
     }
 
     const headers = [
-      'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members',
+      'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members (Free Text)',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
       'Status', 'Program Phase', 'Rejection Remarks', 'Studio Location', 
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At', 
     ];
+    
+    const maxTeamMembers = Math.max(0, ...applications.map(app => app.structuredTeamMembers?.length || 0));
+    for (let i = 1; i <= maxTeamMembers; i++) {
+        headers.push(
+            `Member ${i} Name`, `Member ${i} Email`, `Member ${i} Phone`, 
+            `Member ${i} Institute`, `Member ${i} Department`, `Member ${i} Enrollment No.`
+        );
+    }
     
     const adminMarkAdminUIDs: string[] = [];
     if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications[0]?.phase2Marks) {
@@ -443,7 +451,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.applicantDisplayName),
         escapeCsvField(app.applicantEmail),
         escapeCsvField(app.applicantType?.replace(/_/g, ' ')),
-        escapeCsvField(app.teamMembers),
+        escapeCsvField(app.teamMembers), // Free text team members
         escapeCsvField(app.developmentStage.replace(/_/g, ' ')),
         escapeCsvField(app.problem),
         escapeCsvField(app.solution),
@@ -464,6 +472,18 @@ export default function ViewApplicationsPage() {
         escapeCsvField(formatDateISO(app.submittedAt)),
         escapeCsvField(formatDateISO(app.updatedAt)),
       ];
+
+      for (let i = 0; i < maxTeamMembers; i++) {
+        const member = app.structuredTeamMembers?.[i];
+        row.push(
+            escapeCsvField(member?.name),
+            escapeCsvField(member?.email),
+            escapeCsvField(member?.phone),
+            escapeCsvField(member?.institute),
+            escapeCsvField(member?.department),
+            escapeCsvField(member?.enrollmentNumber)
+        );
+      }
 
       if (userProfile?.role === 'ADMIN_FACULTY') {
          adminMarkAdminUIDs.forEach(adminUid => {
@@ -677,9 +697,9 @@ export default function ViewApplicationsPage() {
                   <p>{selectedApplication.developmentStage.replace(/_/g, ' ') || 'N/A'}</p>
                 </div>
                 <div>
-                    <h4 className="font-semibold text-muted-foreground flex items-center"><Users className="h-4 w-4 mr-1.5"/> Team Members</h4>
+                    <h4 className="font-semibold text-muted-foreground flex items-center"><UsersIconLucide className="h-4 w-4 mr-1.5"/> Team Members (Initial Description)</h4>
                     <p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">
-                        {selectedApplication.teamMembers || 'N/A (No team members listed or Solo innovator)'}
+                        {selectedApplication.teamMembers || 'N/A (No team members described initially or Solo innovator)'}
                     </p>
                 </div>
                 <div>
@@ -750,6 +770,29 @@ export default function ViewApplicationsPage() {
                         </CardContent>
                     </Card>
                  )}
+                 
+                {selectedApplication.structuredTeamMembers && selectedApplication.structuredTeamMembers.length > 0 && (
+                    <div className="pt-3">
+                        <h4 className="font-semibold text-muted-foreground flex items-center mb-2"><UsersIconLucide className="h-5 w-5 mr-2"/> Team Members (Detailed)</h4>
+                        <div className="space-y-3">
+                        {selectedApplication.structuredTeamMembers.map((member, index) => (
+                            <Card key={member.id || index} className="bg-muted/40 p-3 shadow-sm">
+                                <CardHeader className="p-0 pb-1">
+                                     <CardTitle className="text-sm font-medium">Member {index + 1}: {member.name}</CardTitle>
+                                </CardHeader>
+                                <CardContent className="p-0 text-xs text-foreground/80 space-y-0.5">
+                                    <p><strong>Email:</strong> {member.email}</p>
+                                    <p><strong>Phone:</strong> {member.phone}</p>
+                                    <p><strong>Institute:</strong> {member.institute}</p>
+                                    <p><strong>Department:</strong> {member.department}</p>
+                                    {member.enrollmentNumber && <p><strong>Enrollment No:</strong> {member.enrollmentNumber}</p>}
+                                </CardContent>
+                            </Card>
+                        ))}
+                        </div>
+                    </div>
+                )}
+
               </div>
 
               {selectedApplication.programPhase === 'PHASE_2' && (
