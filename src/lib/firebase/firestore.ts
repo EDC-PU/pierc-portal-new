@@ -451,37 +451,31 @@ export const createIdeaFromProfile = async (
     return null;
   }
 
-  const ideaCol = collection(db, 'ideas');
-  
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'updatedAt' | 'submittedAt' | 'userId' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'structuredTeamMembers' | 'teamMemberEmails' | 'phase2Marks' | 'programPhase' | 'status' | 'fileURL' | 'fileName' | 'studioLocation' | 'cohortId' | 'mentor' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines'> & {
-    userId: string; applicantDisplayName: string; applicantEmail: string; category: string;
-    structuredTeamMembers: TeamMember[]; teamMemberEmails: string[]; phase2Marks: Record<string, AdminMark>;
-    programPhase: null; status: 'SUBMITTED'; submittedAt: Timestamp; updatedAt: Timestamp;
-  } = {
+  // Construct the payload with only fields that should exist at creation.
+  // Optional fields not set at this stage (like fileURL, mentor, etc.) are omitted.
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'fileURL' | 'fileName' | 'studioLocation' | 'cohortId' | 'mentor' | 'category'> = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
-    title: profileIdeaData.startupTitle!, 
-    problem: profileIdeaData.problemDefinition!, 
-    solution: profileIdeaData.solutionDescription!, 
-    uniqueness: profileIdeaData.uniqueness!, 
-    developmentStage: profileIdeaData.currentStage!, 
-    applicantType: profileIdeaData.applicantCategory!, 
-    teamMembers: profileIdeaData.teamMembers || '', 
-    structuredTeamMembers: [], 
-    teamMemberEmails: [], 
+    title: profileIdeaData.startupTitle!,
+    problem: profileIdeaData.problemDefinition!,
+    solution: profileIdeaData.solutionDescription!,
+    uniqueness: profileIdeaData.uniqueness!,
+    developmentStage: profileIdeaData.currentStage!,
+    applicantType: profileIdeaData.applicantCategory!,
+    teamMembers: profileIdeaData.teamMembers || '', // Original free-text field
+    structuredTeamMembers: [], // Initialize as empty array
+    teamMemberEmails: [],      // Initialize as empty array
     status: 'SUBMITTED',
-    programPhase: null,
-    phase2Marks: {},
-    category: 'General Profile Submission',
+    programPhase: null, // Explicitly null
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
   
-  console.log("createIdeaFromProfile: Payload for addDoc:", JSON.stringify(newIdeaPayload, null, 2));
+  console.log("createIdeaFromProfile: Final payload for addDoc:", JSON.stringify(newIdeaPayload, null, 2));
 
   try {
-    const docRef = await addDoc(ideaCol, newIdeaPayload as any); 
+    const docRef = await addDoc(collection(db, 'ideas'), newIdeaPayload); 
     const newDocSnap = await getDoc(docRef);
     if (!newDocSnap.exists()) {
       console.error("createIdeaFromProfile: Failed to create idea submission, document does not exist after addDoc.");
@@ -490,17 +484,47 @@ export const createIdeaFromProfile = async (
     console.log("createIdeaFromProfile: Idea document created with ID:", newDocSnap.id);
 
     const data = newDocSnap.data();
+    // Construct the full IdeaSubmission object for return, ensuring all fields from the type are present or null/undefined
     return {
       id: newDocSnap.id,
-      ...(data as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'structuredTeamMembers' | 'teamMemberEmails' | 'phase2Marks'>),
-      submittedAt: data?.submittedAt as Timestamp,
-      updatedAt: data?.updatedAt as Timestamp,
-      structuredTeamMembers: data?.structuredTeamMembers || [],
-      teamMemberEmails: data?.teamMemberEmails || [],
-      phase2Marks: data?.phase2Marks || {},
+      userId: data.userId,
+      applicantDisplayName: data.applicantDisplayName,
+      applicantEmail: data.applicantEmail,
+      title: data.title,
+      problem: data.problem,
+      solution: data.solution,
+      uniqueness: data.uniqueness,
+      developmentStage: data.developmentStage,
+      applicantType: data.applicantType,
+      teamMembers: data.teamMembers,
+      structuredTeamMembers: data.structuredTeamMembers || [],
+      teamMemberEmails: data.teamMemberEmails || [],
+      status: data.status,
+      programPhase: data.programPhase,
+      submittedAt: data.submittedAt as Timestamp,
+      updatedAt: data.updatedAt as Timestamp,
+      // Optional fields that would be undefined here, matching IdeaSubmission type
+      fileURL: data.fileURL,
+      fileName: data.fileName,
+      studioLocation: data.studioLocation,
+      cohortId: data.cohortId,
+      mentor: data.mentor,
+      category: data.category, // If category was part of the payload
+      phase2Marks: data.phase2Marks || {},
+      rejectionRemarks: data.rejectionRemarks,
+      rejectedByUid: data.rejectedByUid,
+      rejectedAt: data.rejectedAt,
+      phase2PptUrl: data.phase2PptUrl,
+      phase2PptFileName: data.phase2PptFileName,
+      phase2PptUploadedAt: data.phase2PptUploadedAt,
+      nextPhaseDate: data.nextPhaseDate,
+      nextPhaseStartTime: data.nextPhaseStartTime,
+      nextPhaseEndTime: data.nextPhaseEndTime,
+      nextPhaseVenue: data.nextPhaseVenue,
+      nextPhaseGuidelines: data.nextPhaseGuidelines,
     } as IdeaSubmission;
   } catch (error) {
-    console.error("createIdeaFromProfile: Error during addDoc to 'ideas' collection:", error);
+    console.error("createIdeaFromProfile: Firebase addDoc error:", error);
     throw error; 
   }
 };
