@@ -70,7 +70,7 @@ export interface IdeaSubmission {
   id?: string;
   userId: string; // UID of the idea owner/leader
   title: string;
-  category: string;
+  category: string; // This seems redundant if applicantType is used, but keeping for now if it has a different meaning.
   problem: string;
   solution: string;
   uniqueness: string;
@@ -88,6 +88,7 @@ export interface IdeaSubmission {
   programPhase: ProgramPhase | null;
   phase2Marks?: { [adminUid: string]: AdminMark };
   mentor?: MentorName; // Mentor assigned if in COHORT phase
+  cohortId?: string; // ID of the Cohort this idea is assigned to
 
   rejectionRemarks?: string;
   rejectedByUid?: string; // UID of admin who rejected
@@ -106,7 +107,6 @@ export interface IdeaSubmission {
 
   submittedAt: Timestamp;
   updatedAt: Timestamp;
-  cohortId?: string; // This can be used later if a separate 'cohorts' collection is made
 
   // Denormalized fields for easier display
   applicantDisplayName?: string;
@@ -116,11 +116,14 @@ export interface IdeaSubmission {
 export interface Cohort {
   id?: string;
   name: string;
-  ideaIds: string[];
   startDate: Timestamp;
   endDate: Timestamp;
+  batchSize: number; // Max number of ideas/teams this cohort can have
+  ideaIds: string[]; // List of IdeaSubmission IDs assigned to this cohort
   createdAt: Timestamp;
-  createdByUid: string;
+  createdByUid: string; // UID of the admin who created the cohort
+  creatorDisplayName: string | null;
+  updatedAt?: Timestamp; // For future updates
 }
 
 export interface Announcement {
@@ -171,10 +174,15 @@ export type ActivityLogAction =
   | 'ADMIN_IDEA_MENTOR_ASSIGNED'
   | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
   | 'ADMIN_IDEA_DELETED'
+  | 'ADMIN_IDEA_ASSIGNED_TO_COHORT'
   // Admin - Announcements
   | 'ADMIN_ANNOUNCEMENT_CREATED'
   | 'ADMIN_ANNOUNCEMENT_UPDATED'
   | 'ADMIN_ANNOUNCEMENT_DELETED'
+  // Admin - Cohorts
+  | 'ADMIN_COHORT_CREATED'
+  | 'ADMIN_COHORT_UPDATED'
+  | 'ADMIN_COHORT_DELETED'
   // Admin - System Settings
   | 'ADMIN_SYSTEM_SETTINGS_UPDATED';
 
@@ -192,6 +200,4 @@ export interface ActivityLogEntry {
   action: ActivityLogAction;
   target?: ActivityLogTarget;
   details?: Record<string, any>; // e.g., { fieldChanged: 'status', oldValue: 'SUBMITTED', newValue: 'SELECTED' }
-  // ipAddress?: string; // Potentially capture via Cloud Function
-  // userAgent?: string; // Potentially capture via Cloud Function
 }

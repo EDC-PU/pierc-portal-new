@@ -36,24 +36,39 @@ export const logUserActivity = async (
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
   const currentAuthUser = auth.currentUser;
-  console.log("createUserProfileFS: Called for", userId, "with data:", data);
+  console.log("[firestore.ts:createUserProfileFS] Called for", userId, "with data:", JSON.stringify(data, null, 2));
 
   const profileDataForWrite: any = {
     uid: userId,
     email: data.email ?? currentAuthUser?.email ?? null,
     displayName: data.displayName || data.fullName || currentAuthUser?.displayName || 'New User',
     photoURL: data.photoURL ?? currentAuthUser?.photoURL ?? null,
-    role: data.role ?? null,
+    role: data.role ?? null, // Role is set by AuthContext based on form or superadmin email
     isSuperAdmin: (data.email ?? currentAuthUser?.email) === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
     fullName: data.fullName || '',
     contactNumber: data.contactNumber || '',
-    isTeamMemberOnly: data.isTeamMemberOnly === true,
+    isTeamMemberOnly: data.isTeamMemberOnly === true, // Explicitly check for true
     enrollmentNumber: data.enrollmentNumber || null,
     college: data.college || null,
     instituteName: data.instituteName || null,
   };
+   console.log("[firestore.ts:createUserProfileFS] Initial constructed profileDataForWrite:", JSON.stringify(profileDataForWrite, null, 2));
 
-  if (profileDataForWrite.isTeamMemberOnly) {
+
+  // Fields for idea owners (if not team member only)
+  if (!profileDataForWrite.isTeamMemberOnly) {
+    console.log("[firestore.ts:createUserProfileFS] Profile is for an idea owner. Setting idea-specific fields.");
+    profileDataForWrite.startupTitle = data.startupTitle || null;
+    profileDataForWrite.problemDefinition = data.problemDefinition || null;
+    profileDataForWrite.solutionDescription = data.solutionDescription || null;
+    profileDataForWrite.uniqueness = data.uniqueness || null;
+    profileDataForWrite.applicantCategory = data.applicantCategory || null;
+    profileDataForWrite.currentStage = data.currentStage || null;
+    profileDataForWrite.teamMembers = data.teamMembers || ''; // Original free-text
+    profileDataForWrite.associatedIdeaId = null;
+    profileDataForWrite.associatedTeamLeaderUid = null;
+  } else { // Fields for team members only
+    console.log("[firestore.ts:createUserProfileFS] Profile is for a team member only. Nullifying idea fields, setting association.");
     profileDataForWrite.associatedIdeaId = data.associatedIdeaId || null;
     profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid || null;
     profileDataForWrite.startupTitle = null;
@@ -63,38 +78,31 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     profileDataForWrite.applicantCategory = null;
     profileDataForWrite.currentStage = null;
     profileDataForWrite.teamMembers = null;
-  } else {
-    profileDataForWrite.associatedIdeaId = null;
-    profileDataForWrite.associatedTeamLeaderUid = null;
-    profileDataForWrite.startupTitle = data.startupTitle || null;
-    profileDataForWrite.problemDefinition = data.problemDefinition || null;
-    profileDataForWrite.solutionDescription = data.solutionDescription || null;
-    profileDataForWrite.uniqueness = data.uniqueness || null;
-    profileDataForWrite.applicantCategory = data.applicantCategory || null;
-    profileDataForWrite.currentStage = data.currentStage || null;
-    profileDataForWrite.teamMembers = data.teamMembers || '';
   }
+
+  console.log("[firestore.ts:createUserProfileFS] Final profileDataForWrite before DB operation:", JSON.stringify(profileDataForWrite, null, 2));
+
 
   const existingProfileSnap = await getDoc(userProfileRef);
   if (existingProfileSnap.exists()) {
     profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
-    delete profileDataForWrite.createdAt;
-    console.log("createUserProfileFS: Updating existing profile for", userId);
+    delete profileDataForWrite.createdAt; // Do not overwrite createdAt on update
+    console.log("[firestore.ts:createUserProfileFS] Updating existing profile for", userId);
     await updateDoc(userProfileRef, profileDataForWrite);
   } else {
     profileDataForWrite.createdAt = serverTimestamp() as Timestamp;
     profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
-    console.log("createUserProfileFS: Creating new profile for", userId);
+    console.log("[firestore.ts:createUserProfileFS] Creating new profile for", userId);
     await setDoc(userProfileRef, profileDataForWrite);
   }
 
   const docSnap = await getDoc(userProfileRef);
   if (!docSnap.exists()) {
-    console.error("createUserProfileFS: Failed to create/retrieve profile for", userId);
+    console.error("[firestore.ts:createUserProfileFS] Failed to create/retrieve profile for", userId);
     throw new Error("Failed to create or retrieve user profile after write operation.");
   }
   const rawData = docSnap.data()!;
-  console.log("createUserProfileFS: Successfully created/updated profile for", userId);
+  console.log("[firestore.ts:createUserProfileFS] Successfully created/updated profile for", userId, ". Raw data from DB:", JSON.stringify(rawData, null, 2));
   return {
     uid: docSnap.id,
     email: rawData.email ?? null,
@@ -434,21 +442,21 @@ export const createIdeaFromProfile = async (
   userId: string,
   profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
-  console.log("[createIdeaFromProfile] Attempting for user:", userId, "with profile data:", profileData);
+  console.log("[firestore.ts:createIdeaFromProfile] Attempting for user:", userId, "with profile data:", JSON.stringify(profileData, null, 2));
   const userProfile = await getUserProfile(userId);
   if (!userProfile) {
-    console.error("[createIdeaFromProfile] User profile not found for UID:", userId);
+    console.error("[firestore.ts:createIdeaFromProfile] User profile not found for UID:", userId);
     throw new Error("User profile not found, cannot create idea submission.");
   }
 
   if ((userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Administrative Account') || userProfile.isTeamMemberOnly) {
-    console.log("[createIdeaFromProfile] Skipping idea creation for admin/team-member profile.");
+    console.log("[firestore.ts:createIdeaFromProfile] Skipping idea creation for admin or team-member-only profile.");
     return null;
   }
 
   if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
-    console.warn("[createIdeaFromProfile] Skipping: missing essential idea fields in profileData:", profileData);
-    throw new Error("Missing essential idea fields in profile data for idea submission.");
+    console.warn("[firestore.ts:createIdeaFromProfile] Skipping: missing essential idea fields in profileData:", JSON.stringify(profileData, null, 2));
+    throw new Error("Missing essential idea fields in profile data for idea submission. All idea-related fields must be provided.");
   }
 
   const finalPayload: Omit<IdeaSubmission, 'id'> = {
@@ -456,37 +464,44 @@ export const createIdeaFromProfile = async (
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
     title: profileData.startupTitle!,
-    category: profileData.applicantCategory, // Assuming category can be directly mapped or is a string type
+    // 'category' field was potentially problematic/redundant. Using applicantType from profile.
+    // If 'category' is distinct, it needs to be handled. For now, assume applicantType serves this purpose.
+    category: profileData.applicantCategory, // Or map as needed if 'category' has a different meaning
     problem: profileData.problemDefinition!,
     solution: profileData.solutionDescription!,
     uniqueness: profileData.uniqueness!,
     developmentStage: profileData.currentStage!,
     applicantType: profileData.applicantCategory,
-    teamMembers: profileData.teamMembers || '', // Original free-text from profile
-    structuredTeamMembers: [], // Initialize as empty array
-    teamMemberEmails: [], // Initialize as empty array
+    teamMembers: profileData.teamMembers || '',
+    structuredTeamMembers: [], // Initialize as empty
+    teamMemberEmails: [], // Initialize as empty
     status: 'SUBMITTED',
-    programPhase: null, // Initialize as null
-    phase2Marks: {}, // Initialize as empty object
-    // No fileURL, fileName, studioLocation, mentor, cohortId, rejectionRemarks, etc., at this stage
+    programPhase: null,
+    // All other optional fields (fileURL, fileName, studioLocation, mentor, cohortId, phase2Marks, rejectionRemarks, etc.)
+    // are intentionally omitted here. They will not be part of the initial document.
+    // This ensures no 'undefined' values are sent to Firestore.
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
 
-  console.log("[createIdeaFromProfile] Final payload for addDoc:", JSON.stringify(finalPayload, null, 2));
+  console.log("[firestore.ts:createIdeaFromProfile] Final payload for addDoc:", JSON.stringify(finalPayload, null, 2));
 
   try {
     const docRef = await addDoc(collection(db, 'ideas'), finalPayload);
-    console.log("[createIdeaFromProfile] Idea document created with ID:", docRef.id);
+    console.log("[firestore.ts:createIdeaFromProfile] Idea document created with ID:", docRef.id);
     const newDocSnap = await getDoc(docRef);
     if (!newDocSnap.exists()) {
-      console.error("[createIdeaFromProfile] Created idea doc not found for ID:", docRef.id);
+      console.error("[firestore.ts:createIdeaFromProfile] Created idea doc not found for ID:", docRef.id);
       throw new Error("Could not create idea submission from profile (doc not found after creation).");
     }
     const data = newDocSnap.data()!;
     return { id: newDocSnap.id, ...data } as IdeaSubmission;
   } catch (error) {
-    console.error("[createIdeaFromProfile] Firestore addDoc error:", error);
+    console.error("[firestore.ts:createIdeaFromProfile] Firestore addDoc error:", error);
+    // Log the error more explicitly for Firestore permission issues
+    if ((error as any).code === 'permission-denied') {
+        console.error("[firestore.ts:createIdeaFromProfile] Firestore Permission Denied. Check security rules for /ideas collection create operation. Payload was:", JSON.stringify(finalPayload, null, 2));
+    }
     throw error; // Re-throw to be caught by AuthContext
   }
 };
@@ -1035,18 +1050,47 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
 
 
 // Cohort functions
-export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>): Promise<Cohort> => {
+export const createCohortFS = async (cohortData: Omit<Cohort, 'id' | 'createdAt' | 'createdByUid' | 'creatorDisplayName' | 'ideaIds' | 'updatedAt'>, adminProfile: UserProfile): Promise<Cohort> => {
   const cohortCol = collection(db, 'cohorts');
-  const newCohortPayload = {
+  const newCohortPayload: Omit<Cohort, 'id'> = {
     ...cohortData,
+    ideaIds: [], // Initialize with no ideas
+    createdByUid: adminProfile.uid,
+    creatorDisplayName: adminProfile.displayName || adminProfile.fullName,
     createdAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
   };
   const docRef = await addDoc(cohortCol, newCohortPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create cohort.");
-  return { id: newDocSnap.id, ...newDocSnap.data() } as Cohort;
+
+  const createdCohort = { id: newDocSnap.id, ...newDocSnap.data() } as Cohort;
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_COHORT_CREATED',
+    { type: 'COHORT', id: createdCohort.id!, displayName: createdCohort.name },
+    { name: createdCohort.name, batchSize: createdCohort.batchSize }
+  );
+  return createdCohort;
 };
 
+export const getAllCohortsStream = (callback: (cohorts: Cohort[]) => void) => {
+  const cohortsCol = collection(db, 'cohorts');
+  const q = query(cohortsCol, orderBy('createdAt', 'desc'));
+
+  return onSnapshot(q, (querySnapshot) => {
+    const cohorts: Cohort[] = [];
+    querySnapshot.forEach((doc) => {
+      cohorts.push({ id: doc.id, ...doc.data() } as Cohort);
+    });
+    callback(cohorts);
+  }, (error) => {
+    console.error("Error fetching cohorts:", error);
+    callback([]);
+  });
+};
 
 // System Settings Functions
 const SYSTEM_SETTINGS_DOC_ID = 'config';
@@ -1084,7 +1128,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1092,7 +1136,7 @@ export const createIdeaSubmission = async (
     applicantDisplayName: actorProfile.displayName || actorProfile.fullName || 'N/A',
     applicantEmail: actorProfile.email || 'N/A',
     title: ideaData.title,
-    category: ideaData.category,
+    // category: ideaData.category, // This seems to be covered by applicantType, removing to avoid confusion
     problem: ideaData.problem,
     solution: ideaData.solution,
     uniqueness: ideaData.uniqueness,
@@ -1106,9 +1150,9 @@ export const createIdeaSubmission = async (
     phase2Marks: {},
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
+    // Optional fields are not included if they don't have a value
   };
 
-  // Only include optional fields if they have a value.
   if (ideaData.fileURL) newIdeaPayload.fileURL = ideaData.fileURL;
   if (ideaData.fileName) newIdeaPayload.fileName = ideaData.fileName;
   if (ideaData.studioLocation) newIdeaPayload.studioLocation = ideaData.studioLocation;
@@ -1191,3 +1235,46 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   return null;
 };
 
+// Assign an idea to a cohort
+export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, cohortId: string | null, adminProfile: UserProfile): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const batch = writeBatch(db);
+
+  const oldIdeaSnap = await getDoc(ideaRef);
+  if (!oldIdeaSnap.exists()) throw new Error("Idea not found.");
+  const oldCohortId = oldIdeaSnap.data().cohortId;
+
+  // Update the idea document
+  batch.update(ideaRef, {
+    cohortId: cohortId, // Set to null if unassigning
+    updatedAt: serverTimestamp()
+  });
+
+  // If unassigning from an old cohort, remove ideaId from old cohort's ideaIds list
+  if (oldCohortId && oldCohortId !== cohortId) {
+    const oldCohortRef = doc(db, 'cohorts', oldCohortId);
+    batch.update(oldCohortRef, {
+      ideaIds: arrayRemove(ideaId),
+      updatedAt: serverTimestamp()
+    });
+  }
+
+  // If assigning to a new cohort, add ideaId to new cohort's ideaIds list
+  if (cohortId && cohortId !== oldCohortId) {
+    const newCohortRef = doc(db, 'cohorts', cohortId);
+    batch.update(newCohortRef, {
+      ideaIds: arrayUnion(ideaId),
+      updatedAt: serverTimestamp()
+    });
+  }
+
+  await batch.commit();
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_IDEA_ASSIGNED_TO_COHORT',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { oldCohortId, newCohortId: cohortId }
+  );
+};

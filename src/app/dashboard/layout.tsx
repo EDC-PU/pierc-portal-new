@@ -19,7 +19,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIcon, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon } from 'lucide-react';
+import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon } from 'lucide-react'; // Added Users2 for CohortIcon
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, userProfile, loading, initialLoadComplete, signOut } = useAuth();
@@ -65,6 +65,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const adminMenuItems = [
     { label: 'Manage Announcements', href: '/dashboard/admin/manage-announcements', icon: Megaphone, roles: ['ADMIN_FACULTY'] },
     { label: 'View Applications', href: '/dashboard/admin/view-applications', icon: BarChart3, roles: ['ADMIN_FACULTY'] },
+    { label: 'Manage Cohorts', href: '/dashboard/admin/manage-cohorts', icon: CohortIcon, roles: ['ADMIN_FACULTY'] },
     { label: 'System Settings', href: '/dashboard/admin/system-settings', icon: Settings, roles: ['ADMIN_FACULTY'] },
     { label: 'Platform Analytics', href: '/dashboard/admin/platform-analytics', icon: BarChartBig, roles: ['ADMIN_FACULTY'] },
     { label: 'Manage Users', href: '/dashboard/admin/manage-users', icon: UserCog, roles: ['ADMIN_FACULTY'], superAdminOnly: true },
