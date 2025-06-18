@@ -1,69 +1,108 @@
 
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Rules for User Profiles
+    // Helper function to check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Helper function to check if the currently authenticated user is the owner of the resource
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Helper function to check if the user has an 'ADMIN_FACULTY' role
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+    }
+
+    // Helper function to check if the user is a Super Admin
+    function isSuperAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
+    }
+
+    // User Profiles
     match /users/{userId} {
-      allow read: if request.auth != null &&
-                    (request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY');
-      
-      allow create: if request.auth != null && request.auth.uid == userId; // For profile setup
+      // Authenticated users can read profiles. This is to allow team members to view leader profiles
+      // and for general user information visibility if needed by the app.
+      // For stricter privacy, this could be narrowed (e.g., only self, admin, or via specific relationship checks).
+      allow read: if isAuthenticated();
 
-      allow update: if request.auth != null &&
-                      (
-                        // Allow user to update their own profile (e.g., general profile fields)
-                        (request.auth.uid == userId) || 
-                        // Allow a super admin to update specific fields (role, isSuperAdmin) of another user
-                        (
-                          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true &&
-                          // Prevent modification of the primary super admin by another super admin
-                          (resource.data.email != "pranavrathi07@gmail.com" || request.auth.uid == userId) && // allow primary admin to update their own non-sensitive fields if needed via normal path
-                          // Check that the write operation is only affecting allowed fields
-                          (request.writeFields.hasOnly(['role', 'updatedAt']) || request.writeFields.hasOnly(['role', 'isSuperAdmin', 'updatedAt']))
+      // Users can create their own profile document.
+      // Certain fields like role and isSuperAdmin are restricted unless it's the primary super admin.
+      allow create: if isUser(userId) &&
+                      request.resource.data.uid == userId &&
+                      // Email must match the token, or be the primary super admin during their specific setup.
+                      (request.resource.data.email == request.auth.token.email || request.resource.data.email == "pranavrathi07@gmail.com") &&
+                      // Users cannot grant themselves ADMIN_FACULTY role unless they are the primary super admin.
+                      (request.resource.data.role != 'ADMIN_FACULTY' || request.resource.data.email == "pranavrathi07@gmail.com") &&
+                      // Users cannot grant themselves isSuperAdmin unless they are the primary super admin.
+                      (request.resource.data.isSuperAdmin == false || request.resource.data.email == "pranavrathi07@gmail.com");
+
+      // Users can update their own profile (restricted fields) or Admins can update profiles.
+      allow update: if (isAdmin() &&
+                        // Admin cannot change primary super admin's role away from ADMIN_FACULTY or isSuperAdmin from true.
+                        (resource.data.email != "pranavrathi07@gmail.com" ||
+                         (request.resource.data.role == 'ADMIN_FACULTY' && request.resource.data.isSuperAdmin == true)
                         )
-                      );
-      
-      allow delete: if request.auth != null &&
-                      // Requester must be an ADMIN_FACULTY
-                      get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY' &&
-                      // Prevent deleting the primary super admin's profile
-                      get(/databases/$(database)/documents/users/$(userId)).data.email != "pranavrathi07@gmail.com";
+                       ) ||
+                     (isUser(userId) &&
+                       // User cannot change their own uid, email, role, isSuperAdmin status, creation timestamp, or team association fields.
+                       !(request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                           'uid', 'email', 'role', 'isSuperAdmin', 'createdAt',
+                           'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid'
+                         ]))
+                     );
+
+      // Admins can delete user profiles (Firestore data only). Auth user deletion is via Cloud Function.
+      // Primary super admin profile cannot be deleted through these rules.
+      allow delete: if isAdmin() && resource.data.email != "pranavrathi07@gmail.com";
     }
 
-    // Allow ADMIN_FACULTY to list users (for total user count on dashboard and manage users page).
-    match /users {
-      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
-    }
-
-    // Rules for Announcements
-    match /announcements/{announcementId} {
-      allow read: if request.auth != null;
-      allow create, update, delete: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
-    }
-
-    // Rules for System Settings
-    match /systemSettings/config {
-      allow read, write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
-    }
-
-    // Rules for Idea Submissions
+    // Idea Submissions
     match /ideas/{ideaId} {
-      // User can read their own idea, ADMIN_FACULTY can read any.
-      allow read: if request.auth != null &&
-                    (request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY');
-      // User can create an idea if the userId in the document matches their auth uid.
-      allow create: if request.auth != null && request.auth.uid == request.resource.data.userId;
-      // User can update their own idea, ADMIN_FACULTY can update any.
-      allow update: if request.auth != null &&
-                      (request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY');
-      // Only ADMIN_FACULTY can delete ideas.
-      allow delete: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+      // Idea owner, listed team members, or admins can read.
+      allow read: if isAuthenticated() &&
+                     (isUser(resource.data.userId) || // Owner
+                      (resource.data.teamMemberEmails != null && request.auth.token.email in resource.data.teamMemberEmails) || // Team Member
+                      isAdmin() // Admin
+                     );
+
+      // Only the idea owner (userId matches auth uid) can create.
+      allow create: if isAuthenticated() && isUser(request.resource.data.userId);
+
+      // Admins can update any field.
+      // Owners can update specific fields (e.g., title, description, team members, PPT links),
+      // but not status, phase, marks, rejection details, or meeting details.
+      allow update: if isAuthenticated() &&
+                     ( isAdmin() ||
+                       (isUser(resource.data.userId) &&
+                        !(request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                            'status', 'programPhase', 'phase2Marks',
+                            'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
+                            'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines',
+                            'userId' // Owner cannot change the userId (owner) of the idea
+                          ]))
+                       )
+                     );
+
+      // Idea owner or admin can delete.
+      allow delete: if isAuthenticated() && (isUser(resource.data.userId) || isAdmin());
     }
 
-    // Allow ADMIN_FACULTY to list ideas (for idea counts on dashboard and view applications page).
-    match /ideas {
-      allow list: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+    // Announcements
+    match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // System Settings (single document 'config')
+    match /systemSettings/config {
+      allow read: if isAuthenticated(); // All authenticated users can read settings
+      allow write: if isAdmin(); // Only admins can change settings
     }
   }
 }
