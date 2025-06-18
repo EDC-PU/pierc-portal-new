@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  getUserIdeaSubmissionsWithStatus, 
-  type IdeaSubmission, 
+import {
+  getUserIdeaSubmissionsWithStatus,
+  type IdeaSubmission,
   updateIdeaPhase2PptDetails,
   addTeamMemberToIdea,
   removeTeamMemberFromIdea,
@@ -22,7 +22,7 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
-import type { ProgramPhase, TeamMember } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
@@ -44,7 +44,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
-  if (!phase) return ''; 
+  if (!phase) return '';
   switch (phase) {
     case 'PHASE_1': return 'Phase 1';
     case 'PHASE_2': return 'Phase 2';
@@ -54,7 +54,7 @@ const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string =>
 };
 
 const teamMemberSchema = z.object({
-  id: z.string().optional(), // Optional: will exist for loaded members, not for new ones in table
+  id: z.string().optional(),
   name: z.string().min(1, "Name is required").max(100).optional().or(z.literal('')),
   email: z.string().email("Invalid email address").optional().or(z.literal('')),
   phone: z.string().min(10, "Contact number must be at least 10 digits").max(15).optional().or(z.literal('')),
@@ -62,20 +62,16 @@ const teamMemberSchema = z.object({
   department: z.string().min(1, "Department is required").max(100).optional().or(z.literal('')),
   enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
 }).refine(data => {
-    // If a name is provided, then email, phone, institute, and department must also be provided.
     if (data.name && data.name.trim() !== '') {
         return !!(data.email && data.email.trim() !== '' &&
                   data.phone && data.phone.trim() !== '' &&
                   data.institute && data.institute.trim() !== '' &&
                   data.department && data.department.trim() !== '');
     }
-    // If name is empty, other fields can be empty (representing an empty row)
     return true;
 }, {
     message: "If member name is provided, then email, phone, institute, and department are also required.",
-    // Path can be more specific if needed, but generally applies to the whole object
-    // when a name is present but other fields are missing.
-    path: ['name'], 
+    path: ['name'],
 });
 
 
@@ -86,7 +82,7 @@ type TeamManagementFormData = z.infer<typeof teamManagementSchema>;
 
 
 export default function StudentDashboard() {
-  const { user } = useAuth(); 
+  const { user, isTeamMemberForIdea, teamLeaderProfileForMember } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
@@ -126,10 +122,9 @@ export default function StudentDashboard() {
         if (currentSelectedIdeaId) {
             const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaId);
             setSelectedIdeaForTeamMgmt(updatedSelected || null);
-            // Repopulate form if an idea is selected
             if (updatedSelected) {
                 const currentMembers = updatedSelected.structuredTeamMembers || [];
-                const formMembers = Array(4).fill(null).map((_, i) => 
+                const formMembers = Array(4).fill(null).map((_, i) =>
                     currentMembers[i] || { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }
                 );
                 resetTeamManagementForm({ members: formMembers });
@@ -137,9 +132,6 @@ export default function StudentDashboard() {
                  resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
             }
         } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
-             // If no idea was previously selected for team mgmt, but ideas exist,
-             // you might want to auto-select the first one or clear the form.
-             // For now, clearing:
              resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
         }
     } catch (error) {
@@ -150,38 +142,43 @@ export default function StudentDashboard() {
         setLoadingIdeas(false);
     }
   };
-  
+
   useEffect(() => {
-    if (user?.uid) {
+    // Fetch ideas only if the user is NOT just a team member for someone else's idea
+    if (user?.uid && !isTeamMemberForIdea) {
       fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt?.id);
+    } else if (isTeamMemberForIdea) {
+      // If they are a team member, no need to fetch their "own" ideas,
+      // as they won't be managing teams or submitting new ones in this context.
+      setLoadingIdeas(false);
+      setUserIdeas([]); // Clear any previous "owned" ideas
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid]); 
-  
-  // Effect to update form when selectedIdeaForTeamMgmt changes
+  }, [user?.uid, isTeamMemberForIdea]); // Add isTeamMemberForIdea to deps
+
   useEffect(() => {
-    if (selectedIdeaForTeamMgmt) {
+    if (selectedIdeaForTeamMgmt && !isTeamMemberForIdea) { // Only for idea owners
         const currentMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
         const formMembersData = Array(4).fill(null).map((_, i) => {
             const member = currentMembers[i];
-            return member 
-                ? { ...member, id: member.id || nanoid() } // Ensure ID exists for existing members
+            return member
+                ? { ...member, id: member.id || nanoid() }
                 : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
         });
         resetTeamManagementForm({ members: formMembersData });
-    } else {
+    } else if (!isTeamMemberForIdea) { // Idea owner, but no idea selected for team mgmt
         resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
     }
-  }, [selectedIdeaForTeamMgmt, resetTeamManagementForm]);
+  }, [selectedIdeaForTeamMgmt, resetTeamManagementForm, isTeamMemberForIdea]);
 
 
   const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
     if (!status) return 'secondary';
     switch (status) {
-      case 'SELECTED': return 'default'; 
+      case 'SELECTED': return 'default';
       case 'SUBMITTED': return 'secondary';
-      case 'UNDER_REVIEW': return 'outline'; 
-      case 'IN_EVALUATION': return 'outline'; 
+      case 'UNDER_REVIEW': return 'outline';
+      case 'IN_EVALUATION': return 'outline';
       case 'NOT_SELECTED': return 'destructive';
       default: return 'secondary';
     }
@@ -190,7 +187,7 @@ export default function StudentDashboard() {
   const formatDate = (timestamp: Timestamp | Date | undefined | null): string => {
     if (!timestamp) return 'N/A';
     let dateToFormat: Date;
-    if ((timestamp as Timestamp)?.toDate) { 
+    if ((timestamp as Timestamp)?.toDate) {
       dateToFormat = (timestamp as Timestamp).toDate();
     } else if (timestamp instanceof Date) {
       dateToFormat = timestamp;
@@ -200,11 +197,11 @@ export default function StudentDashboard() {
     if (!isValid(dateToFormat)) return 'Invalid Date';
     return dateToFormat.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
-  
+
   const formatDateWithTime = (timestamp: Timestamp | Date | undefined | null): string => {
     if (!timestamp) return 'N/A';
     let dateToFormat: Date;
-    if ((timestamp as Timestamp)?.toDate) { 
+    if ((timestamp as Timestamp)?.toDate) {
       dateToFormat = (timestamp as Timestamp).toDate();
     } else if (timestamp instanceof Date) {
       dateToFormat = timestamp;
@@ -228,14 +225,14 @@ export default function StudentDashboard() {
       const file = event.target.files[0];
       if (file.type === "application/vnd.ms-powerpoint" || file.type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
         setSelectedPptFile(file);
-        setUploadingPptIdeaId(ideaId); 
+        setUploadingPptIdeaId(ideaId);
         setUploadError(null);
       } else {
         toast({ title: "Invalid File Type", description: "Please upload a PPT or PPTX file.", variant: "destructive" });
         setSelectedPptFile(null);
         setUploadingPptIdeaId(null);
         setUploadError("Invalid file type. Please upload PPT or PPTX.");
-        event.target.value = ''; 
+        event.target.value = '';
       }
     }
   };
@@ -259,7 +256,7 @@ export default function StudentDashboard() {
 
       await updateIdeaPhase2PptDetails(uploadingPptIdeaId, flowResult.pptUrl, flowResult.pptFileName);
       toast({ title: "Presentation Info Saved", description: `${flowResult.pptFileName} details recorded (Simulated Upload).` });
-      
+
       fetchUserIdeasAndUpdateState(uploadingPptIdeaId);
 
 
@@ -271,9 +268,10 @@ export default function StudentDashboard() {
     } finally {
       setIsUploadingPpt(false);
       setSelectedPptFile(null);
-      setUploadingPptIdeaId(null);
+      // setUploadingPptIdeaId(null); // Keep this to know which file input to clear
       const fileInput = document.getElementById(`ppt-upload-${uploadingPptIdeaId}`) as HTMLInputElement;
       if (fileInput) fileInput.value = '';
+      setUploadingPptIdeaId(null); // Clear after potentially clearing input
     }
   };
 
@@ -285,8 +283,7 @@ export default function StudentDashboard() {
 
     let membersProcessedCount = 0;
     const existingMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
-    
-    // Filter out invalid entries from the form before processing
+
     const validFormMembers = formData.members.filter(member => member.name && member.name.trim() !== '');
 
     if (validFormMembers.length > 4) {
@@ -295,29 +292,27 @@ export default function StudentDashboard() {
     }
 
     try {
-        // This simplified loop processes adds and updates based on presence of ID.
-        // It does not handle removals by clearing rows, keep separate remove buttons for that.
         for (const formMember of validFormMembers) {
-            if (!formMember.name || formMember.name.trim() === '') continue; // Skip empty name entries just in case
+            if (!formMember.name || formMember.name.trim() === '') continue;
 
-            // Validate again with refined schema for individual member if needed, or rely on array item schema.
-            // The .refine in teamMemberSchema should catch if name is present but others are not.
-
-            const memberData = {
+            const memberData: TeamMember = {
+                id: formMember.id || nanoid(), // Ensure ID for new members
                 name: formMember.name,
-                email: formMember.email!, // Assert non-null due to refine or ensure schema makes them non-optional if name is present
+                email: formMember.email!,
                 phone: formMember.phone!,
                 institute: formMember.institute!,
                 department: formMember.department!,
                 enrollmentNumber: formMember.enrollmentNumber || '',
             };
 
-            if (formMember.id && existingMembers.some(em => em.id === formMember.id)) { // Existing member, update
-                await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, { ...memberData, id: formMember.id });
+            const isExistingInForm = formMember.id && existingMembers.some(em => em.id === formMember.id);
+
+            if (isExistingInForm) { // Existing member, update
+                await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, memberData);
                 membersProcessedCount++;
             } else { // New member, add
-                 if ((existingMembers.length + (membersProcessedCount - existingMembers.filter(em => validFormMembers.some(fm => fm.id === em.id)).length)) < 4) {
-                    await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, { ...memberData, id: nanoid() });
+                 if (existingMembers.length + (membersProcessedCount - existingMembers.filter(em => validFormMembers.some(fm => fm.id === em.id && fm.id)).length) < 4) {
+                    await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
                     membersProcessedCount++;
                  } else {
                     toast({title: "Info", description: `Could not add member ${formMember.name} as team limit of 4 is reached.`, variant: "default"});
@@ -332,7 +327,7 @@ export default function StudentDashboard() {
         } else {
             toast({ title: "No Changes", description: "No team member information was provided to save.", variant: "default" });
         }
-        
+
         fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
 
     } catch (error) {
@@ -344,7 +339,7 @@ export default function StudentDashboard() {
 
   const handleRemoveTeamMember = async (memberId: string) => {
     if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !memberId || !user?.uid) return;
-    
+
     try {
       await removeTeamMemberFromIdea(selectedIdeaForTeamMgmt.id, memberId);
       toast({ title: "Team Member Removed", description: `Member has been removed from the team.` });
@@ -353,10 +348,100 @@ export default function StudentDashboard() {
       console.error("Error removing team member:", error);
       toast({ title: "Error Removing Member", description: (error as Error).message || "Could not remove team member.", variant: "destructive" });
     }
-    setMemberToRemove(null); 
+    setMemberToRemove(null);
   };
 
+  // --- Team Member View ---
+  if (isTeamMemberForIdea) {
+    return (
+      <div className="space-y-6 animate-slide-in-up">
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-headline text-2xl flex items-center">
+              <Briefcase className="mr-3 h-7 w-7 text-primary" /> Team Member Dashboard
+            </CardTitle>
+            <CardDescription>
+              Welcome, {user?.displayName || 'Team Member'}! You are part of the following project.
+            </CardDescription>
+          </CardHeader>
+        </Card>
 
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="font-headline text-xl text-primary">{isTeamMemberForIdea.title}</CardTitle>
+            <CardDescription>Project Details</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Problem</Label>
+              <p className="text-sm whitespace-pre-wrap bg-muted/30 p-2 rounded-md">{isTeamMemberForIdea.problem}</p>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Solution</Label>
+              <p className="text-sm whitespace-pre-wrap bg-muted/30 p-2 rounded-md">{isTeamMemberForIdea.solution}</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs text-muted-foreground">Status</Label>
+                <p><Badge variant={getStatusBadgeVariant(isTeamMemberForIdea.status)} className="capitalize text-sm">{isTeamMemberForIdea.status.replace(/_/g, ' ').toLowerCase()}</Badge></p>
+              </div>
+              {isTeamMemberForIdea.programPhase && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Current Phase</Label>
+                  <p><Badge variant="outline" className="capitalize text-sm">{getProgramPhaseLabel(isTeamMemberForIdea.programPhase)}</Badge></p>
+                </div>
+              )}
+            </div>
+             {isTeamMemberForIdea.nextPhaseDate && (
+                <Card className="mt-3 border-primary/30 bg-primary/5">
+                    <CardHeader className="pb-2 pt-3 px-4">
+                        <CardTitle className="text-base font-semibold text-primary flex items-center">
+                        <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(isTeamMemberForIdea.programPhase)} Meeting
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm px-4 pb-3 space-y-1 text-foreground/90">
+                        <p><strong>Date:</strong> {formatDateWithTime(isTeamMemberForIdea.nextPhaseDate)}</p>
+                        <p><strong>Time:</strong> {isTeamMemberForIdea.nextPhaseStartTime} - {isTeamMemberForIdea.nextPhaseEndTime}</p>
+                        <p><strong>Venue:</strong> {isTeamMemberForIdea.nextPhaseVenue}</p>
+                         {isTeamMemberForIdea.nextPhaseGuidelines && <p className="mt-1"><strong className="text-primary/90">Guidelines:</strong> <span className="text-xs whitespace-pre-wrap">{isTeamMemberForIdea.nextPhaseGuidelines}</span></p>}
+                    </CardContent>
+                </Card>
+            )}
+          </CardContent>
+        </Card>
+
+        {teamLeaderProfileForMember && (
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl flex items-center">
+                <UserCheckIcon className="mr-2 h-6 w-6 text-primary" /> Team Leader Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1">
+              <p><strong>Name:</strong> {teamLeaderProfileForMember.fullName || teamLeaderProfileForMember.displayName}</p>
+              <p><strong>Email:</strong> {teamLeaderProfileForMember.email}</p>
+              <p><strong>Contact:</strong> {teamLeaderProfileForMember.contactNumber}</p>
+            </CardContent>
+          </Card>
+        )}
+         <Card>
+          <CardHeader>
+            <CardTitle className="font-headline text-xl">Quick Links</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Button variant="outline" onClick={() => router.push('/dashboard/incubation-phases')}>
+                View Incubation Phases <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+              <Button variant="outline" onClick={() => router.push('/dashboard/announcements')}>
+                Check Announcements <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // --- Idea Owner View ---
   return (
     <Tabs defaultValue="overview" className="space-y-6">
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
@@ -391,7 +476,7 @@ export default function StudentDashboard() {
             ) : userIdeas.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
             ) : (
-              <ScrollArea className="h-auto max-h-[calc(100vh-26rem)] pr-3"> 
+              <ScrollArea className="h-auto max-h-[calc(100vh-26rem)] pr-3">
                 <ul className="space-y-4">
                   {userIdeas.map((idea) => (
                     <li key={idea.id} className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors shadow-sm">
@@ -484,17 +569,17 @@ export default function StudentDashboard() {
                                       <p className="text-muted-foreground">No presentation uploaded yet.</p>
                                   )}
                                   <div className="flex items-center gap-2 pt-1">
-                                      <Input 
+                                      <Input
                                           id={`ppt-upload-${idea.id}`}
-                                          type="file" 
-                                          accept=".ppt, .pptx" 
+                                          type="file"
+                                          accept=".ppt, .pptx"
                                           onChange={(e) => handlePptFileChange(e, idea.id!)}
                                           className="text-xs h-8 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
                                           disabled={isUploadingPpt}
                                       />
-                                      <Button 
-                                          size="sm" 
-                                          onClick={handlePptUpload} 
+                                      <Button
+                                          size="sm"
+                                          onClick={handlePptUpload}
                                           disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || isUploadingPpt}
                                           className="h-8"
                                       >
@@ -544,7 +629,7 @@ export default function StudentDashboard() {
             </CardContent>
           </Card>
         </div>
-        
+
         <Card>
           <CardHeader>
             <CardTitle className="font-headline text-xl">Quick Links</CardTitle>
@@ -583,9 +668,9 @@ export default function StudentDashboard() {
                 <ScrollArea className="h-auto max-h-40 border rounded-md">
                   <div className="p-2 space-y-1">
                   {userIdeas.map(idea => (
-                    <Button 
-                      key={idea.id} 
-                      variant={selectedIdeaForTeamMgmt?.id === idea.id ? "default" : "outline"} 
+                    <Button
+                      key={idea.id}
+                      variant={selectedIdeaForTeamMgmt?.id === idea.id ? "default" : "outline"}
                       className="w-full justify-start text-left"
                       onClick={() => setSelectedIdeaForTeamMgmt(idea)}
                     >
@@ -601,7 +686,7 @@ export default function StudentDashboard() {
               <form onSubmit={handleSubmit(handleSaveTeamTable)} className="space-y-6">
                 <h3 className="text-lg font-semibold mb-1">Edit Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
                 <p className="text-sm text-muted-foreground mb-3">
-                    Current Members: {selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0} / 4. 
+                    Current Members: {selectedIdeaForTeamMgmt.structuredTeamMembers?.length || 0} / 4.
                     Fill in the table below. Empty rows with no name will be ignored.
                 </p>
 
@@ -675,14 +760,13 @@ export default function StudentDashboard() {
                                         />
                                     </TableCell>
                                     <TableCell className="p-1 text-right">
-                                        {/* Hidden ID field for existing members */}
                                         <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
-                                        
-                                        {selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === item.id || (m.id === fields[index].id && fields[index].id)) && ( // Check if this row corresponds to a saved member
+
+                                        {selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === fields[index].id && fields[index].id) && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => {
-                                                        const memberId = fields[index].id; // This ID should be from the loaded data
+                                                        const memberId = fields[index].id;
                                                         const member = selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === memberId);
                                                         if(member) setMemberToRemove(member);
                                                     }}>
@@ -732,8 +816,3 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
-    
-
-    
-
-

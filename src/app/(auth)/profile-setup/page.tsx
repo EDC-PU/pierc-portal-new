@@ -16,7 +16,7 @@ import type { Role, ApplicantCategory, CurrentStage } from '@/types';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
-import { auth } from '@/lib/firebase/config'; 
+import { auth } from '@/lib/firebase/config';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import {
   AlertDialog,
@@ -43,7 +43,8 @@ const currentStages: { value: CurrentStage; label: string }[] = [
   { value: 'STARTUP_STAGE', label: 'Startup Stage' },
 ];
 
-const profileBaseSchema = z.object({
+// Schema for users who are NOT team members (i.e., idea owners)
+const ideaOwnerProfileSchemaBase = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
   contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long'),
   applicantCategory: z.enum(['PARUL_STUDENT', 'PARUL_STAFF', 'PARUL_ALUMNI', 'OTHERS'], {
@@ -62,7 +63,18 @@ const profileBaseSchema = z.object({
   instituteName: z.string().optional(),
 });
 
-const parulUserSchema = profileBaseSchema.extend({
+// Schema for users who ARE team members (simplified)
+const teamMemberProfileSchema = z.object({
+  fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
+  contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long'),
+  enrollmentNumber: z.string().optional(), // Keep these for team member context if student
+  college: z.string().optional(),
+  instituteName: z.string().optional(),
+  // No idea-specific fields
+});
+
+
+const parulUserSchema = ideaOwnerProfileSchemaBase.extend({
   role: z.literal('STUDENT'),
 }).superRefine((data, ctx) => {
   if (data.applicantCategory === 'PARUL_STUDENT') {
@@ -81,14 +93,14 @@ const parulUserSchema = profileBaseSchema.extend({
   }
 });
 
-const otherUserSchema = profileBaseSchema.extend({
+const otherUserSchema = ideaOwnerProfileSchemaBase.extend({
   role: z.enum(['EXTERNAL_USER', 'ADMIN_FACULTY']),
 }).superRefine((data, ctx) => {
   if (data.role === 'ADMIN_FACULTY') {
     if (data.applicantCategory !== 'OTHERS') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Admin category should be OTHERS.', path: ['applicantCategory'] });
     }
-    if (!data.instituteName && data.applicantCategory === 'OTHERS') { 
+    if (!data.instituteName && data.applicantCategory === 'OTHERS') {
          ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Institute name is required for Admin role (e.g., PIERC Administration).', path: ['instituteName']});
     }
     return;
@@ -107,10 +119,11 @@ const otherUserSchema = profileBaseSchema.extend({
   }
 });
 
-type ProfileFormData = z.infer<typeof parulUserSchema> | z.infer<typeof otherUserSchema>;
+type ProfileFormData = z.infer<typeof parulUserSchema> | z.infer<typeof otherUserSchema> | z.infer<typeof teamMemberProfileSchema>;
+
 
 export default function ProfileSetupPage() {
-  const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete, deleteCurrentUserAccount } = useAuth();
+  const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete, deleteCurrentUserAccount, isTeamMemberForIdea, teamLeaderProfileForMember } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [isAutoSubmittingAdmin, setIsAutoSubmittingAdmin] = useState(false);
@@ -125,14 +138,20 @@ export default function ProfileSetupPage() {
     return 'EXTERNAL_USER';
   }, [isAdminEmail, isParulEmail]);
 
-  const profileSchema = determinedRole === 'STUDENT' ? parulUserSchema : otherUserSchema;
+  const activeSchema = useMemo(() => {
+    if (isTeamMemberForIdea) {
+        return teamMemberProfileSchema;
+    }
+    return determinedRole === 'STUDENT' ? parulUserSchema : otherUserSchema;
+  }, [isTeamMemberForIdea, determinedRole]);
+
 
   const { control, handleSubmit, watch, formState: { errors, isSubmitting: isFormSubmitting }, setValue, trigger, reset } = useForm<ProfileFormData>({
-    resolver: zodResolver(profileSchema),
+    resolver: zodResolver(activeSchema),
     defaultValues: {
       fullName: '',
-      role: determinedRole,
       contactNumber: '',
+      // Idea owner fields
       applicantCategory: undefined,
       teamMembers: '',
       startupTitle: '',
@@ -140,15 +159,18 @@ export default function ProfileSetupPage() {
       solutionDescription: '',
       uniqueness: '',
       currentStage: undefined,
+      // Common optional fields
       enrollmentNumber: '',
       college: '',
       instituteName: '',
+      // Role will be set in useEffect
     },
   });
 
   const selectedApplicantCategory = watch('applicantCategory');
 
   useEffect(() => {
+    // Populate form with existing userProfile data if available
     if (userProfile) {
       reset({
         fullName: userProfile.fullName || user?.displayName || '',
@@ -165,11 +187,11 @@ export default function ProfileSetupPage() {
         college: userProfile.college || '',
         instituteName: userProfile.instituteName || '',
       });
-    } else if (user) {
+    } else if (user) { // New user or user without a profile yet
       reset({
-        ...control._formValues,
+        ...control._formValues, // Keep any already typed values
         fullName: user.displayName || '',
-        role: determinedRole,
+        role: determinedRole, // Set the auto-determined role
       });
     }
   }, [userProfile, user, determinedRole, reset, control]);
@@ -177,7 +199,7 @@ export default function ProfileSetupPage() {
 
   useEffect(() => {
     if (initialLoadComplete && !user) {
-      router.push('/login'); 
+      router.push('/login');
     }
   }, [user, initialLoadComplete, router]);
 
@@ -186,18 +208,18 @@ export default function ProfileSetupPage() {
       const autoSubmitAdminProfile = async () => {
         setIsAutoSubmittingAdmin(true);
         toast({ title: "Setting up Admin Account", description: "Please wait..." });
-        const adminDefaults: ProfileFormData = {
-          role: 'ADMIN_FACULTY',
+        const adminDefaults = {
+          // role is implicitly set by setRoleAndCompleteProfile
           fullName: user?.displayName || 'Admin User',
           contactNumber: '0000000000',
-          applicantCategory: 'OTHERS',
+          applicantCategory: 'OTHERS' as ApplicantCategory,
           instituteName: 'PIERC Administration',
           teamMembers: 'N/A',
           startupTitle: 'Administrative Account',
           problemDefinition: 'Administrative account, not applicable.',
           solutionDescription: 'Administrative account, not applicable.',
           uniqueness: 'Administrative account, not applicable.',
-          currentStage: 'IDEA',
+          currentStage: 'IDEA' as CurrentStage,
         };
         try {
           await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
@@ -215,15 +237,15 @@ export default function ProfileSetupPage() {
       if (!control._formValues.fullName && user.displayName) {
          setValue('fullName', user.displayName);
       }
-      setValue('role', determinedRole);
+      setValue('role' as any, determinedRole); // Cast to any if schema changes, 'role' might not exist on teamMemberProfileSchema
     }
   }, [user, control, determinedRole, setValue]);
 
   useEffect(() => {
-    if (selectedApplicantCategory) {
+    if (selectedApplicantCategory && !isTeamMemberForIdea) { // Only trigger for idea owners
         trigger(['enrollmentNumber', 'college', 'instituteName']);
     }
-  }, [selectedApplicantCategory, trigger]);
+  }, [selectedApplicantCategory, trigger, isTeamMemberForIdea]);
 
   const onSubmit = async (data: ProfileFormData) => {
     if (!user) {
@@ -231,7 +253,8 @@ export default function ProfileSetupPage() {
       return;
     }
     try {
-      await setRoleAndCompleteProfile(data.role as Role, data);
+      // Pass the determinedRole, as 'role' might not be in 'data' for team members
+      await setRoleAndCompleteProfile(determinedRole, data);
     } catch (error) {
       // Errors are handled by toast in AuthContext method
     }
@@ -290,7 +313,7 @@ export default function ProfileSetupPage() {
     );
   }
 
-  if (determinedRole === 'ADMIN_FACULTY') {
+  if (determinedRole === 'ADMIN_FACULTY' && !isTeamMemberForIdea) { // Admin who is NOT also a team member
      if (!userProfile && !isAutoSubmittingAdmin) {
         return (
              <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
@@ -314,6 +337,7 @@ export default function ProfileSetupPage() {
   }
 
   const getRoleDisplayString = (role: Role) => {
+    if (isTeamMemberForIdea) return `Team Member (${role?.replace('_',' ').toLowerCase() || 'N/A'})`;
     if (role === 'ADMIN_FACULTY') return 'Administrator / Faculty';
     if (role === 'STUDENT') return 'Student (Parul University)';
     if (role === 'EXTERNAL_USER') return 'External User';
@@ -321,14 +345,14 @@ export default function ProfileSetupPage() {
   };
 
   return (
-    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] animate-fade-in"> 
+    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] animate-fade-in">
       <Card className="w-full max-w-2xl shadow-2xl">
         <CardHeader>
           <CardTitle className="text-3xl font-headline">
-            {userProfile ? 'Edit Your PIERC Portal Profile' : 'Complete Your PIERC Portal Profile'}
+            {isTeamMemberForIdea ? 'Complete Your Team Member Profile' : (userProfile ? 'Edit Your PIERC Portal Profile' : 'Complete Your PIERC Portal Profile')}
           </CardTitle>
           <CardDescription>
-            {userProfile ? 'Update your details as needed.' : `Welcome, ${user?.displayName || 'User'}! Please provide these details to get started.`}
+            {isTeamMemberForIdea ? `Welcome, ${user?.displayName || 'User'}! You've been added as a team member for "${isTeamMemberForIdea.title}". Please provide these basic details.` : (userProfile ? 'Update your details as needed.' : `Welcome, ${user?.displayName || 'User'}! Please provide these details to get started.`)}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
@@ -336,7 +360,7 @@ export default function ProfileSetupPage() {
             <div>
               <Label>Your Role (auto-assigned)</Label>
               <Input value={getRoleDisplayString(determinedRole)} readOnly className="bg-muted/50"/>
-              <Controller name="role" control={control} render={({ field }) => <input type="hidden" {...field} value={determinedRole} />} />
+              <Controller name={"role" as any} control={control} render={({ field }) => <input type="hidden" {...field} value={determinedRole} />} />
               {errors.role && <p className="text-sm text-destructive mt-1">{(errors.role as any).message}</p>}
             </div>
 
@@ -350,93 +374,123 @@ export default function ProfileSetupPage() {
               <Controller name="contactNumber" control={control} render={({ field }) => <Input id="contactNumber" type="tel" placeholder="e.g., +91 XXXXXXXXXX" {...field} />} />
               {errors.contactNumber && <p className="text-sm text-destructive mt-1">{errors.contactNumber.message}</p>}
             </div>
-             <div>
-              <Label>Applicant Category *</Label>
-              <Controller
-                name="applicantCategory"
-                control={control}
-                render={({ field }) => (
-                  <RadioGroup onValueChange={field.onChange} value={field.value as ApplicantCategory | undefined} className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-                    {applicantCategories.map(({value, label}) => (
-                       <Label key={value} htmlFor={value} className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm">
-                        <RadioGroupItem value={value} id={value} className="sr-only" /> {label}
-                      </Label>
-                    ))}
-                  </RadioGroup>
-                )} />
-              {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{errors.applicantCategory.message}</p>}
-            </div>
 
-            {selectedApplicantCategory === 'PARUL_STUDENT' && (
+            {/* Conditional fields for Idea Owners / Standard Users */}
+            {!isTeamMemberForIdea && (
               <>
                 <div>
-                  <Label htmlFor="enrollmentNumber">Enrollment Number *</Label>
-                  <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Your Parul Enrollment Number" {...field} value={field.value || ''} />} />
-                  {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
+                  <Label>Applicant Category *</Label>
+                  <Controller
+                    name="applicantCategory"
+                    control={control}
+                    render={({ field }) => (
+                      <RadioGroup onValueChange={field.onChange} value={field.value as ApplicantCategory | undefined} className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+                        {applicantCategories.map(({value, label}) => (
+                          <Label key={value} htmlFor={value} className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm">
+                            <RadioGroupItem value={value} id={value} className="sr-only" /> {label}
+                          </Label>
+                        ))}
+                      </RadioGroup>
+                    )} />
+                  {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{errors.applicantCategory.message}</p>}
+                </div>
+
+                {selectedApplicantCategory === 'PARUL_STUDENT' && (
+                  <>
+                    <div>
+                      <Label htmlFor="enrollmentNumber">Enrollment Number *</Label>
+                      <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Your Parul Enrollment Number" {...field} value={field.value || ''} />} />
+                      {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="college">College/Faculty at Parul University *</Label>
+                      <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
+                      {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                    </div>
+                  </>
+                )}
+                {(selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI') && (
+                    <div>
+                      <Label htmlFor="college">College/Department/Last Affiliated College at Parul University *</Label>
+                      <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Department of Computer Science / PIET" {...field} value={field.value || ''} />} />
+                      {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                    </div>
+                )}
+                {selectedApplicantCategory === 'OTHERS' && (
+                  <div>
+                    <Label htmlFor="instituteName">Name of Institute/Organization *</Label>
+                    <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute/organization name" {...field} value={field.value || ''} />} />
+                    {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
+                  </div>
+                )}
+
+                <div>
+                  <Label htmlFor="startupTitle">Title of the Startup/Idea/Innovation *</Label>
+                  <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your amazing idea title" {...field} />} />
+                  {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="college">College/Faculty at Parul University *</Label>
-                  <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
-                  {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                  <Label htmlFor="teamMembers">Team Members (Names, comma-separated)</Label>
+                  <Controller name="teamMembers" control={control} render={({ field }) => <Input id="teamMembers" placeholder="e.g., John Doe, Jane Smith (leave empty if none)" {...field} value={field.value || ''}/>} />
+                  {errors.teamMembers && <p className="text-sm text-destructive mt-1">{errors.teamMembers.message}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="problemDefinition">Define the Problem * (Min. 20 characters)</Label>
+                  <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="What problem are you solving?" {...field} rows={4}/>} />
+                  {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{errors.problemDefinition.message}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="solutionDescription">Describe the Solution * (Min. 20 characters)</Label>
+                  <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="How does your idea solve it?" {...field} rows={4}/>} />
+                  {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{errors.solutionDescription.message}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="uniqueness">Explain Uniqueness/Distinctiveness * (Min. 20 characters)</Label>
+                  <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="What makes your idea unique?" {...field} rows={4}/>} />
+                  {errors.uniqueness && <p className="text-sm text-destructive mt-1">{errors.uniqueness.message}</p>}
+                </div>
+                <div>
+                  <Label>Current Stage of Your Idea/Startup *</Label>
+                  <Controller
+                    name="currentStage"
+                    control={control}
+                    render={({ field }) => (
+                      <RadioGroup onValueChange={field.onChange} value={field.value as CurrentStage | undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
+                        {currentStages.map(({value, label}) => (
+                          <Label key={value} htmlFor={`cs-${value}`} className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
+                            <RadioGroupItem value={value} id={`cs-${value}`} className="sr-only" /> {label}
+                          </Label>
+                        ))}
+                      </RadioGroup>
+                    )} />
+                  {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
                 </div>
               </>
             )}
-             {(selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI') && (
+
+            {/* Fields also relevant for team members for context if they are Parul students/staff */}
+             {(isTeamMemberForIdea && (determinedRole === 'STUDENT' || isParulEmail)) && (
+                 <>
+                    <div>
+                        <Label htmlFor="enrollmentNumber">Enrollment Number (Optional)</Label>
+                        <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Your Parul Enrollment Number" {...field} value={field.value || ''} />} />
+                        {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
+                    </div>
+                    <div>
+                        <Label htmlFor="college">College/Faculty at Parul University (Optional)</Label>
+                        <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
+                        {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                    </div>
+                 </>
+             )}
+            {(isTeamMemberForIdea && determinedRole === 'EXTERNAL_USER' && !isParulEmail) && (
                 <div>
-                  <Label htmlFor="college">College/Department/Last Affiliated College at Parul University *</Label>
-                  <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Department of Computer Science / PIET" {...field} value={field.value || ''} />} />
-                  {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                    <Label htmlFor="instituteName">Name of Your Institute/Organization (Optional)</Label>
+                    <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute/organization name" {...field} value={field.value || ''} />} />
+                    {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
                 </div>
             )}
-            {selectedApplicantCategory === 'OTHERS' && (
-              <div>
-                <Label htmlFor="instituteName">Name of Institute/Organization *</Label>
-                <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute/organization name" {...field} value={field.value || ''} />} />
-                {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
-              </div>
-            )}
 
-            <div>
-              <Label htmlFor="startupTitle">Title of the Startup/Idea/Innovation *</Label>
-              <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your amazing idea title" {...field} />} />
-              {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="teamMembers">Team Members (Names, comma-separated)</Label>
-              <Controller name="teamMembers" control={control} render={({ field }) => <Input id="teamMembers" placeholder="e.g., John Doe, Jane Smith (leave empty if none)" {...field} value={field.value || ''}/>} />
-              {errors.teamMembers && <p className="text-sm text-destructive mt-1">{errors.teamMembers.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="problemDefinition">Define the Problem * (Min. 20 characters)</Label>
-              <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="What problem are you solving?" {...field} rows={4}/>} />
-              {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{errors.problemDefinition.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="solutionDescription">Describe the Solution * (Min. 20 characters)</Label>
-              <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="How does your idea solve it?" {...field} rows={4}/>} />
-              {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{errors.solutionDescription.message}</p>}
-            </div>
-            <div>
-              <Label htmlFor="uniqueness">Explain Uniqueness/Distinctiveness * (Min. 20 characters)</Label>
-              <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="What makes your idea unique?" {...field} rows={4}/>} />
-              {errors.uniqueness && <p className="text-sm text-destructive mt-1">{errors.uniqueness.message}</p>}
-            </div>
-            <div>
-              <Label>Current Stage of Your Idea/Startup *</Label>
-               <Controller
-                name="currentStage"
-                control={control}
-                render={({ field }) => (
-                  <RadioGroup onValueChange={field.onChange} value={field.value as CurrentStage | undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
-                    {currentStages.map(({value, label}) => (
-                       <Label key={value} htmlFor={`cs-${value}`} className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
-                        <RadioGroupItem value={value} id={`cs-${value}`} className="sr-only" /> {label}
-                      </Label>
-                    ))}
-                  </RadioGroup>
-                )} />
-              {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
-            </div>
           </CardContent>
           <CardFooter className="flex flex-col gap-4 pt-6">
             <Button type="submit" className="w-full" disabled={isFormSubmitting || loading}>
@@ -478,4 +532,3 @@ export default function ProfileSetupPage() {
     </div>
   );
 }
-

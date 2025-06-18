@@ -4,11 +4,11 @@
 import type { User } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth, db, functions as firebaseFunctions } from '@/lib/firebase/config'; // Ensure functions is imported
-import { getUserProfile, createUserProfileFS, createIdeaFromProfile } from '@/lib/firebase/firestore';
-import type { UserProfile, Role } from '@/types';
-import { 
-  GoogleAuthProvider, 
-  signInWithPopup, 
+import { getUserProfile, createUserProfileFS, createIdeaFromProfile, getIdeaWhereUserIsTeamMember, getIdeaById } from '@/lib/firebase/firestore';
+import type { UserProfile, Role, IdeaSubmission } from '@/types';
+import {
+  GoogleAuthProvider,
+  signInWithPopup,
   signOut as firebaseSignOut,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword as firebaseSignInWithEmailPassword,
@@ -24,12 +24,15 @@ interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
   loading: boolean;
-  initialLoadComplete: boolean; 
+  initialLoadComplete: boolean;
+  isTeamMemberForIdea: IdeaSubmission | null; // If user is part of an idea as a member
+  teamLeaderProfileForMember: UserProfile | null; // Profile of the leader of that idea
+
   signInWithGoogle: () => Promise<void>;
   signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
   signInWithEmailPassword: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt' | 'isTeamMemberOnly' | 'associatedIdeaId' | 'associatedTeamLeaderUid'>) => Promise<void>;
   deleteCurrentUserAccount: () => Promise<void>;
 }
 
@@ -41,51 +44,68 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [isTeamMemberForIdea, setIsTeamMemberForIdea] = useState<IdeaSubmission | null>(null);
+  const [teamLeaderProfileForMember, setTeamLeaderProfileForMember] = useState<UserProfile | null>(null);
+
   const router = useRouter();
   const { toast } = useToast();
 
   useEffect(() => {
-    setIsMounted(true); // Component has mounted on the client
+    setIsMounted(true);
 
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       setLoading(true);
+      setUser(firebaseUser); // Set Firebase user immediately
+
       if (firebaseUser) {
-        setUser(firebaseUser);
-        let profileExists = false; 
-        try {
-          let profile = await getUserProfile(firebaseUser.uid);
-          if (profile) {
-            if (firebaseUser.email === 'pranavrathi07@gmail.com') {
-                profile.isSuperAdmin = true;
-                profile.role = 'ADMIN_FACULTY';
-            }
-            setUserProfile(profile);
-            profileExists = true;
-            if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
-              router.push('/dashboard');
-            }
-          } else {
-            setUserProfile(null); 
-            profileExists = false;
+        let profile = await getUserProfile(firebaseUser.uid);
+        let ideaMembership: IdeaSubmission | null = null;
+        let leaderProfile: UserProfile | null = null;
+
+        if (profile) {
+          if (firebaseUser.email === 'pranavrathi07@gmail.com') {
+              profile.isSuperAdmin = true;
+              profile.role = 'ADMIN_FACULTY';
           }
-        } catch (error) {
-          console.error("Error fetching user profile:", error);
-          setUserProfile(null);
-          profileExists = false; 
-          if (!String(error).includes("Missing or insufficient permissions")) {
-             toast({ title: "Profile Check Error", description: "Could not verify user profile.", variant: "destructive" });
+          setUserProfile(profile);
+
+          if (profile.isTeamMemberOnly && profile.associatedIdeaId) {
+            ideaMembership = await getIdeaById(profile.associatedIdeaId);
+            if (ideaMembership && ideaMembership.userId) {
+               leaderProfile = await getUserProfile(ideaMembership.userId);
+            }
           }
+          // If existing profile and not explicitly team member only, they are likely an owner
+          // No need to search for idea membership again unless the profile itself indicates it.
+
+        } else { // No profile exists, could be new user or first login after being added as team member
+          ideaMembership = await getIdeaWhereUserIsTeamMember(firebaseUser.email!);
+          if (ideaMembership && ideaMembership.userId) {
+            leaderProfile = await getUserProfile(ideaMembership.userId);
+          }
+          setUserProfile(null); // Explicitly set to null if no profile found yet
         }
 
-        if (!profileExists && router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login') {
-          router.push('/profile-setup');
+        setIsTeamMemberForIdea(ideaMembership);
+        setTeamLeaderProfileForMember(leaderProfile);
+
+        if (profile) { // Profile exists
+          if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
+            router.push('/dashboard');
+          }
+        } else { // No profile, redirect to setup
+           if (router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login') {
+             router.push('/profile-setup');
+           }
         }
 
-      } else {
+      } else { // No Firebase user
         setUser(null);
         setUserProfile(null);
-         if (router && !['/login', '/'].includes(window.location.pathname) && !window.location.pathname.startsWith('/_next')) {
-            router.push('/login');
+        setIsTeamMemberForIdea(null);
+        setTeamLeaderProfileForMember(null);
+        if (router && !['/login', '/'].includes(window.location.pathname) && !window.location.pathname.startsWith('/_next')) {
+           router.push('/login');
         }
       }
       setLoading(false);
@@ -93,11 +113,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => unsubscribe();
-  // router and toast are stable, so they usually don't need to be in deps, 
-  // but including them if their instances could change in some advanced scenarios.
-  // For this specific `isMounted` pattern, the empty array is key for on-mount behavior.
-  // The auth subscription logic itself might depend on router/toast, so they remain in its deps.
-  }, [router, toast]); // Keep router and toast for the auth subscription effect
+  }, [router, toast]);
 
   const handleAuthError = (error: any, action: string) => {
     console.error(`Error during ${action}:`, error);
@@ -119,9 +135,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         case 'auth/weak-password':
           message = 'The password is too weak. Please use a stronger password.';
           break;
-        case 'auth/invalid-credential': 
-        case 'auth/user-not-found': 
-        case 'auth/wrong-password': 
+        case 'auth/invalid-credential':
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
           message = 'Invalid email or password. Please check your credentials and try again.';
           break;
         default:
@@ -130,7 +146,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     toast({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} Error`, description: message, variant: "destructive" });
     setLoading(false);
-    throw error; 
+    throw error;
   };
 
   const signInWithGoogle = async () => {
@@ -138,15 +154,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
+      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
-    } 
+    }
   };
 
   const signUpWithEmailPassword = async (email: string, password: string) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
+      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     }
@@ -156,41 +174,62 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await firebaseSignInWithEmailPassword(auth, email, password);
+      // onAuthStateChanged will handle profile loading and redirection
     } catch (error: any) {
       handleAuthError(error, "sign-in");
     }
   };
 
   const setRoleAndCompleteProfile = async (
-    roleFromForm: Role, 
-    additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt'>
+    roleFromForm: Role,
+    additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt' | 'isTeamMemberOnly' | 'associatedIdeaId' | 'associatedTeamLeaderUid'>
   ) => {
     if (!user) {
       toast({ title: "Error", description: "No user logged in.", variant: "destructive" });
       return Promise.reject(new Error("No user logged in."));
     }
     setLoading(true);
-    
+
     let actualRole = roleFromForm;
     const isSuperAdminEmail = user.email === 'pranavrathi07@gmail.com';
     if (isSuperAdminEmail) {
-      actualRole = 'ADMIN_FACULTY'; 
+      actualRole = 'ADMIN_FACULTY';
     }
 
-    try {
-      const profileDataForCreation: Partial<UserProfile> = {
+    const profileDataForCreation: Partial<UserProfile> = {
         uid: user.uid,
-        email: user.email, 
-        displayName: user.displayName || additionalData.fullName, 
+        email: user.email,
+        displayName: user.displayName || additionalData.fullName,
         photoURL: user.photoURL,
         role: actualRole,
         isSuperAdmin: isSuperAdminEmail,
-        ...additionalData, // includes teamMembers
-      };
-      const createdProfile = await createUserProfileFS(user.uid, profileDataForCreation);
-      
-      // Pass teamMembers to createIdeaFromProfile
-      if (additionalData.startupTitle && additionalData.startupTitle !== 'Administrative Account') {
+        ...additionalData,
+    };
+
+    let createdOrUpdatedProfile: UserProfile;
+
+    if (isTeamMemberForIdea) { // User was identified as a team member for an existing idea
+        profileDataForCreation.isTeamMemberOnly = true;
+        profileDataForCreation.associatedIdeaId = isTeamMemberForIdea.id;
+        profileDataForCreation.associatedTeamLeaderUid = isTeamMemberForIdea.userId;
+        // For team members, these idea-specific fields are not set from their own profile form
+        delete profileDataForCreation.startupTitle;
+        delete profileDataForCreation.problemDefinition;
+        delete profileDataForCreation.solutionDescription;
+        delete profileDataForCreation.uniqueness;
+        delete profileDataForCreation.currentStage;
+        delete profileDataForCreation.applicantCategory;
+        delete profileDataForCreation.teamMembers; // Free text
+    } else {
+        profileDataForCreation.isTeamMemberOnly = false;
+    }
+
+
+    try {
+      createdOrUpdatedProfile = await createUserProfileFS(user.uid, profileDataForCreation);
+
+      // Only create an idea if the user is NOT just a team member and has idea details
+      if (!profileDataForCreation.isTeamMemberOnly && additionalData.startupTitle && additionalData.startupTitle !== 'Administrative Account') {
         await createIdeaFromProfile(user.uid, {
             startupTitle: additionalData.startupTitle,
             problemDefinition: additionalData.problemDefinition,
@@ -198,17 +237,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             uniqueness: additionalData.uniqueness,
             currentStage: additionalData.currentStage,
             applicantCategory: additionalData.applicantCategory,
-            teamMembers: additionalData.teamMembers || '', // Pass teamMembers here
+            teamMembers: additionalData.teamMembers || '',
         });
       }
       
-      setUserProfile(createdProfile); 
+      // Update local state after successful creation/update.
+      // Re-fetch from onAuthStateChanged might be slightly delayed.
+      setUserProfile(createdOrUpdatedProfile);
+      if (createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId) {
+        const idea = await getIdeaById(createdOrUpdatedProfile.associatedIdeaId);
+        setIsTeamMemberForIdea(idea);
+        if (idea && idea.userId) {
+          const leader = await getUserProfile(idea.userId);
+          setTeamLeaderProfileForMember(leader);
+        }
+      }
+
+
       router.push('/dashboard');
       toast({ title: "Profile Updated", description: "Your profile has been successfully set up." });
     } catch (error: any) {
       console.error("Profile setup failed", error);
       toast({ title: "Profile Setup Error", description: error.message || "Failed to set up profile.", variant: "destructive" });
-      throw error; 
+      throw error;
     } finally {
       setLoading(false);
     }
@@ -231,11 +282,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       toast({ title: "Profile Data Deleted", description: "Your profile information has been removed."});
 
       const deleteAuthFn = httpsCallable(firebaseFunctions, 'deleteMyAuthAccountCallable');
-      await deleteAuthFn(); 
+      await deleteAuthFn();
 
-      await firebaseSignOut(auth); 
+      await firebaseSignOut(auth);
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted. You have been signed out." });
-      
+
     } catch (error: any) {
       console.error("Error deleting user account:", error);
       await firebaseSignOut(auth).catch(e => console.error("Sign out failed after delete error:", e));
@@ -252,7 +303,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await firebaseSignOut(auth);
       setUser(null);
       setUserProfile(null);
-      router.push('/login'); 
+      setIsTeamMemberForIdea(null);
+      setTeamLeaderProfileForMember(null);
+      router.push('/login');
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
     } catch (error: any) {
       handleAuthError(error, "sign-out");
@@ -261,29 +314,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Until the component is mounted on the client, return null or a loader.
-  // This prevents useState and other client hooks from running during SSR.
   if (!isMounted) {
-    // Optionally, return a global loader here, but `null` is often safer for diagnosing.
-    // If you return a loader, ensure it doesn't use client hooks itself.
     return (
         <div className="fixed inset-0 flex items-center justify-center bg-background z-[9999]">
-            <LoadingSpinner size={32} /> 
+            <LoadingSpinner size={32} />
             <p className="ml-2 text-muted-foreground">Initializing Authentication...</p>
         </div>
     );
   }
 
   return (
-    <AuthContext.Provider value={{ 
-      user, 
-      userProfile, 
-      loading, 
-      initialLoadComplete, 
-      signInWithGoogle, 
-      signUpWithEmailPassword, 
-      signInWithEmailPassword, 
-      signOut, 
+    <AuthContext.Provider value={{
+      user,
+      userProfile,
+      loading,
+      initialLoadComplete,
+      isTeamMemberForIdea,
+      teamLeaderProfileForMember,
+      signInWithGoogle,
+      signUpWithEmailPassword,
+      signInWithEmailPassword,
+      signOut,
       setRoleAndCompleteProfile,
       deleteCurrentUserAccount
     }}>
@@ -299,5 +350,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    

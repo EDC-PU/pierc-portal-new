@@ -7,36 +7,77 @@ import { httpsCallable } from 'firebase/functions';
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
-  
+
   const profileToCreate: UserProfile = {
     uid: userId,
     email: data.email ?? null,
     displayName: data.displayName || data.fullName || 'User',
     photoURL: data.photoURL ?? null,
     role: data.role ?? null,
-    fullName: data.fullName!, 
+    fullName: data.fullName!,
     contactNumber: data.contactNumber!,
-    applicantCategory: data.applicantCategory!,
-    currentStage: data.currentStage!,
-    startupTitle: data.startupTitle!,
-    problemDefinition: data.problemDefinition!,
-    solutionDescription: data.solutionDescription!,
-    uniqueness: data.uniqueness!,
+    applicantCategory: data.applicantCategory!, // May not be present for team_member_only
+    currentStage: data.currentStage!,       // May not be present for team_member_only
+    startupTitle: data.startupTitle!,       // May not be present for team_member_only
+    problemDefinition: data.problemDefinition!, // May not be present for team_member_only
+    solutionDescription: data.solutionDescription!,// May not be present for team_member_only
+    uniqueness: data.uniqueness!,             // May not be present for team_member_only
     teamMembers: data.teamMembers || '', // This is the free-text field
+
     enrollmentNumber: data.enrollmentNumber,
     college: data.college,
     instituteName: data.instituteName,
-    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false), 
+    isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
+    isTeamMemberOnly: data.isTeamMemberOnly ?? false,
+    associatedIdeaId: data.associatedIdeaId,
+    associatedTeamLeaderUid: data.associatedTeamLeaderUid,
     createdAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
 
-  const cleanProfileToCreate = Object.fromEntries(
-    Object.entries(profileToCreate).filter(([, value]) => value !== undefined)
+  // Clean profile data, ensuring required fields for non-team-members are present
+  const cleanProfileData: Partial<UserProfile> = {
+    uid: userId,
+    email: profileToCreate.email,
+    displayName: profileToCreate.displayName,
+    photoURL: profileToCreate.photoURL,
+    role: profileToCreate.role,
+    fullName: profileToCreate.fullName, // Required for all
+    contactNumber: profileToCreate.contactNumber, // Required for all
+    isSuperAdmin: profileToCreate.isSuperAdmin,
+    isTeamMemberOnly: profileToCreate.isTeamMemberOnly,
+    createdAt: profileToCreate.createdAt,
+    updatedAt: profileToCreate.updatedAt,
+  };
+
+  if (profileToCreate.isTeamMemberOnly) {
+    cleanProfileData.associatedIdeaId = profileToCreate.associatedIdeaId;
+    cleanProfileData.associatedTeamLeaderUid = profileToCreate.associatedTeamLeaderUid;
+    // For team members, optional fields related to idea ownership are truly optional
+    if (profileToCreate.enrollmentNumber) cleanProfileData.enrollmentNumber = profileToCreate.enrollmentNumber;
+    if (profileToCreate.college) cleanProfileData.college = profileToCreate.college;
+    if (profileToCreate.instituteName) cleanProfileData.instituteName = profileToCreate.instituteName;
+  } else {
+    // For idea owners, these fields are expected
+    cleanProfileData.applicantCategory = profileToCreate.applicantCategory;
+    cleanProfileData.currentStage = profileToCreate.currentStage;
+    cleanProfileData.startupTitle = profileToCreate.startupTitle;
+    cleanProfileData.problemDefinition = profileToCreate.problemDefinition;
+    cleanProfileData.solutionDescription = profileToCreate.solutionDescription;
+    cleanProfileData.uniqueness = profileToCreate.uniqueness;
+    cleanProfileData.teamMembers = profileToCreate.teamMembers;
+    if (profileToCreate.enrollmentNumber) cleanProfileData.enrollmentNumber = profileToCreate.enrollmentNumber;
+    if (profileToCreate.college) cleanProfileData.college = profileToCreate.college;
+    if (profileToCreate.instituteName) cleanProfileData.instituteName = profileToCreate.instituteName;
+  }
+  
+  const finalProfileToSet = Object.fromEntries(
+    Object.entries(cleanProfileData).filter(([, value]) => value !== undefined)
   );
 
-  await setDoc(userProfileRef, cleanProfileToCreate);
-  
+
+  await setDoc(userProfileRef, finalProfileToSet);
+
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const rawData = docSnap.data();
@@ -60,7 +101,10 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         instituteName: rawData.instituteName,
         createdAt: rawData.createdAt,
         updatedAt: rawData.updatedAt,
-        isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true) 
+        isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true),
+        isTeamMemberOnly: rawData.isTeamMemberOnly ?? false,
+        associatedIdeaId: rawData.associatedIdeaId,
+        associatedTeamLeaderUid: rawData.associatedTeamLeaderUid,
     } as UserProfile;
   }
   throw new Error("Failed to create or retrieve user profile after creation.");
@@ -79,8 +123,8 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         role: data.role ?? null,
         fullName: data.fullName ?? '',
         contactNumber: data.contactNumber ?? '',
-        applicantCategory: data.applicantCategory, 
-        currentStage: data.currentStage, 
+        applicantCategory: data.applicantCategory,
+        currentStage: data.currentStage,
         startupTitle: data.startupTitle ?? '',
         problemDefinition: data.problemDefinition ?? '',
         solutionDescription: data.solutionDescription ?? '',
@@ -89,18 +133,20 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
-        createdAt: data.createdAt, 
-        updatedAt: data.updatedAt, 
-        isSuperAdmin: false // Default to false
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+        isSuperAdmin: false, // Default to false
+        isTeamMemberOnly: data.isTeamMemberOnly ?? false,
+        associatedIdeaId: data.associatedIdeaId,
+        associatedTeamLeaderUid: data.associatedTeamLeaderUid,
     };
 
-    // Explicitly set isSuperAdmin based on email or stored value
     if (profile.email === 'pranavrathi07@gmail.com') {
-        profile.isSuperAdmin = true; 
-        if (profile.role !== 'ADMIN_FACULTY') { 
-            profile.role = 'ADMIN_FACULTY'; 
+        profile.isSuperAdmin = true;
+        if (profile.role !== 'ADMIN_FACULTY') {
+            profile.role = 'ADMIN_FACULTY';
         }
-    } else if (data.isSuperAdmin === true) { // Check stored value if not primary admin
+    } else if (data.isSuperAdmin === true) {
         profile.isSuperAdmin = true;
     }
     return profile;
@@ -119,12 +165,12 @@ export const updateUserProfile = async (userId: string, data: Partial<UserProfil
 
 export const getAllUsers = async (): Promise<UserProfile[]> => {
   const usersCol = collection(db, 'users');
-  const q = query(usersCol, orderBy('createdAt', 'desc')); 
+  const q = query(usersCol, orderBy('createdAt', 'desc'));
   const querySnapshot = await getDocs(q);
   const users: UserProfile[] = [];
   querySnapshot.forEach((doc) => {
     const data = doc.data();
-    const profile: UserProfile = { 
+    const profile: UserProfile = {
         uid: doc.id,
         email: data.email ?? null,
         displayName: data.displayName ?? null,
@@ -144,12 +190,15 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false // Default
+        isSuperAdmin: false, // Default
+        isTeamMemberOnly: data.isTeamMemberOnly ?? false,
+        associatedIdeaId: data.associatedIdeaId,
+        associatedTeamLeaderUid: data.associatedTeamLeaderUid,
     };
      if (profile.email === 'pranavrathi07@gmail.com') {
-        profile.isSuperAdmin = true; 
-        if (profile.role !== 'ADMIN_FACULTY') { 
-            profile.role = 'ADMIN_FACULTY'; 
+        profile.isSuperAdmin = true;
+        if (profile.role !== 'ADMIN_FACULTY') {
+            profile.role = 'ADMIN_FACULTY';
         }
     } else if (data.isSuperAdmin === true) {
         profile.isSuperAdmin = true;
@@ -175,11 +224,11 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   if (newIsSuperAdmin !== undefined) {
     updates.isSuperAdmin = newIsSuperAdmin;
   }
-  
+
   const userDocSnap = await getDoc(userProfileRef);
   if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
-    updates.role = 'ADMIN_FACULTY'; 
-    updates.isSuperAdmin = true;  
+    updates.role = 'ADMIN_FACULTY';
+    updates.isSuperAdmin = true;
   }
 
   await updateDoc(userProfileRef, updates);
@@ -192,8 +241,8 @@ export const deleteUserAccountAndProfile = async (userId: string): Promise<void>
   if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
     throw new Error("The primary super admin's profile and account cannot be deleted through this interface.");
   }
-  
-  await deleteDoc(userProfileRef); 
+
+  await deleteDoc(userProfileRef);
 
   try {
     const deleteAuthUserFn = httpsCallable(firebaseFunctions, 'deleteAuthUserCallable');
@@ -209,7 +258,7 @@ export const deleteUserAccountAndProfile = async (userId: string): Promise<void>
 export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>): Promise<Announcement> => {
   const announcementsCol = collection(db, 'announcements');
   const newAnnouncementPayload = {
-    ...announcementData, 
+    ...announcementData,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -221,11 +270,11 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
 
 export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  const q = query(announcementsCol, 
-    where('isUrgent', '==', false), 
+  const q = query(announcementsCol,
+    where('isUrgent', '==', false),
     where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
-  ); 
+  );
 
   return onSnapshot(q, (querySnapshot) => {
     const announcements: Announcement[] = [];
@@ -241,9 +290,9 @@ export const getAnnouncementsStream = (callback: (announcements: Announcement[])
 
 export const getUrgentAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  const q = query(announcementsCol, 
+  const q = query(announcementsCol,
     where('isUrgent', '==', true),
-    where('targetAudience', '==', 'ALL'), 
+    where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
   );
 
@@ -278,7 +327,7 @@ export const getAllAnnouncementsForAdminStream = (callback: (announcements: Anno
 export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'>>): Promise<void> => {
   const announcementRef = doc(db, 'announcements', announcementId);
   await updateDoc(announcementRef, {
-    ...data, 
+    ...data,
     updatedAt: serverTimestamp(),
   });
 };
@@ -290,18 +339,26 @@ export const deleteAnnouncement = async (announcementId: string): Promise<void> 
 
 // Idea Submission functions
 export const createIdeaFromProfile = async (
-    userId: string, 
+    userId: string,
     profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
-  if (profileData.startupTitle === 'Administrative Account') {
+  // Do not create an idea if the user is an admin or if the startup title indicates an admin account
+  const userProfile = await getUserProfile(userId);
+  if (userProfile?.role === 'ADMIN_FACULTY' || profileData.startupTitle === 'Administrative Account') {
+    console.log("Skipping idea creation for admin or administrative account profile.");
+    return null;
+  }
+  if (userProfile?.isTeamMemberOnly) {
+    console.log("Skipping idea creation for a user who is only a team member.");
     return null;
   }
 
+
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines'> = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMemberEmails'> = {
     userId: userId,
     title: profileData.startupTitle,
-    category: 'General Profile Submission', 
+    category: 'General Profile Submission',
     problem: profileData.problemDefinition,
     solution: profileData.solutionDescription,
     uniqueness: profileData.uniqueness,
@@ -311,17 +368,22 @@ export const createIdeaFromProfile = async (
     structuredTeamMembers: [], // Initialize as empty array
     status: 'SUBMITTED',
     programPhase: null,
-    submittedAt: serverTimestamp() as Timestamp,
-    updatedAt: serverTimestamp() as Timestamp,
+    // teamMemberEmails will be initialized when members are added
   };
-  const docRef = await addDoc(ideaCol, newIdeaPayload);
+  const docRef = await addDoc(ideaCol, {
+    ...newIdeaPayload,
+    teamMemberEmails: [], // Explicitly initialize as empty
+    submittedAt: serverTimestamp() as Timestamp, // Add these here as they are not in Omit
+    updatedAt: serverTimestamp() as Timestamp,   // Add these here
+  });
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
   const data = newDocSnap.data();
-  return { 
-    id: newDocSnap.id, 
+  return {
+    id: newDocSnap.id,
     ...data,
     structuredTeamMembers: data?.structuredTeamMembers || [],
+    teamMemberEmails: data?.teamMemberEmails || [],
    } as IdeaSubmission;
 };
 
@@ -338,7 +400,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
     let applicantEmail = 'N/A';
 
     if (ideaData.userId) {
-      const userProfile = await getUserProfile(ideaData.userId); 
+      const userProfile = await getUserProfile(ideaData.userId);
       if (userProfile) {
         applicantDisplayName = userProfile.displayName || userProfile.fullName || 'Unknown User';
         applicantEmail = userProfile.email || 'No Email';
@@ -349,17 +411,18 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
     const nextPhaseDate = (ideaData.nextPhaseDate as any) instanceof Timestamp ? (ideaData.nextPhaseDate as Timestamp) : null;
 
 
-    ideaSubmissions.push({ 
-      id: ideaDoc.id, 
+    ideaSubmissions.push({
+      id: ideaDoc.id,
       ...ideaData,
       programPhase: ideaData.programPhase || null,
-      phase2Marks: ideaData.phase2Marks || {}, 
+      phase2Marks: ideaData.phase2Marks || {},
       submittedAt,
       updatedAt,
       applicantDisplayName,
       applicantEmail,
       teamMembers: ideaData.teamMembers || '', // Free-text field
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
+      teamMemberEmails: ideaData.teamMemberEmails || [],
       rejectionRemarks: ideaData.rejectionRemarks,
       rejectedByUid: ideaData.rejectedByUid,
       rejectedAt: ideaData.rejectedAt,
@@ -377,8 +440,8 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 };
 
 export const updateIdeaStatusAndPhase = async (
-  ideaId: string, 
-  newStatus: IdeaStatus, 
+  ideaId: string,
+  newStatus: IdeaStatus,
   newPhase: ProgramPhase | null = null,
   remarks?: string,
   adminUid?: string,
@@ -398,7 +461,7 @@ export const updateIdeaStatusAndPhase = async (
 
   if (newStatus === 'SELECTED') {
     updates.programPhase = newPhase;
-    updates.rejectionRemarks = deleteField(); 
+    updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
     if (newPhase === 'PHASE_2') {
@@ -413,15 +476,15 @@ export const updateIdeaStatusAndPhase = async (
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (!newPhase) { 
+    } else if (!newPhase) {
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
     }
-  } else { 
-    updates.programPhase = null; 
+  } else {
+    updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
     updates.nextPhaseEndTime = null;
@@ -431,7 +494,7 @@ export const updateIdeaStatusAndPhase = async (
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminUid;
       updates.rejectedAt = serverTimestamp() as Timestamp;
-    } else { 
+    } else {
       updates.rejectionRemarks = deleteField();
       updates.rejectedByUid = deleteField();
       updates.rejectedAt = deleteField();
@@ -443,7 +506,7 @@ export const updateIdeaStatusAndPhase = async (
 export const submitOrUpdatePhase2Mark = async (
   ideaId: string,
   adminProfile: UserProfile,
-  mark: number | null 
+  mark: number | null
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
@@ -461,7 +524,7 @@ export const submitOrUpdatePhase2Mark = async (
     adminDisplayName: adminProfile.displayName || adminProfile.fullName || 'Admin',
     markedAt: serverTimestamp() as Timestamp,
   };
-  
+
   await updateDoc(ideaRef, {
     [`phase2Marks.${adminProfile.uid}`]: mark !== null ? markData : deleteField(),
     updatedAt: serverTimestamp(),
@@ -480,14 +543,15 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
     const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
     const nextPhaseDate = (data.nextPhaseDate as any) instanceof Timestamp ? (data.nextPhaseDate as Timestamp) : null;
 
-    userIdeas.push({ 
-        id: doc.id, 
-        ...data, 
+    userIdeas.push({
+        id: doc.id,
+        ...data,
         programPhase: data.programPhase || null,
         phase2Marks: data.phase2Marks || {},
         teamMembers: data.teamMembers || '', // Free-text field
         structuredTeamMembers: data.structuredTeamMembers || [],
-        submittedAt, 
+        teamMemberEmails: data.teamMemberEmails || [],
+        submittedAt,
         updatedAt,
         rejectionRemarks: data.rejectionRemarks,
         rejectedByUid: data.rejectedByUid,
@@ -568,6 +632,7 @@ export const addTeamMemberToIdea = async (ideaId: string, newMember: TeamMember)
   }
   await updateDoc(ideaRef, {
     structuredTeamMembers: arrayUnion(newMember),
+    teamMemberEmails: arrayUnion(newMember.email.toLowerCase()), // Add email to flat list
     updatedAt: serverTimestamp(),
   });
 };
@@ -587,13 +652,26 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
     throw new Error("Team member not found to update.");
   }
 
-  const updatedMembers = [...currentMembers];
-  updatedMembers[memberIndex] = updatedMemberData;
+  const oldEmail = currentMembers[memberIndex].email.toLowerCase();
+  const newEmail = updatedMemberData.email.toLowerCase();
 
-  await updateDoc(ideaRef, {
-    structuredTeamMembers: updatedMembers,
+  const updatedMembersArray = [...currentMembers];
+  updatedMembersArray[memberIndex] = updatedMemberData;
+
+  const updates: any = {
+    structuredTeamMembers: updatedMembersArray,
     updatedAt: serverTimestamp(),
-  });
+  };
+
+  if (oldEmail !== newEmail) {
+    // Need to remove old email and add new email to teamMemberEmails
+    // This is a bit more complex with arrayRemove/Union if the old email might not exist or new email already exists
+    // A safer way is to reconstruct the teamMemberEmails array
+    const newTeamMemberEmails = updatedMembersArray.map(m => m.email.toLowerCase());
+    updates.teamMemberEmails = newTeamMemberEmails;
+  }
+
+  await updateDoc(ideaRef, updates);
 };
 
 export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove: string): Promise<void> => {
@@ -605,6 +683,7 @@ export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove:
     if (memberToRemove) {
       await updateDoc(ideaRef, {
         structuredTeamMembers: arrayRemove(memberToRemove),
+        teamMemberEmails: arrayRemove(memberToRemove.email.toLowerCase()), // Remove email from flat list
         updatedAt: serverTimestamp(),
       });
     } else {
@@ -613,6 +692,46 @@ export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove:
   } else {
     throw new Error("Idea not found.");
   }
+};
+
+export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<IdeaSubmission | null> => {
+  if (!userEmail) return null;
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('teamMemberEmails', 'array-contains', userEmail.toLowerCase()));
+  const querySnapshot = await getDocs(q);
+
+  if (!querySnapshot.empty) {
+    // Assuming a user can only be a team member of one idea at a time for this logic
+    const ideaDoc = querySnapshot.docs[0];
+    const data = ideaDoc.data();
+     const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
+    const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
+    const nextPhaseDate = (data.nextPhaseDate as any) instanceof Timestamp ? (data.nextPhaseDate as Timestamp) : null;
+
+    return {
+        id: ideaDoc.id,
+        ...data,
+        programPhase: data.programPhase || null,
+        phase2Marks: data.phase2Marks || {},
+        teamMembers: data.teamMembers || '',
+        structuredTeamMembers: data.structuredTeamMembers || [],
+        teamMemberEmails: data.teamMemberEmails || [],
+        submittedAt,
+        updatedAt,
+        rejectionRemarks: data.rejectionRemarks,
+        rejectedByUid: data.rejectedByUid,
+        rejectedAt: data.rejectedAt,
+        phase2PptUrl: data.phase2PptUrl,
+        phase2PptFileName: data.phase2PptFileName,
+        phase2PptUploadedAt: data.phase2PptUploadedAt,
+        nextPhaseDate: nextPhaseDate,
+        nextPhaseStartTime: data.nextPhaseStartTime,
+        nextPhaseEndTime: data.nextPhaseEndTime,
+        nextPhaseVenue: data.nextPhaseVenue,
+        nextPhaseGuidelines: data.nextPhaseGuidelines,
+    } as IdeaSubmission;
+  }
+  return null;
 };
 
 
@@ -631,7 +750,7 @@ export const createCohort = async (cohortData: Omit<Cohort, 'id' | 'createdAt'>)
 
 
 // System Settings Functions
-const SYSTEM_SETTINGS_DOC_ID = 'config'; 
+const SYSTEM_SETTINGS_DOC_ID = 'config';
 
 export const getSystemSettings = async (): Promise<SystemSettings | null> => {
   const settingsRef = doc(db, 'systemSettings', SYSTEM_SETTINGS_DOC_ID);
@@ -639,7 +758,7 @@ export const getSystemSettings = async (): Promise<SystemSettings | null> => {
   if (docSnap.exists()) {
     return { id: docSnap.id, ...docSnap.data() } as SystemSettings;
   }
-  return null; 
+  return null;
 };
 
 export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSettings, 'id' | 'updatedAt' | 'updatedByUid'>>, adminUid: string): Promise<void> => {
@@ -649,33 +768,35 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
       ...settingsData,
       updatedAt: serverTimestamp(),
       updatedByUid: adminUid,
-    }, { merge: true }); 
+    }, { merge: true });
   } catch (error) {
     console.error("Error updating system settings:", error);
     throw error;
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[] }): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
     status: 'SUBMITTED',
     programPhase: null,
-    phase2Marks: {}, 
-    teamMembers: ideaData.teamMembers || '', // Free-text field
-    structuredTeamMembers: ideaData.structuredTeamMembers || [], // Initialize as empty array
+    phase2Marks: {},
+    teamMembers: ideaData.teamMembers || '',
+    structuredTeamMembers: ideaData.structuredTeamMembers || [],
+    teamMemberEmails: ideaData.teamMemberEmails || [],
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  } as const; 
+  } as const;
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
    const data = newDocSnap.data();
-  return { 
-    id: newDocSnap.id, 
+  return {
+    id: newDocSnap.id,
     ...data,
     structuredTeamMembers: data?.structuredTeamMembers || [],
+    teamMemberEmails: data?.teamMemberEmails || [],
    } as IdeaSubmission;
 };
 
@@ -689,3 +810,39 @@ export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string
   });
 };
 
+export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null> => {
+  if (!ideaId) return null;
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaDoc = await getDoc(ideaRef);
+
+  if (ideaDoc.exists()) {
+    const data = ideaDoc.data();
+    const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
+    const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
+    const nextPhaseDate = (data.nextPhaseDate as any) instanceof Timestamp ? (data.nextPhaseDate as Timestamp) : null;
+
+    return {
+        id: ideaDoc.id,
+        ...data,
+        programPhase: data.programPhase || null,
+        phase2Marks: data.phase2Marks || {},
+        teamMembers: data.teamMembers || '',
+        structuredTeamMembers: data.structuredTeamMembers || [],
+        teamMemberEmails: data.teamMemberEmails || [],
+        submittedAt,
+        updatedAt,
+        rejectionRemarks: data.rejectionRemarks,
+        rejectedByUid: data.rejectedByUid,
+        rejectedAt: data.rejectedAt,
+        phase2PptUrl: data.phase2PptUrl,
+        phase2PptFileName: data.phase2PptFileName,
+        phase2PptUploadedAt: data.phase2PptUploadedAt,
+        nextPhaseDate: nextPhaseDate,
+        nextPhaseStartTime: data.nextPhaseStartTime,
+        nextPhaseEndTime: data.nextPhaseEndTime,
+        nextPhaseVenue: data.nextPhaseVenue,
+        nextPhaseGuidelines: data.nextPhaseGuidelines,
+    } as IdeaSubmission;
+  }
+  return null;
+};
