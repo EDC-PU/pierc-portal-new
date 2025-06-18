@@ -275,7 +275,7 @@ export default function StudentDashboard() {
 
   return (
     <Tabs defaultValue="overview" className="space-y-6">
-      <TabsList className="grid w-full grid-cols-2 md:w-auto md:inline-flex">
+      <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
         <TabsTrigger value="overview">Overview & Submissions</TabsTrigger>
         <TabsTrigger value="manageTeam">Manage Team</TabsTrigger>
       </TabsList>
@@ -622,3 +622,4 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
+
