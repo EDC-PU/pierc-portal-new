@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // DialogTrigger not needed here if opened programmatically
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2, Edit3 } from 'lucide-react';
 import { AdminEditUserProfileForm, type AdminEditableProfileFormData } from '@/components/admin/AdminEditUserProfileForm';
 import {
@@ -24,7 +24,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger, // Added AlertDialogTrigger back
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export default function ManageUsersPage() {
@@ -74,17 +74,17 @@ export default function ManageUsersPage() {
     setDialogAction(action);
     setIsConfirmDialogOpen(true);
   };
-  
-  const handleUserAction = async () => {
-    if (!actionUser || !dialogAction) return;
 
-    setIsConfirmDialogOpen(false); 
+  const handleUserAction = async () => {
+    if (!actionUser || !dialogAction || !adminUserProfile) return;
+
+    setIsConfirmDialogOpen(false);
 
     if (dialogAction === 'deleteUser') {
         try {
-            await deleteUserAccountAndProfile(actionUser.uid);
+            await deleteUserAccountAndProfile(actionUser.uid, adminUserProfile);
             toast({ title: "User Account and Profile Deleted", description: `All data for ${actionUser.displayName || actionUser.email} has been removed.` });
-            fetchUsers(); 
+            fetchUsers();
         } catch (error: any) {
             console.error("Error deleting user account and profile:", error);
             toast({ title: "Delete Error", description: error.message || "Could not complete user deletion.", variant: "destructive" });
@@ -99,10 +99,10 @@ export default function ManageUsersPage() {
             break;
         case 'demoteAdmin':
             newRole = actionUser.email?.endsWith('@paruluniversity.ac.in') ? 'STUDENT' : 'EXTERNAL_USER';
-            newIsSuperAdmin = false; 
+            newIsSuperAdmin = false;
             break;
         case 'promoteSuper':
-            newRole = 'ADMIN_FACULTY'; 
+            newRole = 'ADMIN_FACULTY';
             newIsSuperAdmin = true;
             break;
         case 'demoteSuper':
@@ -111,15 +111,15 @@ export default function ManageUsersPage() {
         }
 
         try {
-            await updateUserRoleAndPermissionsFS(actionUser.uid, newRole, newIsSuperAdmin);
+            await updateUserRoleAndPermissionsFS(actionUser.uid, newRole, adminUserProfile, newIsSuperAdmin);
             toast({ title: "Success", description: `${actionUser.displayName || actionUser.email}'s permissions updated.` });
-            fetchUsers(); 
+            fetchUsers();
         } catch (error: any) {
             console.error("Error updating user role:", error);
             toast({ title: "Update Error", description: error.message || "Could not update user permissions.", variant: "destructive" });
         }
     }
-    
+
     setActionUser(null);
     setDialogAction(null);
   };
@@ -130,11 +130,11 @@ export default function ManageUsersPage() {
       return;
     }
     try {
-      await updateUserProfile(editingUserProfile.uid, updatedData);
+      await updateUserProfile(editingUserProfile.uid, updatedData, adminUserProfile);
       toast({ title: "Profile Updated", description: `${editingUserProfile.displayName || editingUserProfile.email}'s profile has been updated.` });
       setIsEditProfileDialogOpen(false);
       setEditingUserProfile(null);
-      fetchUsers(); 
+      fetchUsers();
     } catch (error: any) {
       console.error("Error updating user profile by admin:", error);
       toast({ title: "Profile Update Error", description: error.message || "Could not update user's profile.", variant: "destructive" });
@@ -159,7 +159,7 @@ export default function ManageUsersPage() {
       default: return <Badge variant="outline" className="flex items-center gap-1"><ShieldQuestion className="h-3 w-3" />N/A</Badge>;
     }
   };
-  
+
   const getDialogDescription = () => {
     if (!actionUser || !dialogAction) return "";
     const userName = actionUser.displayName || actionUser.email;
@@ -181,7 +181,7 @@ export default function ManageUsersPage() {
   if (!adminUserProfile || adminUserProfile.role !== 'ADMIN_FACULTY') {
     return <div className="flex justify-center items-center h-screen"><p>Access Denied. Redirecting...</p></div>;
   }
-  
+
   return (
     <div className="space-y-8 animate-slide-in-up p-4 md:p-6 lg:p-8">
        <header className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -225,7 +225,7 @@ export default function ManageUsersPage() {
                         <Button variant="outline" size="sm" onClick={() => openEditProfileDialog(u)}>
                             <Edit3 className="h-4 w-4 mr-1 sm:mr-2" /> Edit Profile
                         </Button>
-                        {u.email !== 'pranavrathi07@gmail.com' && adminUserProfile.isSuperAdmin && ( 
+                        {u.email !== 'pranavrathi07@gmail.com' && adminUserProfile.isSuperAdmin && (
                             <>
                             {u.role !== 'ADMIN_FACULTY' && (
                                 <Button variant="outline" size="sm" onClick={() => openConfirmationDialog(u, 'promoteAdmin')}>Promote to Admin</Button>
@@ -236,7 +236,7 @@ export default function ManageUsersPage() {
                             {u.role === 'ADMIN_FACULTY' && u.isSuperAdmin && (
                                 <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'demoteSuper')}>Demote Super</Button>
                             )}
-                            {u.role === 'ADMIN_FACULTY' && ( 
+                            {u.role === 'ADMIN_FACULTY' && (
                                 <Button variant="destructive" size="sm" onClick={() => openConfirmationDialog(u, 'demoteAdmin')}>Demote Admin</Button>
                             )}
                             </>
@@ -275,7 +275,6 @@ export default function ManageUsersPage() {
         </CardContent>
       </Card>
 
-      {/* Confirmation Dialog for Role Changes */}
       <AlertDialog open={isConfirmDialogOpen && dialogAction !== 'deleteUser'} onOpenChange={(isOpen) => {
           if (!isOpen) {
             setActionUser(null);
@@ -299,7 +298,6 @@ export default function ManageUsersPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Dialog for Editing User Profile */}
       {editingUserProfile && (
         <Dialog open={isEditProfileDialogOpen} onOpenChange={(isOpen) => {
             if (!isOpen) {

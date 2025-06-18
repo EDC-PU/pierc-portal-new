@@ -25,18 +25,18 @@ const systemSettingsSchema = z.object({
 export type SystemSettingsFormData = z.infer<typeof systemSettingsSchema>;
 
 interface SystemSettingsFormProps {
-  currentUserProfile: UserProfile; 
+  currentUserProfile: UserProfile;
 }
 
 export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormProps) {
   const { toast } = useToast();
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
-  const [isSubmitting, setIsSubmittingState] = useState(false); 
+  const [isSubmitting, setIsSubmittingState] = useState(false);
 
   const { control, handleSubmit, reset, formState: { errors } } = useForm<SystemSettingsFormData>({
     resolver: zodResolver(systemSettingsSchema),
     defaultValues: {
-      portalName: 'PIERC Portal', 
+      portalName: 'PIERC Portal',
       maintenanceMode: false,
       allowNewRegistrations: true,
       defaultCohortSize: 15,
@@ -49,7 +49,7 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
       try {
         const settings = await getSettingsFS();
         if (settings) {
-          reset(settings); 
+          reset(settings);
         } else {
           toast({ title: "Default Settings Loaded", description: "No existing settings found, using defaults. Save to create.", variant: "default"});
         }
@@ -66,10 +66,10 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
   const onSubmit = async (data: SystemSettingsFormData) => {
     setIsSubmittingState(true);
     try {
-      if (!currentUserProfile.uid) {
-        throw new Error("Admin user ID not found.");
+      if (!currentUserProfile || !currentUserProfile.uid) { // Ensure currentUserProfile and its uid are available
+        throw new Error("Admin user ID not found or user profile is not loaded.");
       }
-      await updateSettingsFS(data, currentUserProfile.uid);
+      await updateSettingsFS(data, currentUserProfile); // Pass the full adminProfile
       toast({ title: "Settings Saved", description: "System settings have been updated successfully." });
     } catch (error) {
       console.error("Error saving system settings:", error);
@@ -90,7 +90,7 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
 
   return (
     <form onSubmit={handleSubmit(onSubmit)}>
-      <div className="grid grid-cols-1 md:grid-cols-1 gap-8"> {/* Changed to 1 column for simpler layout */}
+      <div className="grid grid-cols-1 md:grid-cols-1 gap-8">
         <Card className="shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-xl">Portal Configuration</CardTitle>
@@ -146,22 +146,22 @@ export function SystemSettingsForm({ currentUserProfile }: SystemSettingsFormPro
               />
             </div>
             {errors.allowNewRegistrations && <p className="text-sm text-destructive mt-1">{errors.allowNewRegistrations.message}</p>}
-            
+
             <div>
               <Label htmlFor="defaultCohortSize">Default Cohort Size</Label>
-              <Controller 
-                name="defaultCohortSize" 
-                control={control} 
+              <Controller
+                name="defaultCohortSize"
+                control={control}
                 render={({ field }) => (
-                  <Input 
-                    id="defaultCohortSize" 
-                    type="number" 
-                    {...field} 
+                  <Input
+                    id="defaultCohortSize"
+                    type="number"
+                    {...field}
                     onChange={e => field.onChange(parseInt(e.target.value,10) || 0)}
                     value={field.value || ''}
                     disabled={isSubmitting}
                   />
-                )} 
+                )}
               />
               {errors.defaultCohortSize && <p className="text-sm text-destructive mt-1">{errors.defaultCohortSize.message}</p>}
             </div>

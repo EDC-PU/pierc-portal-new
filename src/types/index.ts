@@ -7,8 +7,8 @@ export type ApplicantCategory = 'PARUL_STUDENT' | 'PARUL_STAFF' | 'PARUL_ALUMNI'
 export type CurrentStage = 'IDEA' | 'PROTOTYPE_STAGE' | 'STARTUP_STAGE';
 
 export const AVAILABLE_MENTORS = [
-  'Prashant Khanna', 'Anup Chaudhari', 'Riddhi Bagha', 'Sonal Sudani', 
-  'Jay Sudani', 'Nikhil Jumde', 'Vishal SIngh', 'Hardik Kharva', 
+  'Prashant Khanna', 'Anup Chaudhari', 'Riddhi Bagha', 'Sonal Sudani',
+  'Jay Sudani', 'Nikhil Jumde', 'Vishal SIngh', 'Hardik Kharva',
   'Tushar Thakur', 'Pancham Baraiya', 'Paritosh Sharma', 'Juned Shaikh'
 ] as const;
 
@@ -146,4 +146,52 @@ export interface SystemSettings {
   defaultCohortSize: number;
   updatedAt?: Timestamp;
   updatedByUid?: string;
+}
+
+// Activity Logging Types
+export type ActivityLogAction =
+  // User Account & Profile
+  | 'USER_PROFILE_CREATED'
+  | 'USER_PROFILE_UPDATED' // Could be self or by admin
+  | 'USER_SIGNED_IN'
+  | 'USER_SIGNED_OUT'
+  | 'USER_PASSWORD_RESET_REQUESTED'
+  | 'USER_ACCOUNT_DELETED_SELF'
+  | 'USER_ACCOUNT_DELETED_BY_ADMIN'
+  // Idea Submission & Management (by user)
+  | 'IDEA_SUBMITTED' // Typically part of profile creation for idea owners
+  | 'IDEA_PPT_UPLOADED'
+  | 'IDEA_TEAM_MEMBER_ADDED'
+  | 'IDEA_TEAM_MEMBER_UPDATED'
+  | 'IDEA_TEAM_MEMBER_REMOVED'
+  // Admin - User Management
+  | 'ADMIN_USER_ROLE_UPDATED'
+  // Admin - Idea Management
+  | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
+  | 'ADMIN_IDEA_MENTOR_ASSIGNED'
+  | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
+  | 'ADMIN_IDEA_DELETED'
+  // Admin - Announcements
+  | 'ADMIN_ANNOUNCEMENT_CREATED'
+  | 'ADMIN_ANNOUNCEMENT_UPDATED'
+  | 'ADMIN_ANNOUNCEMENT_DELETED'
+  // Admin - System Settings
+  | 'ADMIN_SYSTEM_SETTINGS_UPDATED';
+
+export interface ActivityLogTarget {
+  type: string; // e.g., 'USER_PROFILE', 'IDEA', 'ANNOUNCEMENT', 'SYSTEM_SETTINGS'
+  id: string;
+  displayName?: string; // e.g., user's name, idea title
+}
+
+export interface ActivityLogEntry {
+  id?: string; // Firestore document ID
+  timestamp: Timestamp;
+  actorUid: string; // UID of the user performing the action
+  actorDisplayName: string | null;
+  action: ActivityLogAction;
+  target?: ActivityLogTarget;
+  details?: Record<string, any>; // e.g., { fieldChanged: 'status', oldValue: 'SUBMITTED', newValue: 'SELECTED' }
+  // ipAddress?: string; // Potentially capture via Cloud Function
+  // userAgent?: string; // Potentially capture via Cloud Function
 }

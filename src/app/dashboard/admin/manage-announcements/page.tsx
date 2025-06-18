@@ -63,35 +63,38 @@ export default function ManageAnnouncementsPage() {
   };
 
   const handleSaveAnnouncement = async (dataWithCreatorInfo: AnnouncementSaveData) => {
-    // dataWithCreatorInfo already contains createdByUid and creatorDisplayName from AnnouncementForm
+    if (!userProfile) {
+        toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
+        throw new Error("Admin profile not found");
+    }
     try {
         if (editingAnnouncement && editingAnnouncement.id) {
-            // For updates, we pass all fields from dataWithCreatorInfo.
-            // Firestore's updateDoc will only change fields present in the object.
-            // createdByUid and creatorDisplayName might not change, but passing them is fine.
-            // We omit id and createdAt from the data to update.
             const { ...updateData } = dataWithCreatorInfo;
-            await updateAnnouncement(editingAnnouncement.id, updateData);
+            // Remove creator info as it should not be updated after creation
+            const { createdByUid, creatorDisplayName, ...actualUpdateData } = updateData;
+            await updateAnnouncement(editingAnnouncement.id, actualUpdateData, userProfile);
         } else {
-            // For new announcements, createAnnouncement expects Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>
-            // dataWithCreatorInfo fits this structure perfectly as it has all necessary fields.
-            await createAnnouncement(dataWithCreatorInfo);
+            await createAnnouncement(dataWithCreatorInfo, userProfile);
         }
     } catch (error: any) {
         toast({ title: "Save Error", description: error.message || "Could not save announcement.", variant: "destructive"});
-        throw error; 
+        throw error;
     }
   };
 
   const handleDeleteAnnouncement = async (announcementId: string) => {
+    if (!userProfile) {
+        toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
+        return;
+    }
     try {
-      await deleteAnnouncement(announcementId);
+      await deleteAnnouncement(announcementId, userProfile);
       toast({ title: "Announcement Deleted", description: "The announcement has been removed." });
     } catch (error) {
       toast({ title: "Delete Error", description: "Could not delete announcement.", variant: "destructive" });
     }
   };
-  
+
   const openEditForm = (announcement: Announcement) => {
     setEditingAnnouncement(announcement);
     setIsFormOpen(true);
@@ -106,8 +109,6 @@ export default function ManageAnnouncementsPage() {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
   if (userProfile?.role !== 'ADMIN_FACULTY') {
-    // This check is important, but redirection is handled by useEffect.
-    // We can show a more graceful message or rely on the redirect.
     return <div className="flex justify-center items-center h-screen"><p>Access Denied. Redirecting...</p></div>;
   }
 
@@ -124,7 +125,7 @@ export default function ManageAnnouncementsPage() {
         <Dialog open={isFormOpen} onOpenChange={(isOpen) => {
             setIsFormOpen(isOpen);
             if (!isOpen) {
-                setEditingAnnouncement(null); // Reset editing state when dialog closes
+                setEditingAnnouncement(null);
             }
         }}>
           <DialogTrigger asChild>
@@ -138,9 +139,9 @@ export default function ManageAnnouncementsPage() {
                 {editingAnnouncement ? 'Edit Announcement' : 'Create New Announcement'}
               </DialogTitle>
             </DialogHeader>
-            {isFormOpen && ( // Conditionally render form to ensure reset when re-opened
+            {isFormOpen && (
                  <AnnouncementForm
-                    currentUserProfile={userProfile} // Already checked for ADMIN_FACULTY role
+                    currentUserProfile={userProfile}
                     initialData={editingAnnouncement}
                     onSubmitSuccess={handleFormSubmitSuccess}
                     onSave={handleSaveAnnouncement}
@@ -230,4 +231,3 @@ export default function ManageAnnouncementsPage() {
     </div>
   );
 }
-

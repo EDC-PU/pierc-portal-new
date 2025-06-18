@@ -46,9 +46,8 @@ export default function SystemSettingsPage() {
           </div>
         </div>
       </header>
-      
+      {/* Pass userProfile for logging actor info */}
       <SystemSettingsForm currentUserProfile={userProfile} />
     </div>
   );
 }
-

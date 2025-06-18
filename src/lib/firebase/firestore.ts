@@ -1,68 +1,95 @@
 
 import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
+
+// Activity Logging Function
+export const logUserActivity = async (
+  actorUid: string,
+  actorDisplayName: string | null,
+  action: ActivityLogAction,
+  target?: ActivityLogTarget,
+  details?: Record<string, any>
+): Promise<void> => {
+  try {
+    const activityLogRef = collection(db, 'activityLogs');
+    const logEntry: Omit<ActivityLogEntry, 'id'> = {
+      timestamp: serverTimestamp() as Timestamp,
+      actorUid,
+      actorDisplayName,
+      action,
+      ...(target && { target }),
+      ...(details && { details }),
+    };
+    await addDoc(activityLogRef, logEntry);
+  } catch (error) {
+    console.error("Error logging user activity:", error, { actorUid, action, target, details });
+    // Decide if this error should be propagated or just logged
+  }
+};
+
 
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
 
-  // Start with base data that should always be there or derived
   const profileDataToWrite: { [key: string]: any } = {
     uid: userId,
     email: data.email ?? null,
-    displayName: data.displayName || data.fullName || 'User', // Ensure displayName has a fallback
+    displayName: data.displayName || data.fullName || 'User',
     photoURL: data.photoURL ?? null,
-    role: data.role ?? null, // Role is determined in AuthContext
-    fullName: data.fullName, // Should be from form
-    contactNumber: data.contactNumber, // Should be from form
+    role: data.role ?? null,
+    fullName: data.fullName,
+    contactNumber: data.contactNumber,
     isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
+    isTeamMemberOnly: data.isTeamMemberOnly ?? false,
   };
-
-  // Add isTeamMemberOnly, which dictates other fields
-  profileDataToWrite.isTeamMemberOnly = data.isTeamMemberOnly ?? false;
 
   if (profileDataToWrite.isTeamMemberOnly) {
     profileDataToWrite.associatedIdeaId = data.associatedIdeaId;
     profileDataToWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid;
-    // Team members might still have these optional fields from their profile form
     if (data.enrollmentNumber) profileDataToWrite.enrollmentNumber = data.enrollmentNumber;
     if (data.college) profileDataToWrite.college = data.college;
     if (data.instituteName) profileDataToWrite.instituteName = data.instituteName;
-  } else {
-    // Idea owner specific fields - these should be present in `data` if it's an owner
-    // and required by the form validation / security rules for non-team-members.
+    // Ensure idea-specific fields are not part of a team member's direct profile object if not applicable
+    profileDataToWrite.applicantCategory = data.applicantCategory || null; // Or some default/null
+    profileDataToWrite.currentStage = data.currentStage || null;
+    profileDataToWrite.startupTitle = data.startupTitle || '';
+    profileDataToWrite.problemDefinition = data.problemDefinition || '';
+    profileDataToWrite.solutionDescription = data.solutionDescription || '';
+    profileDataToWrite.uniqueness = data.uniqueness || '';
+    profileDataToWrite.teamMembers = data.teamMembers || '';
+  } else { // Idea Owner
     profileDataToWrite.applicantCategory = data.applicantCategory;
     profileDataToWrite.currentStage = data.currentStage;
     profileDataToWrite.startupTitle = data.startupTitle;
     profileDataToWrite.problemDefinition = data.problemDefinition;
     profileDataToWrite.solutionDescription = data.solutionDescription;
     profileDataToWrite.uniqueness = data.uniqueness;
-    profileDataToWrite.teamMembers = data.teamMembers || ''; // Default to empty string
-
-    // Optional fields for idea owners, also potentially present for team members if they fill them
+    profileDataToWrite.teamMembers = data.teamMembers || '';
     if (data.enrollmentNumber) profileDataToWrite.enrollmentNumber = data.enrollmentNumber;
     if (data.college) profileDataToWrite.college = data.college;
     if (data.instituteName) profileDataToWrite.instituteName = data.instituteName;
   }
 
-  // Remove any top-level undefined properties before writing to ensure clean data
   const finalProfileData = Object.fromEntries(
     Object.entries(profileDataToWrite).filter(([, value]) => value !== undefined)
   ) as UserProfile;
 
   await setDoc(userProfileRef, finalProfileData);
 
-  // Fetch the just-created profile to return it with all server-generated timestamps etc.
+  // Log activity after successful creation
+  // The caller (AuthContext) will log USER_PROFILE_CREATED as it has better context of whether it's a new user.
+  // This function is more about the DB operation.
+
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const rawData = docSnap.data();
-    // Construct the UserProfile object carefully, especially for optional fields
     const fetchedProfile: UserProfile = {
         uid: docSnap.id,
         email: rawData.email ?? null,
@@ -71,21 +98,18 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         role: rawData.role ?? null,
         fullName: rawData.fullName ?? '',
         contactNumber: rawData.contactNumber ?? '',
-        
-        // These fields are conditional based on isTeamMemberOnly
         applicantCategory: rawData.applicantCategory,
         currentStage: rawData.currentStage,
-        startupTitle: rawData.startupTitle,
-        problemDefinition: rawData.problemDefinition,
-        solutionDescription: rawData.solutionDescription,
-        uniqueness: rawData.uniqueness,
+        startupTitle: rawData.startupTitle ?? '',
+        problemDefinition: rawData.problemDefinition ?? '',
+        solutionDescription: rawData.solutionDescription ?? '',
+        uniqueness: rawData.uniqueness ?? '',
         teamMembers: rawData.teamMembers ?? '',
-
         enrollmentNumber: rawData.enrollmentNumber,
         college: rawData.college,
         instituteName: rawData.instituteName,
-        createdAt: rawData.createdAt, // This will be a Firestore Timestamp
-        updatedAt: rawData.updatedAt, // This will be a Firestore Timestamp
+        createdAt: rawData.createdAt,
+        updatedAt: rawData.updatedAt,
         isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true),
         isTeamMemberOnly: rawData.isTeamMemberOnly ?? false,
         associatedIdeaId: rawData.associatedIdeaId,
@@ -121,7 +145,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false, 
+        isSuperAdmin: false,
         isTeamMemberOnly: data.isTeamMemberOnly ?? false,
         associatedIdeaId: data.associatedIdeaId,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid,
@@ -140,17 +164,34 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
   return null;
 };
 
-export const updateUserProfile = async (userId: string, data: Partial<UserProfile>): Promise<void> => {
-  const userProfileRef = doc(db, 'users', userId);
-  // Ensure sensitive fields like email, uid, createdAt are not in `data` or are handled by security rules
+export const updateUserProfile = async (
+  targetUserId: string,
+  data: Partial<UserProfile>,
+  actorProfile?: UserProfile | null // Profile of the admin performing the action, or null if self-update
+): Promise<void> => {
+  const userProfileRef = doc(db, 'users', targetUserId);
   const { uid, email, createdAt, role, isSuperAdmin, ...updateData } = data;
-  
+
   const cleanData = Object.fromEntries(Object.entries(updateData).filter(([, value]) => value !== undefined));
 
   await updateDoc(userProfileRef, {
     ...cleanData,
     updatedAt: serverTimestamp(),
   });
+
+  const actorUid = actorProfile ? actorProfile.uid : targetUserId;
+  const actorDisplayName = actorProfile ? (actorProfile.displayName || actorProfile.fullName) : (data.displayName || data.fullName);
+  const targetUserSnap = await getDoc(userProfileRef);
+  const targetUserDisplayName = targetUserSnap.exists() ? (targetUserSnap.data().displayName || targetUserSnap.data().fullName) : targetUserId;
+
+
+  await logUserActivity(
+    actorUid,
+    actorDisplayName,
+    'USER_PROFILE_UPDATED',
+    { type: 'USER_PROFILE', id: targetUserId, displayName: targetUserDisplayName },
+    { fieldsUpdated: Object.keys(cleanData) }
+  );
 };
 
 export const getAllUsers = async (): Promise<UserProfile[]> => {
@@ -180,7 +221,7 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false, 
+        isSuperAdmin: false,
         isTeamMemberOnly: data.isTeamMemberOnly ?? false,
         associatedIdeaId: data.associatedIdeaId,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid,
@@ -205,8 +246,12 @@ export const getTotalUsersCount = async (): Promise<number> => {
 };
 
 
-export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Role, newIsSuperAdmin?: boolean): Promise<void> => {
-  const userProfileRef = doc(db, 'users', userId);
+export const updateUserRoleAndPermissionsFS = async (targetUserId: string, newRole: Role, adminProfile: UserProfile, newIsSuperAdmin?: boolean): Promise<void> => {
+  const userProfileRef = doc(db, 'users', targetUserId);
+  const oldProfileSnap = await getDoc(userProfileRef);
+  const oldRole = oldProfileSnap.exists() ? oldProfileSnap.data().role : null;
+  const oldIsSuperAdmin = oldProfileSnap.exists() ? oldProfileSnap.data().isSuperAdmin : false;
+
   const updates: Partial<UserProfile> = {
     role: newRole,
     updatedAt: serverTimestamp(),
@@ -222,11 +267,21 @@ export const updateUserRoleAndPermissionsFS = async (userId: string, newRole: Ro
   }
 
   await updateDoc(userProfileRef, updates);
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_USER_ROLE_UPDATED',
+    { type: 'USER_PROFILE', id: targetUserId, displayName: userDocSnap.exists() ? (userDocSnap.data().displayName || userDocSnap.data().fullName) : targetUserId },
+    { oldRole, newRole, oldIsSuperAdmin, newIsSuperAdmin: newIsSuperAdmin ?? oldIsSuperAdmin }
+  );
 };
 
-export const deleteUserAccountAndProfile = async (userId: string): Promise<void> => {
-  const userProfileRef = doc(db, 'users', userId);
+export const deleteUserAccountAndProfile = async (userIdToDelete: string, adminProfile: UserProfile): Promise<void> => {
+  const userProfileRef = doc(db, 'users', userIdToDelete);
   const userDocSnap = await getDoc(userProfileRef);
+  const targetUserDisplayName = userDocSnap.exists() ? (userDocSnap.data().displayName || userDocSnap.data().fullName) : userIdToDelete;
+
 
   if (userDocSnap.exists() && userDocSnap.data().email === 'pranavrathi07@gmail.com') {
     throw new Error("The primary super admin's profile and account cannot be deleted through this interface.");
@@ -236,7 +291,14 @@ export const deleteUserAccountAndProfile = async (userId: string): Promise<void>
 
   try {
     const deleteAuthUserFn = httpsCallable(firebaseFunctions, 'deleteAuthUserCallable');
-    await deleteAuthUserFn({ uid: userId });
+    await deleteAuthUserFn({ uid: userIdToDelete });
+
+    await logUserActivity(
+      adminProfile.uid,
+      adminProfile.displayName || adminProfile.fullName,
+      'USER_ACCOUNT_DELETED_BY_ADMIN',
+      { type: 'USER_PROFILE', id: userIdToDelete, displayName: targetUserDisplayName }
+    );
   } catch (error) {
     console.error("Error calling Firebase Function to delete auth user:", error);
     throw new Error(`Firestore profile deleted, but an error occurred attempting to delete the Firebase Auth account: ${(error as Error).message}. Please check the Cloud Function logs, or manually delete the auth account if necessary.`);
@@ -245,17 +307,28 @@ export const deleteUserAccountAndProfile = async (userId: string): Promise<void>
 
 
 // Announcement Functions
-export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>): Promise<Announcement> => {
+export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>, adminProfile: UserProfile): Promise<Announcement> => {
   const announcementsCol = collection(db, 'announcements');
   const newAnnouncementPayload = {
     ...announcementData,
+    createdByUid: adminProfile.uid,
+    creatorDisplayName: adminProfile.displayName || adminProfile.fullName,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
   const docRef = await addDoc(announcementsCol, newAnnouncementPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create announcement.");
-  return { id: newDocSnap.id, ...newDocSnap.data() } as Announcement;
+
+  const createdAnn = { id: newDocSnap.id, ...newDocSnap.data() } as Announcement;
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_ANNOUNCEMENT_CREATED',
+    { type: 'ANNOUNCEMENT', id: createdAnn.id!, displayName: createdAnn.title },
+    { title: createdAnn.title, isUrgent: createdAnn.isUrgent, targetAudience: createdAnn.targetAudience }
+  );
+  return createdAnn;
 };
 
 export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
@@ -314,17 +387,34 @@ export const getAllAnnouncementsForAdminStream = (callback: (announcements: Anno
   });
 };
 
-export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'>>): Promise<void> => {
+export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'|'createdByUid'|'creatorDisplayName'>>, adminProfile: UserProfile): Promise<void> => {
   const announcementRef = doc(db, 'announcements', announcementId);
   await updateDoc(announcementRef, {
     ...data,
     updatedAt: serverTimestamp(),
   });
+  const updatedAnnSnap = await getDoc(announcementRef);
+  const updatedAnnTitle = updatedAnnSnap.exists() ? updatedAnnSnap.data().title : announcementId;
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_ANNOUNCEMENT_UPDATED',
+    { type: 'ANNOUNCEMENT', id: announcementId, displayName: updatedAnnTitle },
+    { fieldsUpdated: Object.keys(data) }
+  );
 };
 
-export const deleteAnnouncement = async (announcementId: string): Promise<void> => {
+export const deleteAnnouncement = async (announcementId: string, adminProfile: UserProfile): Promise<void> => {
   const announcementRef = doc(db, 'announcements', announcementId);
+  const annSnap = await getDoc(announcementRef);
+  const annTitle = annSnap.exists() ? annSnap.data().title : announcementId;
   await deleteDoc(announcementRef);
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_ANNOUNCEMENT_DELETED',
+    { type: 'ANNOUNCEMENT', id: announcementId, displayName: annTitle }
+  );
 };
 
 // Idea Submission functions
@@ -366,12 +456,19 @@ export const createIdeaFromProfile = async (
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
   const data = newDocSnap.data();
-  return {
+  const createdIdea = {
     id: newDocSnap.id,
     ...data,
     structuredTeamMembers: data?.structuredTeamMembers || [],
     teamMemberEmails: data?.teamMemberEmails || [],
    } as IdeaSubmission;
+
+  // Log IDEA_SUBMITTED (typically part of profile completion for idea owners)
+  // This log is better placed in AuthContext after profile and idea are confirmed created.
+  // However, if this function is called standalone, logging here might be considered.
+  // For now, relying on AuthContext to log USER_PROFILE_CREATED which implies idea for owner.
+
+  return createdIdea;
 };
 
 
@@ -379,7 +476,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
   const ideasCol = collection(db, 'ideas');
   const ideasQuery = query(ideasCol, orderBy('submittedAt', 'desc'));
   const ideasSnapshot = await getDocs(ideasQuery);
-  
+
   if (ideasSnapshot.empty) {
     return [];
   }
@@ -394,14 +491,18 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 
   const profilesMap = new Map<string, UserProfile | null>();
   if (applicantIds.size > 0) {
-    // Fetch profiles in batches if necessary, though for typical scenarios Promise.all is fine
-    const profilePromises = Array.from(applicantIds).map(id => getUserProfile(id));
+    const profilePromises = Array.from(applicantIds).map(id => getUserProfile(id).catch(e => {
+      console.error(`Failed to fetch profile for ${id}:`, e);
+      return null; // Return null on error to not break Promise.all
+    }));
     const profiles = await Promise.all(profilePromises);
     profiles.forEach((profile, index) => {
-      profilesMap.set(Array.from(applicantIds)[index], profile);
+      if (profile) { // Only add if profile was fetched successfully
+        profilesMap.set(Array.from(applicantIds)[index], profile);
+      }
     });
   }
-  
+
   const ideaSubmissions: IdeaSubmission[] = [];
   ideasSnapshot.docs.forEach(ideaDoc => {
     const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
@@ -409,7 +510,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 
     const applicantDisplayName = userProfile ? (userProfile.displayName || userProfile.fullName || 'Unknown User') : 'N/A';
     const applicantEmail = userProfile ? (userProfile.email || 'No Email') : 'N/A';
-    
+
     const submittedAt = (ideaData.submittedAt as any) instanceof Timestamp ? (ideaData.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (ideaData.updatedAt as any) instanceof Timestamp ? (ideaData.updatedAt as Timestamp) : Timestamp.now();
     const nextPhaseDate = (ideaData.nextPhaseDate as any) instanceof Timestamp ? (ideaData.nextPhaseDate as Timestamp) : null;
@@ -447,10 +548,11 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 
 export const updateIdeaStatusAndPhase = async (
   ideaId: string,
+  ideaTitle: string,
   newStatus: IdeaStatus,
+  adminProfile: UserProfile,
   newPhase: ProgramPhase | null = null,
   remarks?: string,
-  adminUid?: string,
   nextPhaseDetails?: {
     date: Timestamp | null;
     startTime: string | null;
@@ -460,6 +562,10 @@ export const updateIdeaStatusAndPhase = async (
   }
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
+  const oldIdeaSnap = await getDoc(ideaRef);
+  const oldStatus = oldIdeaSnap.exists() ? oldIdeaSnap.data().status : null;
+  const oldPhase = oldIdeaSnap.exists() ? oldIdeaSnap.data().programPhase : null;
+
   const updates: {[key: string]: any} = {
     status: newStatus,
     updatedAt: serverTimestamp(),
@@ -475,7 +581,7 @@ export const updateIdeaStatusAndPhase = async (
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
       }
-    } else if (newPhase !== 'COHORT') { // Don't clear mentor if moving to other phases, only if becoming not-cohort
+    } else if (newPhase !== 'COHORT') {
         updates.mentor = deleteField();
     }
     if (newPhase && nextPhaseDetails) {
@@ -490,7 +596,7 @@ export const updateIdeaStatusAndPhase = async (
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
-        updates.mentor = deleteField(); 
+        updates.mentor = deleteField();
     }
   } else {
     updates.programPhase = null;
@@ -502,7 +608,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.mentor = deleteField();
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
-      updates.rejectedByUid = adminUid;
+      updates.rejectedByUid = adminProfile.uid;
       updates.rejectedAt = serverTimestamp() as Timestamp;
     } else {
       updates.rejectionRemarks = deleteField();
@@ -511,13 +617,24 @@ export const updateIdeaStatusAndPhase = async (
     }
   }
   await updateDoc(ideaRef, updates);
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_IDEA_STATUS_PHASE_UPDATED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { oldStatus, newStatus, oldPhase, newPhase, remarks: newStatus === 'NOT_SELECTED' ? remarks : undefined }
+  );
 };
 
-export const assignMentorToIdea = async (ideaId: string, mentorName: MentorName | null, adminUid: string): Promise<void> => {
+export const assignMentorToIdea = async (ideaId: string, ideaTitle: string, mentorName: MentorName | null, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
+  const oldIdeaSnap = await getDoc(ideaRef);
+  const oldMentor = oldIdeaSnap.exists() ? oldIdeaSnap.data().mentor : null;
+
   const updates: { mentor?: MentorName | null | typeof deleteField, updatedAt: Timestamp, updatedByMentorAssignerUid: string } = {
     updatedAt: serverTimestamp() as Timestamp,
-    updatedByMentorAssignerUid: adminUid,
+    updatedByMentorAssignerUid: adminProfile.uid,
   };
   if (mentorName === null) {
     updates.mentor = deleteField();
@@ -525,11 +642,20 @@ export const assignMentorToIdea = async (ideaId: string, mentorName: MentorName 
     updates.mentor = mentorName;
   }
   await updateDoc(ideaRef, updates);
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_IDEA_MENTOR_ASSIGNED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { oldMentor, newMentor: mentorName }
+  );
 };
 
 
 export const submitOrUpdatePhase2Mark = async (
   ideaId: string,
+  ideaTitle: string,
   adminProfile: UserProfile,
   mark: number | null
 ): Promise<void> => {
@@ -543,6 +669,8 @@ export const submitOrUpdatePhase2Mark = async (
   if (ideaData.programPhase !== 'PHASE_2') {
     throw new Error("Marking is only allowed for ideas in Phase 2.");
   }
+  const oldMarkEntry = ideaData.phase2Marks?.[adminProfile.uid];
+  const oldMarkValue = oldMarkEntry ? oldMarkEntry.mark : null;
 
   const markData: AdminMark = {
     mark: mark,
@@ -554,6 +682,14 @@ export const submitOrUpdatePhase2Mark = async (
     [`phase2Marks.${adminProfile.uid}`]: mark !== null ? markData : deleteField(),
     updatedAt: serverTimestamp(),
   });
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_IDEA_PHASE2_MARK_SUBMITTED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { adminMarked: adminProfile.uid, oldMark: oldMarkValue, newMark: mark }
+  );
 };
 
 
@@ -616,9 +752,19 @@ export const getUserIdeaSubmissionsCount = async (userId: string): Promise<numbe
   return snapshot.data().count;
 };
 
-export const deleteIdeaSubmission = async (ideaId: string): Promise<void> => {
+export const deleteIdeaSubmission = async (ideaId: string, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaSnap = await getDoc(ideaRef);
+  const ideaTitle = ideaSnap.exists() ? ideaSnap.data().title : ideaId;
+
   await deleteDoc(ideaRef);
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_IDEA_DELETED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle }
+  );
 };
 
 export const getIdeasCountByStatus = async (status: IdeaStatus): Promise<number> => {
@@ -646,7 +792,7 @@ export const getIdeasCountByApplicantCategory = async (): Promise<Record<Applica
   return counts;
 };
 
-export const addTeamMemberToIdea = async (ideaId: string, newMemberData: Omit<TeamMember, 'id'>): Promise<void> => {
+export const addTeamMemberToIdea = async (ideaId: string, ideaTitle: string, newMemberData: Omit<TeamMember, 'id'>, actorProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
   if (!ideaDoc.exists()) {
@@ -659,7 +805,7 @@ export const addTeamMemberToIdea = async (ideaId: string, newMemberData: Omit<Te
 
   const newMemberWithId: TeamMember = {
     ...newMemberData,
-    id: nanoid(), // Generate unique nanoid for this member entry initially
+    id: nanoid(),
   };
 
   await updateDoc(ideaRef, {
@@ -667,9 +813,17 @@ export const addTeamMemberToIdea = async (ideaId: string, newMemberData: Omit<Te
     teamMemberEmails: arrayUnion(newMemberWithId.email.toLowerCase()),
     updatedAt: serverTimestamp(),
   });
+
+  await logUserActivity(
+    actorProfile.uid,
+    actorProfile.displayName || actorProfile.fullName,
+    'IDEA_TEAM_MEMBER_ADDED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { memberName: newMemberData.name, memberEmail: newMemberData.email }
+  );
 };
 
-export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: TeamMember): Promise<void> => {
+export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, updatedMemberData: TeamMember, actorProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
 
@@ -682,12 +836,10 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
 
 
   if (memberIndex === -1) {
-    // If not found by ID, try to find by email for cases where ID might not be synced yet (before member profile setup)
     const emailIndex = currentMembers.findIndex(member => member.email.toLowerCase() === updatedMemberData.email.toLowerCase());
     if (emailIndex === -1) {
       throw new Error(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found to update.`);
     }
-     // If found by email, use that index and ensure the ID from the form (which might be the user's UID) is used
     currentMembers[emailIndex] = { ...updatedMemberData, id: updatedMemberData.id || currentMembers[emailIndex].id };
   } else {
      currentMembers[memberIndex] = updatedMemberData;
@@ -711,12 +863,20 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
   }
 
   await updateDoc(ideaRef, updates);
+  await logUserActivity(
+    actorProfile.uid,
+    actorProfile.displayName || actorProfile.fullName,
+    'IDEA_TEAM_MEMBER_UPDATED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { memberName: updatedMemberData.name, memberEmail: updatedMemberData.email, memberId: updatedMemberData.id }
+  );
 };
 
 export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   ideaId: string,
-  memberUser: User, 
-  memberProfileDataFromForm: { 
+  ideaTitle: string,
+  memberUser: User,
+  memberProfileDataFromForm: {
     fullName: string;
     contactNumber: string;
     enrollmentNumber?: string;
@@ -739,18 +899,16 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   let memberUpdated = false;
 
   const updatedMembersArray = currentMembers.map(member => {
-    // Match by email initially, as the ID in structuredTeamMembers might be a nanoid before profile setup
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
       memberUpdated = true;
       return {
-        ...member, 
-        id: memberUser.uid, // CRITICAL: Update ID to the member's actual Firebase UID
+        ...member,
+        id: memberUser.uid,
         name: memberProfileDataFromForm.fullName,
         phone: memberProfileDataFromForm.contactNumber,
         enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
         college: memberProfileDataFromForm.college || member.college || '',
-        institute: memberProfileDataFromForm.instituteName || member.institute || '', 
-        // department: member.department // Keep existing department or clear if not in form
+        institute: memberProfileDataFromForm.instituteName || member.institute || '',
       };
     }
     return member;
@@ -758,18 +916,20 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
 
   if (!memberUpdated) {
     console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} during profile setup update. This should ideally not happen if member was added correctly.`);
+    // Optionally log this anomaly or handle it
     return;
   }
 
   await updateDoc(ideaRef, {
     structuredTeamMembers: updatedMembersArray,
-    // teamMemberEmails should already contain the email, so no change needed here unless email itself was editable (which it's not here)
     updatedAt: serverTimestamp(),
   });
+  // Logging for this specific update is done by the caller in AuthContext (setRoleAndCompleteProfile)
+  // as it has the full context of user profile creation/update.
 };
 
 
-export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove: string): Promise<void> => {
+export const removeTeamMemberFromIdea = async (ideaId: string, ideaTitle: string, memberIdToRemove: string, actorProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
   if (ideaDoc.exists()) {
@@ -781,6 +941,13 @@ export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove:
         teamMemberEmails: arrayRemove(memberToRemove.email.toLowerCase()),
         updatedAt: serverTimestamp(),
       });
+      await logUserActivity(
+        actorProfile.uid,
+        actorProfile.displayName || actorProfile.fullName,
+        'IDEA_TEAM_MEMBER_REMOVED',
+        { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+        { memberName: memberToRemove.name, memberEmail: memberToRemove.email, memberId: memberToRemove.id }
+      );
     } else {
       console.warn(`Team member with ID ${memberIdToRemove} not found in idea ${ideaId} for removal.`);
     }
@@ -856,46 +1023,68 @@ export const getSystemSettings = async (): Promise<SystemSettings | null> => {
   return null;
 };
 
-export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSettings, 'id' | 'updatedAt' | 'updatedByUid'>>, adminUid: string): Promise<void> => {
+export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSettings, 'id' | 'updatedAt' | 'updatedByUid'>>, adminProfile: UserProfile): Promise<void> => {
   const settingsRef = doc(db, 'systemSettings', SYSTEM_SETTINGS_DOC_ID);
   try {
     await setDoc(settingsRef, {
       ...settingsData,
       updatedAt: serverTimestamp(),
-      updatedByUid: adminUid,
+      updatedByUid: adminProfile.uid,
     }, { merge: true });
+
+    await logUserActivity(
+      adminProfile.uid,
+      adminProfile.displayName || adminProfile.fullName,
+      'ADMIN_SYSTEM_SETTINGS_UPDATED',
+      { type: 'SYSTEM_SETTINGS', id: SYSTEM_SETTINGS_DOC_ID, displayName: 'Portal Configuration' },
+      { settingsChanged: Object.keys(settingsData) }
+    );
   } catch (error) {
     console.error("Error updating system settings:", error);
     throw error;
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (
+  actorProfile: UserProfile, // User creating the idea
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
+    userId: actorProfile.uid, // Set userId to the actor creating it
     status: 'SUBMITTED',
     programPhase: null,
     phase2Marks: {},
     teamMembers: ideaData.teamMembers || '',
     structuredTeamMembers: ideaData.structuredTeamMembers || [],
-    teamMemberEmails: ideaData.teamMemberEmails || [], 
+    teamMemberEmails: ideaData.teamMemberEmails || [],
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
-  } as const;
+  } as const; // Use 'as const' if sure about the shape, or cast to Omit<...>
+
   const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
-   const data = newDocSnap.data();
-  return {
+
+  const createdIdea = {
     id: newDocSnap.id,
-    ...data,
-    structuredTeamMembers: data?.structuredTeamMembers || [],
-    teamMemberEmails: data?.teamMemberEmails || [],
-   } as IdeaSubmission;
+    ...newDocSnap.data(),
+    structuredTeamMembers: newDocSnap.data()?.structuredTeamMembers || [],
+    teamMemberEmails: newDocSnap.data()?.teamMemberEmails || [],
+  } as IdeaSubmission;
+
+  await logUserActivity(
+    actorProfile.uid,
+    actorProfile.displayName || actorProfile.fullName,
+    'IDEA_SUBMITTED', // Or a more generic 'IDEA_CREATED' if not tied to profile workflow
+    { type: 'IDEA', id: createdIdea.id!, displayName: createdIdea.title },
+    { title: createdIdea.title, applicantType: createdIdea.applicantType }
+  );
+  return createdIdea;
 };
 
-export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string, fileName: string): Promise<void> => {
+export const updateIdeaPhase2PptDetails = async (ideaId: string, ideaTitle: string, fileUrl: string, fileName: string, actorProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   await updateDoc(ideaRef, {
     phase2PptUrl: fileUrl,
@@ -903,6 +1092,13 @@ export const updateIdeaPhase2PptDetails = async (ideaId: string, fileUrl: string
     phase2PptUploadedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
+  await logUserActivity(
+    actorProfile.uid,
+    actorProfile.displayName || actorProfile.fullName,
+    'IDEA_PPT_UPLOADED',
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { fileName }
+  );
 };
 
 export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null> => {
@@ -942,9 +1138,3 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   }
   return null;
 };
-
-    
-
-    
-
-    

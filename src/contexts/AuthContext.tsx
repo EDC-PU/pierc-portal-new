@@ -4,15 +4,16 @@
 import type { User } from 'firebase/auth';
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { auth, db, functions as firebaseFunctions } from '@/lib/firebase/config';
-import { 
-    getUserProfile, 
-    createUserProfileFS, 
-    createIdeaFromProfile, 
-    getIdeaWhereUserIsTeamMember, 
+import {
+    getUserProfile,
+    createUserProfileFS,
+    createIdeaFromProfile,
+    getIdeaWhereUserIsTeamMember,
     getIdeaById,
-    updateTeamMemberDetailsInIdeaAfterProfileSetup // New import
+    updateTeamMemberDetailsInIdeaAfterProfileSetup,
+    logUserActivity // New import
 } from '@/lib/firebase/firestore';
-import type { UserProfile, Role, IdeaSubmission, TeamMember } from '@/types'; // Added TeamMember
+import type { UserProfile, Role, IdeaSubmission, TeamMember, ActivityLogAction } from '@/types'; // Added TeamMember
 import {
   GoogleAuthProvider,
   signInWithPopup,
@@ -69,7 +70,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         let ideaMembership: IdeaSubmission | null = null;
         let leaderProfile: UserProfile | null = null;
 
-        if (profile) { // Profile exists
+        if (profile) {
           if (firebaseUser.email === 'pranavrathi07@gmail.com') {
               profile.isSuperAdmin = true;
               profile.role = 'ADMIN_FACULTY';
@@ -82,7 +83,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                leaderProfile = await getUserProfile(ideaMembership.userId);
             }
           }
-        } else { // No profile exists yet
+        } else {
           if (firebaseUser.email) {
             ideaMembership = await getIdeaWhereUserIsTeamMember(firebaseUser.email);
             if (ideaMembership && ideaMembership.userId) {
@@ -91,21 +92,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           }
           setUserProfile(null);
         }
-        
+
         setIsTeamMemberForIdea(ideaMembership);
         setTeamLeaderProfileForMember(leaderProfile);
 
         if (profile) {
+          // Log USER_SIGNED_IN only if it's a new session (not just profile update)
+          // This check might be too simplistic, consider session management
+          if (!initialLoadComplete) { // Approximates a new sign-in detection
+             logUserActivity(firebaseUser.uid, profile.displayName || profile.fullName, 'USER_SIGNED_IN', undefined, { ipAddress: 'N/A', userAgent: 'N/A' });
+          }
           if (router && (window.location.pathname === '/login' || window.location.pathname === '/profile-setup')) {
             router.push('/dashboard');
           }
-        } else { // No profile, redirect to setup (applies to new users and new team members)
+        } else {
            if (router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login') {
              router.push('/profile-setup');
            }
         }
 
-      } else { // No Firebase user
+      } else {
         setUser(null);
         setUserProfile(null);
         setIsTeamMemberForIdea(null);
@@ -119,7 +125,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => unsubscribe();
-  }, [router, toast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, toast]); // Removed initialLoadComplete from deps to avoid re-logging USER_SIGNED_IN
 
   const handleAuthError = (error: any, action: string) => {
     console.error(`Error during ${action}:`, error);
@@ -160,6 +167,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
+      // USER_SIGNED_IN will be logged by onAuthStateChanged
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
     }
@@ -169,6 +177,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
+      // USER_SIGNED_IN will be logged by onAuthStateChanged after profile setup
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     }
@@ -178,6 +187,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await firebaseSignInWithEmailPassword(auth, email, password);
+      // USER_SIGNED_IN will be logged by onAuthStateChanged
     } catch (error: any) {
       handleAuthError(error, "sign-in");
     }
@@ -192,6 +202,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return Promise.reject(new Error("No user logged in."));
     }
     setLoading(true);
+    const wasProfileExisting = !!userProfile; // Check if profile existed before this operation
 
     let actualRole = roleFromForm;
     const isSuperAdminEmail = user.email === 'pranavrathi07@gmail.com';
@@ -209,12 +220,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         ...additionalData,
     };
 
-    // Check if this user is being set up as a team member (identified during login)
     if (isTeamMemberForIdea) {
         profileDataForCreation.isTeamMemberOnly = true;
         profileDataForCreation.associatedIdeaId = isTeamMemberForIdea.id;
         profileDataForCreation.associatedTeamLeaderUid = isTeamMemberForIdea.userId;
-        // For team members, these idea-specific fields are not set from their own profile form
         delete profileDataForCreation.startupTitle;
         delete profileDataForCreation.problemDefinition;
         delete profileDataForCreation.solutionDescription;
@@ -228,14 +237,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       const createdOrUpdatedProfile = await createUserProfileFS(user.uid, profileDataForCreation);
-      setUserProfile(createdOrUpdatedProfile); // Update local userProfile state
+      setUserProfile(createdOrUpdatedProfile);
 
-      if (createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId) {
-        // User is a team member, sync their details into the IdeaSubmission
+      const logAction: ActivityLogAction = wasProfileExisting ? 'USER_PROFILE_UPDATED' : 'USER_PROFILE_CREATED';
+      await logUserActivity(
+        user.uid,
+        createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
+        logAction,
+        { type: 'USER_PROFILE', id: user.uid, displayName: createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName },
+        { role: createdOrUpdatedProfile.role, isTeamMember: createdOrUpdatedProfile.isTeamMemberOnly }
+      );
+
+
+      if (createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
         await updateTeamMemberDetailsInIdeaAfterProfileSetup(
           createdOrUpdatedProfile.associatedIdeaId,
-          user, // The firebase auth user
-          { // Pass only the relevant fields from their profile setup form
+          isTeamMemberForIdea.title, // Pass idea title for logging
+          user,
+          {
             fullName: createdOrUpdatedProfile.fullName,
             contactNumber: createdOrUpdatedProfile.contactNumber,
             enrollmentNumber: createdOrUpdatedProfile.enrollmentNumber,
@@ -243,7 +262,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             instituteName: createdOrUpdatedProfile.instituteName,
           }
         );
-        // Re-fetch idea and leader profile to ensure AuthContext is up-to-date
+        // Activity for team member update within idea is handled by updateTeamMemberDetailsInIdeaAfterProfileSetup if needed,
+        // or we can add a specific log here for 'TEAM_MEMBER_PROFILE_COMPLETED_FOR_IDEA'
         const idea = await getIdeaById(createdOrUpdatedProfile.associatedIdeaId);
         setIsTeamMemberForIdea(idea);
         if (idea && idea.userId) {
@@ -251,8 +271,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setTeamLeaderProfileForMember(leader);
         }
       } else if (!createdOrUpdatedProfile.isTeamMemberOnly && additionalData.startupTitle && additionalData.startupTitle !== 'Administrative Account') {
-        // Standard user, create an idea if they provided startup details
-        await createIdeaFromProfile(user.uid, {
+        const idea = await createIdeaFromProfile(user.uid, {
             startupTitle: additionalData.startupTitle,
             problemDefinition: additionalData.problemDefinition,
             solutionDescription: additionalData.solutionDescription,
@@ -261,8 +280,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             applicantCategory: additionalData.applicantCategory,
             teamMembers: additionalData.teamMembers || '',
         });
+        // Log IDEA_SUBMITTED if an idea was created
+        if (idea) {
+            await logUserActivity(
+                user.uid,
+                createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
+                'IDEA_SUBMITTED',
+                { type: 'IDEA', id: idea.id!, displayName: idea.title },
+                { title: idea.title }
+            );
+        }
       }
-      
+
       router.push('/dashboard');
       toast({ title: "Profile Updated", description: "Your profile has been successfully set up." });
     } catch (error: any) {
@@ -275,7 +304,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const deleteCurrentUserAccount = async () => {
-    if (!user) {
+    if (!user || !userProfile) {
       toast({ title: "Not Authenticated", description: "No user is currently logged in.", variant: "destructive" });
       throw new Error("User not authenticated");
     }
@@ -293,7 +322,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const deleteAuthFn = httpsCallable(firebaseFunctions, 'deleteMyAuthAccountCallable');
       await deleteAuthFn();
 
-      await firebaseSignOut(auth);
+      await logUserActivity(
+        user.uid, // Actor UID is the user deleting their own account
+        userProfile.displayName || userProfile.fullName,
+        'USER_ACCOUNT_DELETED_SELF',
+        { type: 'USER_PROFILE', id: user.uid, displayName: userProfile.displayName || userProfile.fullName }
+      );
+
+      await firebaseSignOut(auth); // Sign out after logging
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted. You have been signed out." });
 
     } catch (error: any) {
@@ -307,6 +343,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    if (user && userProfile) {
+      await logUserActivity(
+        user.uid,
+        userProfile.displayName || userProfile.fullName,
+        'USER_SIGNED_OUT'
+      );
+    }
     setLoading(true);
     try {
       await firebaseSignOut(auth);
@@ -359,4 +402,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

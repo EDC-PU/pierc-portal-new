@@ -4,15 +4,15 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { 
-    getAllIdeaSubmissionsWithDetails, 
-    updateIdeaStatusAndPhase, 
+import {
+    getAllIdeaSubmissionsWithDetails,
+    updateIdeaStatusAndPhase,
     deleteIdeaSubmission as deleteIdeaSubmissionFS,
     submitOrUpdatePhase2Mark,
-    assignMentorToIdea as assignMentorFS // New import
+    assignMentorToIdea as assignMentorFS
 } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName } from '@/types';
-import { AVAILABLE_MENTORS } from '@/types'; // New import
+import { AVAILABLE_MENTORS } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -39,9 +39,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
-import { Timestamp } from 'firebase/firestore'; 
-import { getDoc, doc } from 'firebase/firestore'; 
-import { db } from '@/lib/firebase/config'; 
+import { Timestamp } from 'firebase/firestore';
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 import { cn } from '@/lib/utils';
 
 
@@ -140,7 +140,7 @@ export default function ViewApplicationsPage() {
             return {
                 venue: 'PIERC Office, BBA Building, Ground Floor',
                 guidelines: 'Each team will have 5 minutes for verbal discussion followed by 2 minutes for questions by the jury members.\nNo PPT or presentation is required for this phase.',
-                startTime: '10:00', // Using 24-hour format for input type="time"
+                startTime: '10:00',
                 endTime: '12:00',
             };
         case 'PHASE_2':
@@ -161,7 +161,7 @@ export default function ViewApplicationsPage() {
             return {};
     }
   };
-  
+
   const openPhaseDetailsDialog = (idea: IdeaSubmission, phase: ProgramPhase) => {
     setCurrentIdeaForPhaseDetails(idea);
     setCurrentPhaseForDialog(phase);
@@ -190,36 +190,36 @@ export default function ViewApplicationsPage() {
     if (newPhaseInputValue && newPhaseInputValue !== NO_PHASE_VALUE) {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
-    
+
     if (newStatus === 'SELECTED' && actualNewPhase) {
         openPhaseDetailsDialog(idea, actualNewPhase);
-        setApplications(prevApps => prevApps.map(app => 
+        setApplications(prevApps => prevApps.map(app =>
             app.id === idea.id ? {...app, status: newStatus, programPhase: actualNewPhase } : app
         ));
-        return; 
+        return;
     }
-    
+
     if (newStatus === 'NOT_SELECTED') {
         setCurrentIdeaForRejection(idea);
         setRejectionRemarksInput(idea.rejectionRemarks || '');
         setIsRejectionDialogVisible(true);
-         setApplications(prevApps => prevApps.map(app => 
+         setApplications(prevApps => prevApps.map(app =>
             app.id === idea.id ? {...app, status: newStatus, programPhase: null } : app
         ));
         return;
     }
 
     try {
-      await updateIdeaStatusAndPhase(idea.id!, newStatus, actualNewPhase, undefined, userProfile.uid, undefined);
+      await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined);
       toast({ title: "Update Successful", description: `Application updated.` });
-      fetchApplications(); 
+      fetchApplications();
     } catch (error) {
       console.error("Error updating status/phase:", error);
       toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-      fetchApplications(); 
+      fetchApplications();
     }
   };
-  
+
   const handleSubmitPhaseDetails = async () => {
     if (!currentIdeaForPhaseDetails || !currentPhaseForDialog || !userProfile) return;
     if (!phaseDetailsForm.date || !phaseDetailsForm.startTime || !phaseDetailsForm.endTime || !phaseDetailsForm.venue.trim() || !phaseDetailsForm.guidelines.trim()) {
@@ -230,10 +230,11 @@ export default function ViewApplicationsPage() {
     try {
         await updateIdeaStatusAndPhase(
             currentIdeaForPhaseDetails.id!,
-            'SELECTED', 
+            currentIdeaForPhaseDetails.title,
+            'SELECTED',
+            userProfile,
             currentPhaseForDialog,
-            undefined, 
-            userProfile.uid,
+            undefined,
             {
                 date: Timestamp.fromDate(phaseDetailsForm.date),
                 startTime: phaseDetailsForm.startTime,
@@ -262,36 +263,40 @@ export default function ViewApplicationsPage() {
     }
     try {
         await updateIdeaStatusAndPhase(
-            currentIdeaForRejection.id!, 
-            'NOT_SELECTED', 
-            null, 
-            rejectionRemarksInput,
-            userProfile.uid,
-            undefined 
+            currentIdeaForRejection.id!,
+            currentIdeaForRejection.title,
+            'NOT_SELECTED',
+            userProfile,
+            null,
+            rejectionRemarksInput
         );
         toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
-        fetchApplications(); 
+        fetchApplications();
         setIsRejectionDialogVisible(false);
         setCurrentIdeaForRejection(null);
         setRejectionRemarksInput('');
     } catch (error) {
         console.error("Error submitting rejection:", error);
         toast({ title: "Rejection Error", description: "Could not submit rejection.", variant: "destructive" });
-        fetchApplications(); 
+        fetchApplications();
     }
   };
 
 
   const handleDeleteIdea = async (ideaId: string) => {
+    if (!userProfile) {
+        toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
+        return;
+    }
     try {
-      await deleteIdeaSubmissionFS(ideaId);
+      await deleteIdeaSubmissionFS(ideaId, userProfile);
       toast({ title: "Idea Deleted", description: "The idea submission has been successfully deleted." });
-      fetchApplications(); 
+      fetchApplications();
     } catch (error) {
       console.error("Error deleting idea:", error);
       toast({ title: "Delete Error", description: "Could not delete the idea submission.", variant: "destructive" });
     }
-    setApplicationToDelete(null); 
+    setApplicationToDelete(null);
   };
 
   const handleSaveMark = async () => {
@@ -309,9 +314,9 @@ export default function ViewApplicationsPage() {
 
     setIsSavingMark(true);
     try {
-        await submitOrUpdatePhase2Mark(selectedApplication.id, userProfile, markValue);
+        await submitOrUpdatePhase2Mark(selectedApplication.id, selectedApplication.title, userProfile, markValue);
         toast({ title: "Mark Saved", description: "Your mark has been successfully submitted." });
-        
+
         const appDocRef = doc(db, 'ideas', selectedApplication.id);
         const updatedAppSnap = await getDoc(appDocRef);
         const updatedAppData = updatedAppSnap.exists() ? ({ id: updatedAppSnap.id, ...updatedAppSnap.data() } as IdeaSubmission) : null;
@@ -320,7 +325,7 @@ export default function ViewApplicationsPage() {
           setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedAppData.phase2Marks, updatedAt: updatedAppData.updatedAt} : null);
           setApplications(prevApps => prevApps.map(app => app.id === updatedAppData.id ? {...app, phase2Marks: updatedAppData.phase2Marks, updatedAt: updatedAppData.updatedAt} : app));
         } else {
-          fetchApplications(); 
+          fetchApplications();
         }
     } catch (error) {
         console.error("Error saving mark:", error);
@@ -330,17 +335,16 @@ export default function ViewApplicationsPage() {
     }
   };
 
-  const handleAssignMentor = async (ideaId: string, mentorName: MentorName | null) => {
+  const handleAssignMentor = async (ideaId: string, ideaTitle: string, mentorName: MentorName | null) => {
     if (!userProfile || !userProfile.isSuperAdmin) {
         toast({title: "Unauthorized", description: "Only Super Admins can assign mentors.", variant: "destructive"});
         return;
     }
     setIsAssigningMentor(true);
     try {
-        await assignMentorFS(ideaId, mentorName, userProfile.uid);
+        await assignMentorFS(ideaId, ideaTitle, mentorName, userProfile);
         toast({title: "Mentor Assignment Updated", description: `Mentor ${mentorName ? 'assigned: '+mentorName : 'unassigned'}.`});
-        
-        // Optimistically update local state or re-fetch
+
         const appDocRef = doc(db, 'ideas', ideaId);
         const updatedAppSnap = await getDoc(appDocRef);
         const updatedAppData = updatedAppSnap.exists() ? ({ id: updatedAppSnap.id, ...updatedAppSnap.data() } as IdeaSubmission) : null;
@@ -349,7 +353,7 @@ export default function ViewApplicationsPage() {
           setSelectedApplication(prev => prev ? {...prev, mentor: updatedAppData.mentor, updatedAt: updatedAppData.updatedAt} : null);
           setApplications(prevApps => prevApps.map(app => app.id === updatedAppData.id ? {...app, mentor: updatedAppData.mentor, updatedAt: updatedAppData.updatedAt} : app));
         } else {
-          fetchApplications(); 
+          fetchApplications();
         }
     } catch (error) {
         console.error("Error assigning mentor:", error);
@@ -375,7 +379,7 @@ export default function ViewApplicationsPage() {
     setSelectedApplication(application);
     setIsDetailModalOpen(true);
   };
-  
+
   const formatDate = (dateValue: Date | Timestamp | undefined | null): string => {
     if (!dateValue) return 'N/A';
     let dateToFormat: Date;
@@ -403,7 +407,7 @@ export default function ViewApplicationsPage() {
     if (!isValid(dateToFormat)) return 'Invalid Date';
     return format(dateToFormat, 'MMM d, yyyy');
   }
-  
+
   const formatDateISO = (dateValue: Date | Timestamp | undefined | null): string => {
     if (!dateValue) return 'N/A';
     let dateToFormat: Date;
@@ -439,20 +443,20 @@ export default function ViewApplicationsPage() {
     const headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members (Free Text)',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Program Phase', 'Assigned Mentor', 'Rejection Remarks', 'Studio Location', 
+      'Status', 'Program Phase', 'Assigned Mentor', 'Rejection Remarks', 'Studio Location',
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
-      'Submitted At', 'Last Updated At', 
+      'Submitted At', 'Last Updated At',
     ];
-    
+
     const maxTeamMembers = Math.max(0, ...applications.map(app => app.structuredTeamMembers?.length || 0));
     for (let i = 1; i <= maxTeamMembers; i++) {
         headers.push(
-            `Member ${i} Name`, `Member ${i} Email`, `Member ${i} Phone`, 
+            `Member ${i} Name`, `Member ${i} Email`, `Member ${i} Phone`,
             `Member ${i} Institute`, `Member ${i} Department`, `Member ${i} Enrollment No.`
         );
     }
-    
+
     const adminMarkAdminUIDs: string[] = [];
     if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications.some(app => app.phase2Marks && Object.keys(app.phase2Marks).length > 0)) {
         const allAdminUIDsInMarks = new Set<string>();
@@ -463,7 +467,7 @@ export default function ViewApplicationsPage() {
         });
         adminMarkAdminUIDs.push(...Array.from(allAdminUIDsInMarks).sort());
         adminMarkAdminUIDs.forEach(uid => {
-            let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`; 
+            let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`;
             for (const app of applications) {
                 if (app.phase2Marks?.[uid]?.adminDisplayName) {
                     adminDisplayName = `Mark by ${app.phase2Marks[uid].adminDisplayName}`;
@@ -484,7 +488,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.applicantDisplayName),
         escapeCsvField(app.applicantEmail),
         escapeCsvField(app.applicantType?.replace(/_/g, ' ')),
-        escapeCsvField(app.teamMembers), // Free text team members
+        escapeCsvField(app.teamMembers),
         escapeCsvField(app.developmentStage.replace(/_/g, ' ')),
         escapeCsvField(app.problem),
         escapeCsvField(app.solution),
@@ -804,7 +808,7 @@ export default function ViewApplicationsPage() {
                         </CardContent>
                     </Card>
                  )}
-                 
+
                 {selectedApplication.structuredTeamMembers && selectedApplication.structuredTeamMembers.length > 0 && (
                     <div className="pt-3">
                         <h4 className="font-semibold text-muted-foreground flex items-center mb-2"><UsersIconLucide className="h-5 w-5 mr-2"/> Team Members (Detailed)</h4>
@@ -843,7 +847,7 @@ export default function ViewApplicationsPage() {
                                     <Label htmlFor="mentorSelect">Assign Mentor</Label>
                                     <Select
                                         value={selectedApplication.mentor || ''}
-                                        onValueChange={(value) => handleAssignMentor(selectedApplication.id!, value === '' ? null : value as MentorName)}
+                                        onValueChange={(value) => handleAssignMentor(selectedApplication.id!, selectedApplication.title, value === '' ? null : value as MentorName)}
                                         disabled={isAssigningMentor}
                                     >
                                         <SelectTrigger id="mentorSelect" className="w-full md:w-[250px]">
@@ -881,12 +885,12 @@ export default function ViewApplicationsPage() {
                     {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
                       const displayName = markEntry.adminDisplayName || 'Admin';
                       const isCurrentUserMark = adminUid === userProfile.uid;
-                      
+
                       if (userProfile.isSuperAdmin || !isCurrentUserMark) {
                         return (
                             <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
                             <span className="flex items-center">
-                                <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" /> 
+                                <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" />
                                 {displayName}
                                 {userProfile.isSuperAdmin && isCurrentUserMark && <span className="text-xs text-primary ml-1">(Your Mark)</span>}
                             </span>
@@ -899,12 +903,12 @@ export default function ViewApplicationsPage() {
                     {(() => {
                         const marksObject = selectedApplication.phase2Marks || {};
                         const totalMarksCount = Object.keys(marksObject).length;
-                        
+
                         if (userProfile.isSuperAdmin) {
                             if (totalMarksCount === 0) {
                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
                             }
-                        } else { 
+                        } else {
                             const otherAdminMarksCount = Object.keys(marksObject).filter(uid => uid !== userProfile.uid).length;
                             if (otherAdminMarksCount === 0 && totalMarksCount > 0 && selectedApplication.phase2Marks?.[userProfile.uid]) {
                                return <p className="text-sm text-muted-foreground text-center py-2">You are the only admin who has submitted a mark.</p>;
@@ -921,8 +925,8 @@ export default function ViewApplicationsPage() {
 
                     <div className="pt-3 space-y-2">
                         <Label htmlFor="adminMarkInput" className="font-semibold">
-                           {userProfile.isSuperAdmin && Object.keys(selectedApplication.phase2Marks || {}).some(uid => uid === userProfile.uid) 
-                             ? "Your Mark (Super Admin View - Update if needed)" 
+                           {userProfile.isSuperAdmin && Object.keys(selectedApplication.phase2Marks || {}).some(uid => uid === userProfile.uid)
+                             ? "Your Mark (Super Admin View - Update if needed)"
                              : "Your Mark"} (0-100):
                         </Label>
                         <div className="flex items-center gap-2">
@@ -972,13 +976,13 @@ export default function ViewApplicationsPage() {
                 <DialogHeader>
                     <DialogTitle className="flex items-center"><MessageSquareWarning className="h-5 w-5 mr-2 text-destructive"/> Provide Rejection Remarks</DialogTitle>
                     <DialogDescription>
-                        For idea: <span className="font-semibold">{currentIdeaForRejection.title}</span>. 
+                        For idea: <span className="font-semibold">{currentIdeaForRejection.title}</span>.
                         Please provide constructive feedback or reasons for not selecting this idea.
                     </DialogDescription>
                 </DialogHeader>
                 <div className="py-4 space-y-2">
                     <Label htmlFor="rejectionRemarks">Remarks/Guidance</Label>
-                    <Textarea 
+                    <Textarea
                         id="rejectionRemarks"
                         value={rejectionRemarksInput}
                         onChange={(e) => setRejectionRemarksInput(e.target.value)}
@@ -988,10 +992,10 @@ export default function ViewApplicationsPage() {
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => {
-                        setIsRejectionDialogVisible(false); 
-                        setCurrentIdeaForRejection(null); 
+                        setIsRejectionDialogVisible(false);
+                        setCurrentIdeaForRejection(null);
                         setRejectionRemarksInput('');
-                        fetchApplications(); 
+                        fetchApplications();
                     }}>Cancel</Button>
                     <Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button>
                 </DialogFooter>
@@ -1005,7 +1009,7 @@ export default function ViewApplicationsPage() {
                 setIsPhaseDetailsDialogVisible(false);
                 setCurrentIdeaForPhaseDetails(null);
                 setCurrentPhaseForDialog(null);
-                fetchApplications(); 
+                fetchApplications();
             } else {
                 setIsPhaseDetailsDialogVisible(isOpen);
             }
@@ -1049,17 +1053,17 @@ export default function ViewApplicationsPage() {
                      <div className="grid grid-cols-2 gap-4">
                         <div>
                             <Label htmlFor="phaseStartTime">Start Time</Label>
-                            <Input 
-                                id="phaseStartTime" 
-                                type="time" 
+                            <Input
+                                id="phaseStartTime"
+                                type="time"
                                 value={phaseDetailsForm.startTime}
                                 onChange={(e) => setPhaseDetailsForm(prev => ({...prev, startTime: e.target.value}))}
                             />
                         </div>
                         <div>
                             <Label htmlFor="phaseEndTime">End Time</Label>
-                            <Input 
-                                id="phaseEndTime" 
+                            <Input
+                                id="phaseEndTime"
                                 type="time"
                                 value={phaseDetailsForm.endTime}
                                 onChange={(e) => setPhaseDetailsForm(prev => ({...prev, endTime: e.target.value}))}
@@ -1068,7 +1072,7 @@ export default function ViewApplicationsPage() {
                     </div>
                     <div>
                         <Label htmlFor="phaseVenue">Venue</Label>
-                        <Input 
+                        <Input
                             id="phaseVenue"
                             value={phaseDetailsForm.venue}
                             onChange={(e) => setPhaseDetailsForm(prev => ({...prev, venue: e.target.value}))}
@@ -1077,7 +1081,7 @@ export default function ViewApplicationsPage() {
                     </div>
                     <div>
                         <Label htmlFor="phaseGuidelines">Guidelines</Label>
-                        <Textarea 
+                        <Textarea
                             id="phaseGuidelines"
                             value={phaseDetailsForm.guidelines}
                             onChange={(e) => setPhaseDetailsForm(prev => ({...prev, guidelines: e.target.value}))}
@@ -1088,8 +1092,8 @@ export default function ViewApplicationsPage() {
                 </div>
                 <DialogFooter>
                     <Button variant="outline" onClick={() => {
-                        setIsPhaseDetailsDialogVisible(false); 
-                        setCurrentIdeaForPhaseDetails(null); 
+                        setIsPhaseDetailsDialogVisible(false);
+                        setCurrentIdeaForPhaseDetails(null);
                         setCurrentPhaseForDialog(null);
                         fetchApplications();
                     }}>Cancel</Button>
