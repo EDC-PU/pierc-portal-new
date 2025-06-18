@@ -452,7 +452,12 @@ export const createIdeaFromProfile = async (
 
   const ideaCol = collection(db, 'ideas');
   
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'mentor' | 'fileURL' | 'fileName' | 'studioLocation' | 'cohortId' | 'category'> = {
+  // Construct the payload with only necessary and default fields for a new idea from profile
+  const newIdeaPayload: Pick<IdeaSubmission, 
+    'userId' | 'applicantDisplayName' | 'applicantEmail' | 'title' | 'problem' | 'solution' | 
+    'uniqueness' | 'developmentStage' | 'applicantType' | 'teamMembers' | 'structuredTeamMembers' | 
+    'teamMemberEmails' | 'status' | 'programPhase' | 'phase2Marks' | 'category'
+  > & { submittedAt: Timestamp, updatedAt: Timestamp } = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
@@ -467,22 +472,26 @@ export const createIdeaFromProfile = async (
     teamMemberEmails: [], 
     status: 'SUBMITTED',
     programPhase: null,
+    phase2Marks: {},
+    category: 'General Profile Submission', // Default category for ideas from profile
+    submittedAt: serverTimestamp() as Timestamp, // These will be set by Firestore
+    updatedAt: serverTimestamp() as Timestamp,  // These will be set by Firestore
   };
+  // Note: Optional fields like fileURL, fileName, studioLocation, cohortId, mentor, etc.,
+  // are intentionally_omitted_ from this initial payload. They will be undefined if not set,
+  // and Firestore will not write undefined fields. They can be added later via updates.
 
-  const docRef = await addDoc(ideaCol, {
-    ...newIdeaPayload,
-    category: 'General Profile Submission', // This was missing from the Omit but should be set
-    submittedAt: serverTimestamp() as Timestamp,
-    updatedAt: serverTimestamp() as Timestamp,
-  });
+  const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
 
   const data = newDocSnap.data();
   return {
     id: newDocSnap.id,
-    ...data,
-    structuredTeamMembers: data?.structuredTeamMembers || [],
+    ...(data as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt'>), // Cast to ensure types match
+    submittedAt: data?.submittedAt as Timestamp, // Ensure timestamps are correctly typed
+    updatedAt: data?.updatedAt as Timestamp,
+    structuredTeamMembers: data?.structuredTeamMembers || [], // Ensure arrays are initialized
     teamMemberEmails: data?.teamMemberEmails || [],
    } as IdeaSubmission;
 };
@@ -1097,8 +1106,15 @@ export const createIdeaSubmission = async (
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   } as const;
+  // Ensure optional fields that might be undefined are omitted
+  const finalPayload: any = { ...newIdeaPayload };
+  if (ideaData.fileURL === undefined) delete finalPayload.fileURL;
+  if (ideaData.fileName === undefined) delete finalPayload.fileName;
+  if (ideaData.studioLocation === undefined) delete finalPayload.studioLocation;
+  if (ideaData.cohortId === undefined) delete finalPayload.cohortId;
 
-  const docRef = await addDoc(ideaCol, newIdeaPayload);
+
+  const docRef = await addDoc(ideaCol, finalPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
 
