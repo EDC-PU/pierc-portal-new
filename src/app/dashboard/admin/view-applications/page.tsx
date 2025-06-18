@@ -48,6 +48,7 @@ import { cn } from '@/lib/utils';
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
+const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__"; // Unique value for unassigning
 
 const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null | undefined): string => {
   if (!phase || phase === NO_PHASE_VALUE) return 'N/A';
@@ -882,15 +883,15 @@ export default function ViewApplicationsPage() {
                                 <div>
                                     <Label htmlFor="mentorSelect">Assign Mentor</Label>
                                     <Select
-                                        value={selectedApplication.mentor || ''}
-                                        onValueChange={(value) => handleAssignMentor(selectedApplication.id!, selectedApplication.title, value === '' ? null : value as MentorName)}
+                                        value={selectedApplication.mentor || ""}
+                                        onValueChange={(value) => handleAssignMentor(selectedApplication.id!, selectedApplication.title, value === UNASSIGN_MENTOR_TRIGGER_VALUE ? null : value as MentorName)}
                                         disabled={isAssigningMentor}
                                     >
                                         <SelectTrigger id="mentorSelect" className="w-full md:w-[250px]">
                                             <SelectValue placeholder="Select a mentor" />
                                         </SelectTrigger>
                                         <SelectContent>
-                                            <SelectItem value="">Unassign Mentor</SelectItem>
+                                            <SelectItem value={UNASSIGN_MENTOR_TRIGGER_VALUE}>Unassign Mentor</SelectItem>
                                             {AVAILABLE_MENTORS.map(mentor => (
                                                 <SelectItem key={mentor} value={mentor}>{mentor}</SelectItem>
                                             ))}
