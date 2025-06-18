@@ -12,9 +12,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'; // Added Dialog
-import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2, Edit3 } from 'lucide-react'; // Added Edit3
-import { AdminEditUserProfileForm, type AdminEditableProfileFormData } from '@/components/admin/AdminEditUserProfileForm'; // Added Form
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'; // DialogTrigger not needed here if opened programmatically
+import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2, Edit3 } from 'lucide-react';
+import { AdminEditUserProfileForm, type AdminEditableProfileFormData } from '@/components/admin/AdminEditUserProfileForm';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +24,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"; // Removed AlertDialogTrigger as it's used with asChild
+  AlertDialogTrigger, // Added AlertDialogTrigger back
+} from "@/components/ui/alert-dialog";
 
 export default function ManageUsersPage() {
   const { userProfile: adminUserProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -34,7 +35,7 @@ export default function ManageUsersPage() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [actionUser, setActionUser] = useState<UserProfile | null>(null);
-  const [editingUserProfile, setEditingUserProfile] = useState<UserProfile | null>(null); // For edit dialog
+  const [editingUserProfile, setEditingUserProfile] = useState<UserProfile | null>(null);
   const [dialogAction, setDialogAction] = useState<'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper' | 'deleteUser' | null>(null);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isEditProfileDialogOpen, setIsEditProfileDialogOpen] = useState(false);
@@ -133,8 +134,7 @@ export default function ManageUsersPage() {
       toast({ title: "Profile Updated", description: `${editingUserProfile.displayName || editingUserProfile.email}'s profile has been updated.` });
       setIsEditProfileDialogOpen(false);
       setEditingUserProfile(null);
-      fetchUsers(); // Re-fetch users to reflect changes
-      // Potentially call a function here to propagate changes to IdeaSubmission if needed.
+      fetchUsers(); 
     } catch (error: any) {
       console.error("Error updating user profile by admin:", error);
       toast({ title: "Profile Update Error", description: error.message || "Could not update user's profile.", variant: "destructive" });
@@ -307,7 +307,7 @@ export default function ManageUsersPage() {
             }
             setIsEditProfileDialogOpen(isOpen);
         }}>
-          <DialogContent className="sm:max-w-2xl"> {/* Adjusted max-width for better form layout */}
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Edit User Profile</DialogTitle>
             </DialogHeader>
@@ -325,5 +325,3 @@ export default function ManageUsersPage() {
     </div>
   );
 }
-
-    
