@@ -10,78 +10,60 @@ import type { User } from 'firebase/auth';
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
 
-  const profileToCreate: UserProfile = {
+  // Start with base data that should always be there or derived
+  const profileDataToWrite: { [key: string]: any } = {
     uid: userId,
     email: data.email ?? null,
-    displayName: data.displayName || data.fullName || 'User',
+    displayName: data.displayName || data.fullName || 'User', // Ensure displayName has a fallback
     photoURL: data.photoURL ?? null,
-    role: data.role ?? null,
-    fullName: data.fullName!,
-    contactNumber: data.contactNumber!,
-    // These fields might not be present if isTeamMemberOnly is true
-    applicantCategory: data.applicantCategory!,
-    currentStage: data.currentStage!,
-    startupTitle: data.startupTitle!,
-    problemDefinition: data.problemDefinition!,
-    solutionDescription: data.solutionDescription!,
-    uniqueness: data.uniqueness!,
-    teamMembers: data.teamMembers || '',
-
-
-    enrollmentNumber: data.enrollmentNumber,
-    college: data.college,
-    instituteName: data.instituteName,
+    role: data.role ?? null, // Role is determined in AuthContext
+    fullName: data.fullName, // Should be from form
+    contactNumber: data.contactNumber, // Should be from form
     isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
-    isTeamMemberOnly: data.isTeamMemberOnly ?? false,
-    associatedIdeaId: data.associatedIdeaId,
-    associatedTeamLeaderUid: data.associatedTeamLeaderUid,
-    createdAt: serverTimestamp() as Timestamp,
-    updatedAt: serverTimestamp() as Timestamp,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
   };
 
-  const cleanProfileData: Partial<UserProfile> = {
-    uid: userId,
-    email: profileToCreate.email,
-    displayName: profileToCreate.displayName,
-    photoURL: profileToCreate.photoURL,
-    role: profileToCreate.role,
-    fullName: profileToCreate.fullName,
-    contactNumber: profileToCreate.contactNumber,
-    isSuperAdmin: profileToCreate.isSuperAdmin,
-    isTeamMemberOnly: profileToCreate.isTeamMemberOnly,
-    createdAt: profileToCreate.createdAt,
-    updatedAt: profileToCreate.updatedAt,
-  };
+  // Add isTeamMemberOnly, which dictates other fields
+  profileDataToWrite.isTeamMemberOnly = data.isTeamMemberOnly ?? false;
 
-  if (profileToCreate.isTeamMemberOnly) {
-    cleanProfileData.associatedIdeaId = profileToCreate.associatedIdeaId;
-    cleanProfileData.associatedTeamLeaderUid = profileToCreate.associatedTeamLeaderUid;
-    if (profileToCreate.enrollmentNumber) cleanProfileData.enrollmentNumber = profileToCreate.enrollmentNumber;
-    if (profileToCreate.college) cleanProfileData.college = profileToCreate.college;
-    if (profileToCreate.instituteName) cleanProfileData.instituteName = profileToCreate.instituteName;
+  if (profileDataToWrite.isTeamMemberOnly) {
+    profileDataToWrite.associatedIdeaId = data.associatedIdeaId;
+    profileDataToWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid;
+    // Team members might still have these optional fields from their profile form
+    if (data.enrollmentNumber) profileDataToWrite.enrollmentNumber = data.enrollmentNumber;
+    if (data.college) profileDataToWrite.college = data.college;
+    if (data.instituteName) profileDataToWrite.instituteName = data.instituteName;
   } else {
-    cleanProfileData.applicantCategory = profileToCreate.applicantCategory;
-    cleanProfileData.currentStage = profileToCreate.currentStage;
-    cleanProfileData.startupTitle = profileToCreate.startupTitle;
-    cleanProfileData.problemDefinition = profileToCreate.problemDefinition;
-    cleanProfileData.solutionDescription = profileToCreate.solutionDescription;
-    cleanProfileData.uniqueness = profileToCreate.uniqueness;
-    cleanProfileData.teamMembers = profileToCreate.teamMembers;
-    if (profileToCreate.enrollmentNumber) cleanProfileData.enrollmentNumber = profileToCreate.enrollmentNumber;
-    if (profileToCreate.college) cleanProfileData.college = profileToCreate.college;
-    if (profileToCreate.instituteName) cleanProfileData.instituteName = profileToCreate.instituteName;
+    // Idea owner specific fields - these should be present in `data` if it's an owner
+    // and required by the form validation / security rules for non-team-members.
+    profileDataToWrite.applicantCategory = data.applicantCategory;
+    profileDataToWrite.currentStage = data.currentStage;
+    profileDataToWrite.startupTitle = data.startupTitle;
+    profileDataToWrite.problemDefinition = data.problemDefinition;
+    profileDataToWrite.solutionDescription = data.solutionDescription;
+    profileDataToWrite.uniqueness = data.uniqueness;
+    profileDataToWrite.teamMembers = data.teamMembers || ''; // Default to empty string
+
+    // Optional fields for idea owners, also potentially present for team members if they fill them
+    if (data.enrollmentNumber) profileDataToWrite.enrollmentNumber = data.enrollmentNumber;
+    if (data.college) profileDataToWrite.college = data.college;
+    if (data.instituteName) profileDataToWrite.instituteName = data.instituteName;
   }
-  
-  const finalProfileToSet = Object.fromEntries(
-    Object.entries(cleanProfileData).filter(([, value]) => value !== undefined)
-  );
 
-  await setDoc(userProfileRef, finalProfileToSet);
+  // Remove any top-level undefined properties before writing to ensure clean data
+  const finalProfileData = Object.fromEntries(
+    Object.entries(profileDataToWrite).filter(([, value]) => value !== undefined)
+  ) as UserProfile;
 
+  await setDoc(userProfileRef, finalProfileData);
+
+  // Fetch the just-created profile to return it with all server-generated timestamps etc.
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const rawData = docSnap.data();
-    return {
+    // Construct the UserProfile object carefully, especially for optional fields
+    const fetchedProfile: UserProfile = {
         uid: docSnap.id,
         email: rawData.email ?? null,
         displayName: rawData.displayName ?? null,
@@ -89,23 +71,27 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         role: rawData.role ?? null,
         fullName: rawData.fullName ?? '',
         contactNumber: rawData.contactNumber ?? '',
+        
+        // These fields are conditional based on isTeamMemberOnly
         applicantCategory: rawData.applicantCategory,
         currentStage: rawData.currentStage,
-        startupTitle: rawData.startupTitle ?? '',
-        problemDefinition: rawData.problemDefinition ?? '',
-        solutionDescription: rawData.solutionDescription ?? '',
-        uniqueness: rawData.uniqueness ?? '',
+        startupTitle: rawData.startupTitle,
+        problemDefinition: rawData.problemDefinition,
+        solutionDescription: rawData.solutionDescription,
+        uniqueness: rawData.uniqueness,
         teamMembers: rawData.teamMembers ?? '',
+
         enrollmentNumber: rawData.enrollmentNumber,
         college: rawData.college,
         instituteName: rawData.instituteName,
-        createdAt: rawData.createdAt,
-        updatedAt: rawData.updatedAt,
+        createdAt: rawData.createdAt, // This will be a Firestore Timestamp
+        updatedAt: rawData.updatedAt, // This will be a Firestore Timestamp
         isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true),
         isTeamMemberOnly: rawData.isTeamMemberOnly ?? false,
         associatedIdeaId: rawData.associatedIdeaId,
         associatedTeamLeaderUid: rawData.associatedTeamLeaderUid,
-    } as UserProfile;
+    };
+    return fetchedProfile;
   }
   throw new Error("Failed to create or retrieve user profile after creation.");
 };
@@ -393,8 +379,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
   const ideasCol = collection(db, 'ideas');
   const ideasQuery = query(ideasCol, orderBy('submittedAt', 'desc'));
   const ideasSnapshot = await getDocs(ideasQuery);
-  const ideaSubmissions: IdeaSubmission[] = [];
-
+  
   if (ideasSnapshot.empty) {
     return [];
   }
@@ -409,13 +394,15 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 
   const profilesMap = new Map<string, UserProfile | null>();
   if (applicantIds.size > 0) {
+    // Fetch profiles in batches if necessary, though for typical scenarios Promise.all is fine
     const profilePromises = Array.from(applicantIds).map(id => getUserProfile(id));
     const profiles = await Promise.all(profilePromises);
     profiles.forEach((profile, index) => {
       profilesMap.set(Array.from(applicantIds)[index], profile);
     });
   }
-
+  
+  const ideaSubmissions: IdeaSubmission[] = [];
   ideasSnapshot.docs.forEach(ideaDoc => {
     const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
     const userProfile = ideaData.userId ? profilesMap.get(ideaData.userId) : null;
@@ -955,6 +942,8 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   }
   return null;
 };
+
+    
 
     
 
