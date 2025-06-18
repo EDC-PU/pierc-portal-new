@@ -46,13 +46,9 @@ export default function LoginPage() {
 
 
   useEffect(() => {
-    // This effect handles redirection once all necessary data from AuthContext is available
     if (initialLoadComplete && user && userProfile) {
       router.push('/dashboard');
     }
-    // If initialLoadComplete && user && !userProfile, 
-    // AuthContext will handle redirecting to /profile-setup if needed.
-    // Login page doesn't need to explicitly redirect to /profile-setup.
   }, [user, userProfile, initialLoadComplete, router]);
 
 
@@ -61,14 +57,12 @@ export default function LoginPage() {
       if (isSignUpMode) {
         const { email, password } = data as SignUpFormInputs;
         await signUpWithEmailPassword(email, password);
-        // AuthContext's onAuthStateChanged will handle post-signup flow (profile fetch, redirect to setup)
       } else {
         const { email, password } = data as LoginFormInputs;
         await signInWithEmailPassword(email, password);
-        // AuthContext's onAuthStateChanged will handle post-signin flow (profile fetch, redirect to dashboard/setup)
       }
     } catch (error: any) {
-      // Errors are handled by toast in AuthContext methods, no need to re-toast here
+      // Errors are handled by toast in AuthContext methods
     }
   };
 
@@ -77,22 +71,21 @@ export default function LoginPage() {
     reset(); 
   }
 
-  // 1. Initial AuthContext Loading (before `initialLoadComplete` is true)
-  // This spinner is for the very first time the AuthContext is initializing.
+  // Adjusted min-height calculation: Navbar (h-16 = 4rem) + Footer (py-6 = 3rem) = 7rem
+  // theme(spacing.16) = 4rem, theme(spacing.12) = 3rem
+  const pageMinHeight = "min-h-[calc(100vh_-_theme(spacing.16)_-_theme(spacing.12))]"; 
+
   if (!initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] p-4 text-center">
+      <div className={`flex items-center justify-center p-4 text-center ${pageMinHeight}`}>
         <LoadingSpinner size={48} />
       </div>
     );
   }
 
-  // After initialLoadComplete is true:
-  // 2. User is authenticated and has a profile (ready for dashboard)
   if (user && userProfile) {
-    // The useEffect above will handle the router.push. Show "Redirecting to dashboard..."
      return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] p-4 text-center">
+      <div className={`flex items-center justify-center p-4 text-center ${pageMinHeight}`}>
         <div className="flex flex-col sm:flex-row items-center gap-3">
             <p className="text-lg text-muted-foreground">Redirecting to dashboard...</p>
             <LoadingSpinner size={32} />
@@ -101,11 +94,9 @@ export default function LoginPage() {
     );
   }
 
-  // 3. User is authenticated but profile doesn't exist yet (or is being fetched by AuthContext)
-  // AuthContext will redirect them to /profile-setup. Show a generic message.
   if (user && !userProfile) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] p-4 text-center">
+      <div className={`flex items-center justify-center p-4 text-center ${pageMinHeight}`}>
         <div className="flex flex-col sm:flex-row items-center gap-3">
             <p className="text-lg text-muted-foreground">Checking profile status...</p>
             <LoadingSpinner size={32} />
@@ -114,10 +105,8 @@ export default function LoginPage() {
     );
   }
   
-  // 4. Initial load is complete and no user is authenticated: Show the login form.
-  // The `loading` prop on the submit button handles the spinner during the sign-in API call itself.
   return (
-    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] bg-gradient-to-br from-background to-secondary/30 animate-fade-in">
+    <div className={`flex items-center justify-center py-12 bg-gradient-to-br from-background to-secondary/30 animate-fade-in ${pageMinHeight}`}>
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-headline">
@@ -169,7 +158,6 @@ export default function LoginPage() {
             variant="outline"
             className="w-full text-base py-5 bg-card hover:bg-muted border border-border shadow-sm"
           >
-            {/* Show spinner on Google button if loading is true and it's not due to email/password sign-up in progress */}
             {loading && !isSignUpMode ? ( 
               <LoadingSpinner size={24} className="mr-2" />
             ) : (

@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { LogIn, LogOut, User as UserIcon, LayoutDashboard, Settings, Megaphone, Menu } from 'lucide-react'; // Added Menu for SidebarTrigger
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '../ui/skeleton';
-import { useSidebar } from '@/hooks/use-sidebar'; // Corrected import path
+import { useSidebar } from '@/hooks/use-sidebar'; 
 
 export function Navbar() {
   const { user, userProfile, signOut, loading, initialLoadComplete } = useAuth();
@@ -23,7 +23,7 @@ export function Navbar() {
   };
 
   return (
-    <nav className="bg-card text-card-foreground shadow-md sticky top-0 z-50 h-20 flex items-center">
+    <nav className="bg-card text-card-foreground shadow-md sticky top-0 z-50 h-16 flex items-center"> {/* Navbar height changed to h-16 (4rem) */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-full">
           <div className="flex items-center space-x-4">
@@ -37,9 +37,9 @@ export function Navbar() {
               <Image
                 src="https://www.pierc.org/_next/static/media/PIERC%20WHITE.a9ef7cc8.svg"
                 alt="PIERC Portal Logo"
-                width={120} 
-                height={50} 
-                className="h-12 w-auto" 
+                width={110} 
+                height={45} 
+                className="h-11 w-auto" // Adjusted logo size slightly for new navbar height
               />
             </Link>
           </div>

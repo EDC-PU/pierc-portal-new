@@ -29,7 +29,8 @@ export default function DashboardPage() {
 
   if (authLoading || !initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]">
+      // Use h-full to take available height from DashboardLayout's content area
+      <div className="flex items-center justify-center h-full"> 
         <LoadingSpinner size={48} />
       </div>
     );
@@ -37,15 +38,14 @@ export default function DashboardPage() {
 
   if (!user || !userProfile) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]">
+      // Use h-full to take available height
+      <div className="flex items-center justify-center h-full"> 
         <p className="text-muted-foreground">Verifying session...</p>
         <LoadingSpinner size={32} className="ml-2" />
       </div>
     );
   }
   
-  // If the user is identified as a team member for an idea,
-  // render StudentDashboard, which contains the specific view for team members.
   if (isTeamMemberForIdea) {
     return (
       <div className="space-y-6 animate-slide-in-up">
@@ -55,7 +55,6 @@ export default function DashboardPage() {
     );
   }
 
-  // Default role-based dashboard rendering if not specifically a team member for an idea
   return (
     <div className="space-y-6 animate-slide-in-up">
       <UrgentAnnouncementModal />
@@ -73,4 +72,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
