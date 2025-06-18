@@ -96,7 +96,7 @@ export default function StudentDashboard() {
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
 
 
-  const { control, handleSubmit, reset: resetTeamManagementForm, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable } } = useForm<TeamManagementFormData>({
+  const { control, handleSubmit, reset: resetTeamManagementForm, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
     resolver: zodResolver(teamManagementSchema),
     defaultValues: {
       members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }),
@@ -124,9 +124,12 @@ export default function StudentDashboard() {
             setSelectedIdeaForTeamMgmt(updatedSelected || null);
             if (updatedSelected) {
                 const currentMembers = updatedSelected.structuredTeamMembers || [];
-                const formMembers = Array(4).fill(null).map((_, i) =>
-                    currentMembers[i] || { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }
-                );
+                const formMembers = Array(4).fill(null).map((_, i) => {
+                    const member = currentMembers[i];
+                    return member
+                        ? { ...member, id: member.id || nanoid() }
+                        : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
+                });
                 resetTeamManagementForm({ members: formMembers });
             } else {
                  resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
@@ -144,20 +147,17 @@ export default function StudentDashboard() {
   };
 
   useEffect(() => {
-    // Fetch ideas only if the user is NOT just a team member for someone else's idea
     if (user?.uid && !isTeamMemberForIdea) {
       fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt?.id);
     } else if (isTeamMemberForIdea) {
-      // If they are a team member, no need to fetch their "own" ideas,
-      // as they won't be managing teams or submitting new ones in this context.
       setLoadingIdeas(false);
-      setUserIdeas([]); // Clear any previous "owned" ideas
+      setUserIdeas([]); 
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, isTeamMemberForIdea]); // Add isTeamMemberForIdea to deps
+  }, [user?.uid, isTeamMemberForIdea]); 
 
   useEffect(() => {
-    if (selectedIdeaForTeamMgmt && !isTeamMemberForIdea) { // Only for idea owners
+    if (selectedIdeaForTeamMgmt && !isTeamMemberForIdea) { 
         const currentMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
         const formMembersData = Array(4).fill(null).map((_, i) => {
             const member = currentMembers[i];
@@ -166,7 +166,7 @@ export default function StudentDashboard() {
                 : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
         });
         resetTeamManagementForm({ members: formMembersData });
-    } else if (!isTeamMemberForIdea) { // Idea owner, but no idea selected for team mgmt
+    } else if (!isTeamMemberForIdea) { 
         resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
     }
   }, [selectedIdeaForTeamMgmt, resetTeamManagementForm, isTeamMemberForIdea]);
@@ -268,10 +268,9 @@ export default function StudentDashboard() {
     } finally {
       setIsUploadingPpt(false);
       setSelectedPptFile(null);
-      // setUploadingPptIdeaId(null); // Keep this to know which file input to clear
       const fileInput = document.getElementById(`ppt-upload-${uploadingPptIdeaId}`) as HTMLInputElement;
       if (fileInput) fileInput.value = '';
-      setUploadingPptIdeaId(null); // Clear after potentially clearing input
+      setUploadingPptIdeaId(null); 
     }
   };
 
@@ -281,22 +280,28 @@ export default function StudentDashboard() {
       return;
     }
 
-    let membersProcessedCount = 0;
     const existingMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
-
     const validFormMembers = formData.members.filter(member => member.name && member.name.trim() !== '');
 
     if (validFormMembers.length > 4) {
         toast({ title: "Limit Exceeded", description: "You can save a maximum of 4 team members.", variant: "destructive" });
         return;
     }
+    
+    let membersAddedOrUpdatedCount = 0;
 
     try {
-        for (const formMember of validFormMembers) {
-            if (!formMember.name || formMember.name.trim() === '') continue;
+        // Process updates and additions
+        for (const formMember of formData.members) { // Iterate through all 4 form slots
+            if (!formMember.name || formMember.name.trim() === '') {
+                // If name is empty, but there was a persistent ID, it means an existing member was cleared.
+                // For now, we'll rely on explicit delete. This row will be skipped for add/update.
+                // If it's a new empty row, it's also skipped.
+                continue;
+            }
 
             const memberData: TeamMember = {
-                id: formMember.id || nanoid(), // Ensure ID for new members
+                id: formMember.id || nanoid(), // Use existing ID or generate new one
                 name: formMember.name,
                 email: formMember.email!,
                 phone: formMember.phone!,
@@ -304,28 +309,28 @@ export default function StudentDashboard() {
                 department: formMember.department!,
                 enrollmentNumber: formMember.enrollmentNumber || '',
             };
+            
+            const isExistingMemberInForm = formMember.id && existingMembers.some(em => em.id === formMember.id);
 
-            const isExistingInForm = formMember.id && existingMembers.some(em => em.id === formMember.id);
-
-            if (isExistingInForm) { // Existing member, update
+            if (isExistingMemberInForm) { // Update existing member
                 await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, memberData);
-                membersProcessedCount++;
-            } else { // New member, add
-                 if (existingMembers.length + (membersProcessedCount - existingMembers.filter(em => validFormMembers.some(fm => fm.id === em.id && fm.id)).length) < 4) {
-                    await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
-                    membersProcessedCount++;
-                 } else {
-                    toast({title: "Info", description: `Could not add member ${formMember.name} as team limit of 4 is reached.`, variant: "default"});
-                 }
+                membersAddedOrUpdatedCount++;
+            } else { // Add new member (if name is present and ID was empty)
+                const currentIdeaMemberCount = (await (await getDoc(doc(db, 'ideas', selectedIdeaForTeamMgmt.id))).data() as IdeaSubmission)?.structuredTeamMembers?.length || 0;
+                if (currentIdeaMemberCount < 4) {
+                   await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
+                   membersAddedOrUpdatedCount++;
+                } else {
+                   toast({title: "Team Full", description: `Could not add member ${memberData.name}. Maximum 4 members allowed.`, variant: "default"});
+                }
             }
         }
 
-        if (membersProcessedCount > 0) {
+
+        if (membersAddedOrUpdatedCount > 0) {
             toast({ title: "Team Updated", description: "Team member details have been saved." });
-        } else if (validFormMembers.length === 0 && existingMembers.length > 0) {
-             toast({ title: "No Changes", description: "No new member information was provided to save. To remove members, use the delete icon.", variant: "default" });
         } else {
-            toast({ title: "No Changes", description: "No team member information was provided to save.", variant: "default" });
+            toast({ title: "No Changes", description: "No new or modified team member information was provided to save.", variant: "default" });
         }
 
         fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
@@ -351,7 +356,6 @@ export default function StudentDashboard() {
     setMemberToRemove(null);
   };
 
-  // --- Team Member View ---
   if (isTeamMemberForIdea) {
     return (
       <div className="space-y-6 animate-slide-in-up">
@@ -441,7 +445,6 @@ export default function StudentDashboard() {
     );
   }
 
-  // --- Idea Owner View ---
   return (
     <Tabs defaultValue="overview" className="space-y-6">
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
@@ -710,7 +713,7 @@ export default function StudentDashboard() {
                         </TableHeader>
                         <TableBody>
                             {fields.map((item, index) => (
-                                <TableRow key={item.id}>
+                                <TableRow key={item.id}> {/* item.id is from useFieldArray */}
                                     <TableCell className="p-1 font-medium text-muted-foreground">Member {index + 1}</TableCell>
                                     <TableCell className="p-1">
                                         <Controller
@@ -761,33 +764,36 @@ export default function StudentDashboard() {
                                     </TableCell>
                                     <TableCell className="p-1 text-right">
                                         <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
-
-                                        {selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === fields[index].id && fields[index].id) && (
+                                        
+                                        {/* Show delete button only if this row corresponds to an existing saved member (i.e., has a persistent ID) */}
+                                        {getValues(`members.${index}.id`) && (
                                             <AlertDialog>
                                                 <AlertDialogTrigger asChild>
                                                     <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => {
-                                                        const memberId = fields[index].id;
-                                                        const member = selectedIdeaForTeamMgmt.structuredTeamMembers?.find(m => m.id === memberId);
-                                                        if(member) setMemberToRemove(member);
+                                                        const memberDataForThisRow = getValues(`members.${index}`);
+                                                        if(memberDataForThisRow && memberDataForThisRow.id) {
+                                                            setMemberToRemove(memberDataForThisRow as TeamMember);
+                                                        }
                                                     }}>
                                                         <Trash2 className="h-4 w-4" />
                                                     </Button>
                                                 </AlertDialogTrigger>
-                                                {memberToRemove?.id === fields[index].id && (
-                                                <AlertDialogContent>
-                                                    <AlertDialogHeader>
-                                                    <AlertDialogTitle>Remove {memberToRemove?.name || 'this member'}?</AlertDialogTitle>
-                                                    <AlertDialogDescription>
-                                                        Are you sure you want to remove {memberToRemove?.name || 'this member'} from the team for "{selectedIdeaForTeamMgmt.title}"? This action is permanent.
-                                                    </AlertDialogDescription>
-                                                    </AlertDialogHeader>
-                                                    <AlertDialogFooter>
-                                                    <AlertDialogCancel onClick={() => setMemberToRemove(null)}>Cancel</AlertDialogCancel>
-                                                    <AlertDialogAction onClick={() => handleRemoveTeamMember(memberToRemove!.id)} className="bg-destructive hover:bg-destructive/90">
-                                                        Remove Member
-                                                    </AlertDialogAction>
-                                                    </AlertDialogFooter>
-                                                </AlertDialogContent>
+                                                {/* Conditional rendering of AlertDialogContent based on memberToRemove */}
+                                                {memberToRemove && memberToRemove.id === getValues(`members.${index}.id`) && (
+                                                    <AlertDialogContent>
+                                                        <AlertDialogHeader>
+                                                        <AlertDialogTitle>Remove {memberToRemove.name || 'this member'}?</AlertDialogTitle>
+                                                        <AlertDialogDescription>
+                                                            Are you sure you want to remove {memberToRemove.name || 'this member'} from the team for "{selectedIdeaForTeamMgmt!.title}"? This action is permanent.
+                                                        </AlertDialogDescription>
+                                                        </AlertDialogHeader>
+                                                        <AlertDialogFooter>
+                                                        <AlertDialogCancel onClick={() => setMemberToRemove(null)}>Cancel</AlertDialogCancel>
+                                                        <AlertDialogAction onClick={() => handleRemoveTeamMember(memberToRemove!.id)} className="bg-destructive hover:bg-destructive/90">
+                                                            Remove Member
+                                                        </AlertDialogAction>
+                                                        </AlertDialogFooter>
+                                                    </AlertDialogContent>
                                                 )}
                                             </AlertDialog>
                                         )}
@@ -816,3 +822,4 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
+
