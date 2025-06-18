@@ -152,7 +152,7 @@ export default function ViewApplicationsPage() {
             };
         case 'COHORT':
             return {
-                venue: 'PIERC Training Room (To be confirmed by Admin)',
+                venue: 'Founders Studio, BBA Building, Parul University, Vadodara Campus',
                 guidelines: 'Welcome to the PIERC Incubation Cohort!\nThe induction session will cover the program structure and next steps.\nPlease bring your laptops.',
                 startTime: '14:00',
                 endTime: '16:00',
