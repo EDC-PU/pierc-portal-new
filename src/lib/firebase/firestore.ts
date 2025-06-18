@@ -3,6 +3,8 @@ import { db, functions as firebaseFunctions } from './config'; // functions alia
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember } from '@/types';
 import { httpsCallable } from 'firebase/functions';
+import { nanoid } from 'nanoid';
+import type { User } from 'firebase/auth';
 
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
@@ -16,13 +18,15 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     role: data.role ?? null,
     fullName: data.fullName!,
     contactNumber: data.contactNumber!,
-    applicantCategory: data.applicantCategory!, // May not be present for team_member_only
-    currentStage: data.currentStage!,       // May not be present for team_member_only
-    startupTitle: data.startupTitle!,       // May not be present for team_member_only
-    problemDefinition: data.problemDefinition!, // May not be present for team_member_only
-    solutionDescription: data.solutionDescription!,// May not be present for team_member_only
-    uniqueness: data.uniqueness!,             // May not be present for team_member_only
-    teamMembers: data.teamMembers || '', // This is the free-text field
+    // These fields might not be present if isTeamMemberOnly is true
+    applicantCategory: data.applicantCategory!,
+    currentStage: data.currentStage!,
+    startupTitle: data.startupTitle!,
+    problemDefinition: data.problemDefinition!,
+    solutionDescription: data.solutionDescription!,
+    uniqueness: data.uniqueness!,
+    teamMembers: data.teamMembers || '',
+
 
     enrollmentNumber: data.enrollmentNumber,
     college: data.college,
@@ -35,15 +39,14 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     updatedAt: serverTimestamp() as Timestamp,
   };
 
-  // Clean profile data, ensuring required fields for non-team-members are present
   const cleanProfileData: Partial<UserProfile> = {
     uid: userId,
     email: profileToCreate.email,
     displayName: profileToCreate.displayName,
     photoURL: profileToCreate.photoURL,
     role: profileToCreate.role,
-    fullName: profileToCreate.fullName, // Required for all
-    contactNumber: profileToCreate.contactNumber, // Required for all
+    fullName: profileToCreate.fullName,
+    contactNumber: profileToCreate.contactNumber,
     isSuperAdmin: profileToCreate.isSuperAdmin,
     isTeamMemberOnly: profileToCreate.isTeamMemberOnly,
     createdAt: profileToCreate.createdAt,
@@ -53,12 +56,10 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   if (profileToCreate.isTeamMemberOnly) {
     cleanProfileData.associatedIdeaId = profileToCreate.associatedIdeaId;
     cleanProfileData.associatedTeamLeaderUid = profileToCreate.associatedTeamLeaderUid;
-    // For team members, optional fields related to idea ownership are truly optional
     if (profileToCreate.enrollmentNumber) cleanProfileData.enrollmentNumber = profileToCreate.enrollmentNumber;
     if (profileToCreate.college) cleanProfileData.college = profileToCreate.college;
     if (profileToCreate.instituteName) cleanProfileData.instituteName = profileToCreate.instituteName;
   } else {
-    // For idea owners, these fields are expected
     cleanProfileData.applicantCategory = profileToCreate.applicantCategory;
     cleanProfileData.currentStage = profileToCreate.currentStage;
     cleanProfileData.startupTitle = profileToCreate.startupTitle;
@@ -74,7 +75,6 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   const finalProfileToSet = Object.fromEntries(
     Object.entries(cleanProfileData).filter(([, value]) => value !== undefined)
   );
-
 
   await setDoc(userProfileRef, finalProfileToSet);
 
@@ -95,7 +95,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         problemDefinition: rawData.problemDefinition ?? '',
         solutionDescription: rawData.solutionDescription ?? '',
         uniqueness: rawData.uniqueness ?? '',
-        teamMembers: rawData.teamMembers ?? '', // Free-text field
+        teamMembers: rawData.teamMembers ?? '',
         enrollmentNumber: rawData.enrollmentNumber,
         college: rawData.college,
         instituteName: rawData.instituteName,
@@ -129,13 +129,13 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         problemDefinition: data.problemDefinition ?? '',
         solutionDescription: data.solutionDescription ?? '',
         uniqueness: data.uniqueness ?? '',
-        teamMembers: data.teamMembers ?? '', // Free-text field
+        teamMembers: data.teamMembers ?? '',
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false, // Default to false
+        isSuperAdmin: false, 
         isTeamMemberOnly: data.isTeamMemberOnly ?? false,
         associatedIdeaId: data.associatedIdeaId,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid,
@@ -184,13 +184,13 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         problemDefinition: data.problemDefinition ?? '',
         solutionDescription: data.solutionDescription ?? '',
         uniqueness: data.uniqueness ?? '',
-        teamMembers: data.teamMembers ?? '', // Free-text field
+        teamMembers: data.teamMembers ?? '',
         enrollmentNumber: data.enrollmentNumber,
         college: data.college,
         instituteName: data.instituteName,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false, // Default
+        isSuperAdmin: false, 
         isTeamMemberOnly: data.isTeamMemberOnly ?? false,
         associatedIdeaId: data.associatedIdeaId,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid,
@@ -342,7 +342,6 @@ export const createIdeaFromProfile = async (
     userId: string,
     profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
-  // Do not create an idea if the user is an admin or if the startup title indicates an admin account
   const userProfile = await getUserProfile(userId);
   if (userProfile?.role === 'ADMIN_FACULTY' || profileData.startupTitle === 'Administrative Account') {
     console.log("Skipping idea creation for admin or administrative account profile.");
@@ -352,7 +351,6 @@ export const createIdeaFromProfile = async (
     console.log("Skipping idea creation for a user who is only a team member.");
     return null;
   }
-
 
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMemberEmails'> = {
@@ -364,17 +362,16 @@ export const createIdeaFromProfile = async (
     uniqueness: profileData.uniqueness,
     developmentStage: profileData.currentStage,
     applicantType: profileData.applicantCategory,
-    teamMembers: profileData.teamMembers || '', // Free-text field
-    structuredTeamMembers: [], // Initialize as empty array
+    teamMembers: profileData.teamMembers || '',
+    structuredTeamMembers: [],
     status: 'SUBMITTED',
     programPhase: null,
-    // teamMemberEmails will be initialized when members are added
   };
   const docRef = await addDoc(ideaCol, {
     ...newIdeaPayload,
-    teamMemberEmails: [], // Explicitly initialize as empty
-    submittedAt: serverTimestamp() as Timestamp, // Add these here as they are not in Omit
-    updatedAt: serverTimestamp() as Timestamp,   // Add these here
+    teamMemberEmails: [],
+    submittedAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
   });
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission from profile.");
@@ -420,7 +417,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       updatedAt,
       applicantDisplayName,
       applicantEmail,
-      teamMembers: ideaData.teamMembers || '', // Free-text field
+      teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
       rejectionRemarks: ideaData.rejectionRemarks,
@@ -548,7 +545,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         ...data,
         programPhase: data.programPhase || null,
         phase2Marks: data.phase2Marks || {},
-        teamMembers: data.teamMembers || '', // Free-text field
+        teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
         submittedAt,
@@ -620,7 +617,7 @@ export const getIdeasCountByApplicantCategory = async (): Promise<Record<Applica
   return counts;
 };
 
-export const addTeamMemberToIdea = async (ideaId: string, newMember: TeamMember): Promise<void> => {
+export const addTeamMemberToIdea = async (ideaId: string, newMemberData: Omit<TeamMember, 'id'>): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
   if (!ideaDoc.exists()) {
@@ -630,9 +627,15 @@ export const addTeamMemberToIdea = async (ideaId: string, newMember: TeamMember)
   if (currentMembers.length >= 4) {
     throw new Error("Maximum of 4 team members already reached for this idea.");
   }
+
+  const newMemberWithId: TeamMember = {
+    ...newMemberData,
+    id: nanoid(), // Generate unique ID for this member entry
+  };
+
   await updateDoc(ideaRef, {
-    structuredTeamMembers: arrayUnion(newMember),
-    teamMemberEmails: arrayUnion(newMember.email.toLowerCase()), // Add email to flat list
+    structuredTeamMembers: arrayUnion(newMemberWithId),
+    teamMemberEmails: arrayUnion(newMemberWithId.email.toLowerCase()),
     updatedAt: serverTimestamp(),
   });
 };
@@ -649,7 +652,7 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
   const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id);
 
   if (memberIndex === -1) {
-    throw new Error("Team member not found to update.");
+    throw new Error(`Team member with ID ${updatedMemberData.id} not found to update.`);
   }
 
   const oldEmail = currentMembers[memberIndex].email.toLowerCase();
@@ -664,15 +667,69 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
   };
 
   if (oldEmail !== newEmail) {
-    // Need to remove old email and add new email to teamMemberEmails
-    // This is a bit more complex with arrayRemove/Union if the old email might not exist or new email already exists
-    // A safer way is to reconstruct the teamMemberEmails array
     const newTeamMemberEmails = updatedMembersArray.map(m => m.email.toLowerCase());
     updates.teamMemberEmails = newTeamMemberEmails;
   }
 
   await updateDoc(ideaRef, updates);
 };
+
+export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
+  ideaId: string,
+  memberUser: User, // Firebase Auth User
+  memberProfileDataFromForm: { // Data from the simplified profile setup form
+    fullName: string;
+    contactNumber: string;
+    enrollmentNumber?: string;
+    college?: string;
+    instituteName?: string;
+  }
+): Promise<void> => {
+  if (!memberUser.email) {
+    throw new Error("Team member email is missing.");
+  }
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const ideaDoc = await getDoc(ideaRef);
+
+  if (!ideaDoc.exists()) {
+    throw new Error(`Idea with ID ${ideaId} not found.`);
+  }
+
+  const ideaData = ideaDoc.data() as IdeaSubmission;
+  const currentMembers = ideaData.structuredTeamMembers || [];
+  let memberUpdated = false;
+
+  const updatedMembersArray = currentMembers.map(member => {
+    if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
+      memberUpdated = true;
+      return {
+        ...member, // Keep existing fields like original nanoid id if needed, or overwrite
+        id: memberUser.uid, // CRITICAL: Update ID to the member's actual UID
+        name: memberProfileDataFromForm.fullName,
+        phone: memberProfileDataFromForm.contactNumber,
+        // Update other fields if they were part of the team member's profile setup
+        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
+        college: memberProfileDataFromForm.college || member.college || '',
+        institute: memberProfileDataFromForm.instituteName || member.institute || '', // Assuming instituteName from form maps to institute
+        // department might not be asked in team member's profile setup, so keep existing or clear
+      };
+    }
+    return member;
+  });
+
+  if (!memberUpdated) {
+    // This case should ideally not happen if AuthContext correctly identifies the member
+    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} during profile setup update.`);
+    // Optionally, you could add them if not found, but the primary flow assumes they were added by the leader.
+    return;
+  }
+
+  await updateDoc(ideaRef, {
+    structuredTeamMembers: updatedMembersArray,
+    updatedAt: serverTimestamp(),
+  });
+};
+
 
 export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove: string): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
@@ -683,7 +740,7 @@ export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove:
     if (memberToRemove) {
       await updateDoc(ideaRef, {
         structuredTeamMembers: arrayRemove(memberToRemove),
-        teamMemberEmails: arrayRemove(memberToRemove.email.toLowerCase()), // Remove email from flat list
+        teamMemberEmails: arrayRemove(memberToRemove.email.toLowerCase()),
         updatedAt: serverTimestamp(),
       });
     } else {
@@ -697,11 +754,11 @@ export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove:
 export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<IdeaSubmission | null> => {
   if (!userEmail) return null;
   const ideasCol = collection(db, 'ideas');
+  // Ensure email is queried in lowercase as it's stored in lowercase in teamMemberEmails
   const q = query(ideasCol, where('teamMemberEmails', 'array-contains', userEmail.toLowerCase()));
   const querySnapshot = await getDocs(q);
 
   if (!querySnapshot.empty) {
-    // Assuming a user can only be a team member of one idea at a time for this logic
     const ideaDoc = querySnapshot.docs[0];
     const data = ideaDoc.data();
      const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
@@ -784,7 +841,7 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
     phase2Marks: {},
     teamMembers: ideaData.teamMembers || '',
     structuredTeamMembers: ideaData.structuredTeamMembers || [],
-    teamMemberEmails: ideaData.teamMemberEmails || [],
+    teamMemberEmails: ideaData.teamMemberEmails || [], // Initialize properly
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const;
@@ -846,3 +903,4 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   }
   return null;
 };
+

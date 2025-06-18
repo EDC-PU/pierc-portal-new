@@ -22,8 +22,8 @@ import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
-import { getDoc, doc } from 'firebase/firestore'; // Added import for getDoc and doc
-import { db } from '@/lib/firebase/config'; // Added import for db
+import { getDoc, doc } from 'firebase/firestore';
+import { db } from '@/lib/firebase/config';
 import type { ProgramPhase, TeamMember, UserProfile } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
@@ -56,7 +56,7 @@ const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string =>
 };
 
 const teamMemberSchema = z.object({
-  id: z.string().optional(),
+  id: z.string().optional(), // nanoid or UID
   name: z.string().min(1, "Name is required").max(100).optional().or(z.literal('')),
   email: z.string().email("Invalid email address").optional().or(z.literal('')),
   phone: z.string().min(10, "Contact number must be at least 10 digits").max(15).optional().or(z.literal('')),
@@ -64,21 +64,23 @@ const teamMemberSchema = z.object({
   department: z.string().min(1, "Department is required").max(100).optional().or(z.literal('')),
   enrollmentNumber: z.string().max(50).optional().or(z.literal('')),
 }).refine(data => {
+    // If a name is provided, other core fields become required
     if (data.name && data.name.trim() !== '') {
         return !!(data.email && data.email.trim() !== '' &&
                   data.phone && data.phone.trim() !== '' &&
                   data.institute && data.institute.trim() !== '' &&
                   data.department && data.department.trim() !== '');
     }
-    return true;
+    return true; // If no name, it's an empty row, no validation needed here.
 }, {
     message: "If member name is provided, then email, phone, institute, and department are also required.",
-    path: ['name'],
+    // Apply this custom error at a common path or a specific one that makes sense
+    path: ['name'], // Or use a more general path if preferred
 });
 
 
 const teamManagementSchema = z.object({
-  members: z.array(teamMemberSchema).max(4),
+  members: z.array(teamMemberSchema).max(4, "You can add a maximum of 4 team members."),
 });
 type TeamManagementFormData = z.infer<typeof teamManagementSchema>;
 
@@ -101,7 +103,7 @@ export default function StudentDashboard() {
   const { control, handleSubmit, reset: resetTeamManagementForm, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
     resolver: zodResolver(teamManagementSchema),
     defaultValues: {
-      members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }),
+      members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })),
     },
   });
 
@@ -129,15 +131,15 @@ export default function StudentDashboard() {
                 const formMembers = Array(4).fill(null).map((_, i) => {
                     const member = currentMembers[i];
                     return member
-                        ? { ...member, id: member.id || nanoid() }
+                        ? { ...member, id: member.id || nanoid() } // Ensure ID exists, even if temporary
                         : { id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' };
                 });
                 resetTeamManagementForm({ members: formMembers });
             } else {
-                 resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
+                 resetTeamManagementForm({ members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })) });
             }
-        } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
-             resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
+        } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) { // Default to empty form if no idea selected for mgmt yet
+             resetTeamManagementForm({ members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })) });
         }
     } catch (error) {
         console.error("Error fetching user ideas:", error);
@@ -169,7 +171,7 @@ export default function StudentDashboard() {
         });
         resetTeamManagementForm({ members: formMembersData });
     } else if (!isTeamMemberForIdea) { 
-        resetTeamManagementForm({ members: Array(4).fill({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' }) });
+        resetTeamManagementForm({ members: Array(4).fill(null).map(() => ({ id: '', name: '', email: '', phone: '', institute: '', department: '', enrollmentNumber: '' })) });
     }
   }, [selectedIdeaForTeamMgmt, resetTeamManagementForm, isTeamMemberForIdea]);
 
@@ -199,7 +201,7 @@ export default function StudentDashboard() {
     if (!isValid(dateToFormat)) return 'Invalid Date';
     return dateToFormat.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
-
+  
   const formatDateWithTime = (timestamp: Timestamp | Date | undefined | null): string => {
     if (!timestamp) return 'N/A';
     let dateToFormat: Date;
@@ -283,23 +285,18 @@ export default function StudentDashboard() {
     }
 
     const existingMembers = selectedIdeaForTeamMgmt.structuredTeamMembers || [];
-    const validFormMembers = formData.members.filter(member => member.name && member.name.trim() !== '');
-
-    if (validFormMembers.length > 4) {
-        toast({ title: "Limit Exceeded", description: "You can save a maximum of 4 team members.", variant: "destructive" });
-        return;
-    }
-    
     let membersAddedOrUpdatedCount = 0;
 
     try {
         for (const formMember of formData.members) { 
             if (!formMember.name || formMember.name.trim() === '') {
+                // If name is empty, skip this row (treat as empty/not to be saved)
                 continue;
             }
 
+            // All other fields are now required by schema if name is present
             const memberData: TeamMember = {
-                id: formMember.id || nanoid(), 
+                id: formMember.id || nanoid(), // Use existing ID or generate new for add
                 name: formMember.name,
                 email: formMember.email!,
                 phone: formMember.phone!,
@@ -313,20 +310,22 @@ export default function StudentDashboard() {
             if (isExistingMemberInForm) { 
                 await updateTeamMemberInIdea(selectedIdeaForTeamMgmt.id, memberData);
                 membersAddedOrUpdatedCount++;
-            } else { 
+            } else { // This is a new member to add (no existing ID or ID not in current members)
                 const ideaDocRef = doc(db, 'ideas', selectedIdeaForTeamMgmt.id);
                 const ideaDocSnap = await getDoc(ideaDocRef);
-                const currentIdeaMemberCount = (ideaDocSnap.exists() ? (ideaDocSnap.data() as IdeaSubmission).structuredTeamMembers?.length : 0) || 0;
+                const currentIdeaData = ideaDocSnap.exists() ? ideaDocSnap.data() as IdeaSubmission : null;
+                const currentIdeaMemberCount = currentIdeaData?.structuredTeamMembers?.length || 0;
                 
                 if (currentIdeaMemberCount < 4) {
-                   await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
+                   // Pass data without ID for addTeamMemberToIdea, it will assign one
+                   const { id, ...newMemberData } = memberData;
+                   await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, newMemberData);
                    membersAddedOrUpdatedCount++;
                 } else {
                    toast({title: "Team Full", description: `Could not add member ${memberData.name}. Maximum 4 members allowed.`, variant: "default"});
                 }
             }
         }
-
 
         if (membersAddedOrUpdatedCount > 0) {
             toast({ title: "Team Updated", description: "Team member details have been saved." });
@@ -357,7 +356,17 @@ export default function StudentDashboard() {
     setMemberToRemove(null);
   };
 
+  if (loadingIdeas) { // General loading state for initial data fetch
+     return (
+      <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="ml-3 text-muted-foreground">Loading Dashboard...</p>
+      </div>
+    );
+  }
+
   if (isTeamMemberForIdea) {
+    // TEAM MEMBER DASHBOARD VIEW
     return (
       <div className="space-y-6 animate-slide-in-up">
         <Card>
@@ -366,7 +375,7 @@ export default function StudentDashboard() {
               <Briefcase className="mr-3 h-7 w-7 text-primary" /> Team Member Dashboard
             </CardTitle>
             <CardDescription>
-              Welcome, {user?.displayName || 'Team Member'}! You are part of the following project.
+              Welcome, {user?.displayName || userProfile?.fullName || 'Team Member'}! You are part of the following project.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -412,6 +421,20 @@ export default function StudentDashboard() {
                     </CardContent>
                 </Card>
             )}
+             {isTeamMemberForIdea.programPhase === 'PHASE_2' && isTeamMemberForIdea.phase2PptUrl && (
+                <Card className="mt-3 border-primary/30">
+                    <CardHeader className="pb-2 pt-3 px-4">
+                        <CardTitle className="text-sm font-semibold text-primary flex items-center">
+                        <Download className="h-4 w-4 mr-2"/> Phase 2 Presentation (Submitted by Team)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs px-4 pb-3">
+                        <a href={isTeamMemberForIdea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                            {isTeamMemberForIdea.phase2PptFileName || 'View Presentation'}
+                        </a>
+                    </CardContent>
+                </Card>
+            )}
           </CardContent>
         </Card>
 
@@ -446,6 +469,8 @@ export default function StudentDashboard() {
     );
   }
 
+
+  // IDEA OWNER DASHBOARD VIEW
   return (
     <Tabs defaultValue="overview" className="space-y-6">
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
@@ -472,11 +497,11 @@ export default function StudentDashboard() {
             <CardDescription>Track the status and phase of your innovative ideas submitted to PIERC.</CardDescription>
           </CardHeader>
           <CardContent>
-            {loadingIdeas && !isUploadingPpt ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                <p className="ml-2 text-muted-foreground">Loading your submissions...</p>
-              </div>
+            {isUploadingPpt ? ( // Show a specific loader for PPT uploads
+                 <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="ml-2 text-muted-foreground">Uploading presentation...</p>
+                </div>
             ) : userIdeas.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
             ) : (
@@ -662,9 +687,7 @@ export default function StudentDashboard() {
             <CardDescription>Select an idea to add, edit, or view its team members. You can add up to 4 members.</CardDescription>
           </CardHeader>
           <CardContent>
-             {loadingIdeas ? (
-              <div className="flex items-center justify-center py-4"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Loading ideas...</div>
-            ) : userIdeas.length === 0 ? (
+            {userIdeas.length === 0 ? (
               <p className="text-muted-foreground">You have no submitted ideas to manage teams for.</p>
             ) : (
               <div className="space-y-2 mb-6">
@@ -714,7 +737,7 @@ export default function StudentDashboard() {
                         </TableHeader>
                         <TableBody>
                             {fields.map((item, index) => (
-                                <TableRow key={item.id}> {/* item.id is from useFieldArray */}
+                                <TableRow key={item.id}>
                                     <TableCell className="p-1 font-medium text-muted-foreground">Member {index + 1}</TableCell>
                                     <TableCell className="p-1">
                                         <Controller
@@ -723,6 +746,7 @@ export default function StudentDashboard() {
                                             render={({ field }) => <Input {...field} className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.name && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.name?.message}</p>}
+                                        {teamManagementErrors.members?.[index]?.root && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.root?.message}</p>}
                                     </TableCell>
                                     <TableCell className="p-1">
                                         <Controller
@@ -821,5 +845,4 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
-
     

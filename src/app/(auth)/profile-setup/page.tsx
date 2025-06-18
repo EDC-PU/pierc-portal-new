@@ -12,7 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import type { Role, ApplicantCategory, CurrentStage } from '@/types';
+import type { Role, ApplicantCategory, CurrentStage, TeamMember } from '@/types';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -43,7 +43,6 @@ const currentStages: { value: CurrentStage; label: string }[] = [
   { value: 'STARTUP_STAGE', label: 'Startup Stage' },
 ];
 
-// Schema for users who are NOT team members (i.e., idea owners)
 const ideaOwnerProfileSchemaBase = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
   contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long'),
@@ -63,14 +62,13 @@ const ideaOwnerProfileSchemaBase = z.object({
   instituteName: z.string().optional(),
 });
 
-// Schema for users who ARE team members (simplified)
 const teamMemberProfileSchema = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
   contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long'),
-  enrollmentNumber: z.string().optional(), // Keep these for team member context if student
+  enrollmentNumber: z.string().optional(),
   college: z.string().optional(),
   instituteName: z.string().optional(),
-  // No idea-specific fields
+  // No idea-specific or applicantCategory fields for team members during their own profile setup
 });
 
 
@@ -88,8 +86,6 @@ const parulUserSchema = ideaOwnerProfileSchemaBase.extend({
     if (!data.college || data.college.trim() === '') {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'College name is required for Parul staff/alumni.', path: ['college'] });
     }
-  } else if (data.applicantCategory === 'OTHERS') {
-    // This case should not be reachable if role is STUDENT and category is OTHERS
   }
 });
 
@@ -123,7 +119,7 @@ type ProfileFormData = z.infer<typeof parulUserSchema> | z.infer<typeof otherUse
 
 
 export default function ProfileSetupPage() {
-  const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete, deleteCurrentUserAccount, isTeamMemberForIdea, teamLeaderProfileForMember } = useAuth();
+  const { user, userProfile, setRoleAndCompleteProfile, loading, signOut, initialLoadComplete, deleteCurrentUserAccount, isTeamMemberForIdea } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [isAutoSubmittingAdmin, setIsAutoSubmittingAdmin] = useState(false);
@@ -151,30 +147,26 @@ export default function ProfileSetupPage() {
     defaultValues: {
       fullName: '',
       contactNumber: '',
-      // Idea owner fields
-      applicantCategory: undefined,
-      teamMembers: '',
-      startupTitle: '',
-      problemDefinition: '',
-      solutionDescription: '',
-      uniqueness: '',
-      currentStage: undefined,
-      // Common optional fields
+      applicantCategory: undefined, // Only for idea owners
+      teamMembers: '', // Only for idea owners
+      startupTitle: '', // Only for idea owners
+      problemDefinition: '', // Only for idea owners
+      solutionDescription: '', // Only for idea owners
+      uniqueness: '', // Only for idea owners
+      currentStage: undefined, // Only for idea owners
       enrollmentNumber: '',
       college: '',
       instituteName: '',
-      // Role will be set in useEffect
     },
   });
 
-  const selectedApplicantCategory = watch('applicantCategory');
+  const selectedApplicantCategory = watch('applicantCategory'); // Only relevant for idea owners
 
   useEffect(() => {
-    // Populate form with existing userProfile data if available
-    if (userProfile) {
+    if (userProfile) { // Existing profile (editing)
       reset({
         fullName: userProfile.fullName || user?.displayName || '',
-        role: userProfile.role || determinedRole,
+        // role: userProfile.role || determinedRole, // Role is set via determinedRole
         contactNumber: userProfile.contactNumber || '',
         applicantCategory: userProfile.applicantCategory || undefined,
         teamMembers: userProfile.teamMembers || '',
@@ -187,14 +179,27 @@ export default function ProfileSetupPage() {
         college: userProfile.college || '',
         instituteName: userProfile.instituteName || '',
       });
-    } else if (user) { // New user or user without a profile yet
+    } else if (user) { // New user or team member first setup
+      let prefillData: Partial<ProfileFormData> = { fullName: user.displayName || '' };
+      if (isTeamMemberForIdea && isTeamMemberForIdea.structuredTeamMembers && user.email) {
+          const memberDataFromIdea = isTeamMemberForIdea.structuredTeamMembers.find(
+              (m: TeamMember) => m.email.toLowerCase() === user.email!.toLowerCase()
+          );
+          if (memberDataFromIdea) {
+              prefillData.fullName = memberDataFromIdea.name || user.displayName || '';
+              prefillData.contactNumber = memberDataFromIdea.phone || '';
+              prefillData.enrollmentNumber = memberDataFromIdea.enrollmentNumber || '';
+              prefillData.college = memberDataFromIdea.college || ''; // Assuming TeamMember has college
+              prefillData.instituteName = memberDataFromIdea.institute || ''; // Assuming TeamMember has institute
+          }
+      }
       reset({
         ...control._formValues, // Keep any already typed values
-        fullName: user.displayName || '',
-        role: determinedRole, // Set the auto-determined role
+        ...prefillData,
+        // role: determinedRole, // Role is set via determinedRole
       });
     }
-  }, [userProfile, user, determinedRole, reset, control]);
+  }, [userProfile, user, determinedRole, reset, control, isTeamMemberForIdea]);
 
 
   useEffect(() => {
@@ -209,17 +214,16 @@ export default function ProfileSetupPage() {
         setIsAutoSubmittingAdmin(true);
         toast({ title: "Setting up Admin Account", description: "Please wait..." });
         const adminDefaults = {
-          // role is implicitly set by setRoleAndCompleteProfile
           fullName: user?.displayName || 'Admin User',
           contactNumber: '0000000000',
-          applicantCategory: 'OTHERS' as ApplicantCategory,
+          applicantCategory: 'OTHERS' as ApplicantCategory, // Must be part of the payload
           instituteName: 'PIERC Administration',
           teamMembers: 'N/A',
           startupTitle: 'Administrative Account',
           problemDefinition: 'Administrative account, not applicable.',
           solutionDescription: 'Administrative account, not applicable.',
           uniqueness: 'Administrative account, not applicable.',
-          currentStage: 'IDEA' as CurrentStage,
+          currentStage: 'IDEA' as CurrentStage, // Must be part of the payload
         };
         try {
           await setRoleAndCompleteProfile('ADMIN_FACULTY', adminDefaults);
@@ -237,12 +241,13 @@ export default function ProfileSetupPage() {
       if (!control._formValues.fullName && user.displayName) {
          setValue('fullName', user.displayName);
       }
-      setValue('role' as any, determinedRole); // Cast to any if schema changes, 'role' might not exist on teamMemberProfileSchema
+      // Role is implicitly handled by AuthContext, not directly set in form
     }
   }, [user, control, determinedRole, setValue]);
 
   useEffect(() => {
-    if (selectedApplicantCategory && !isTeamMemberForIdea) { // Only trigger for idea owners
+    // Only trigger validation for idea owners based on applicant category
+    if (selectedApplicantCategory && !isTeamMemberForIdea) {
         trigger(['enrollmentNumber', 'college', 'instituteName']);
     }
   }, [selectedApplicantCategory, trigger, isTeamMemberForIdea]);
@@ -253,8 +258,8 @@ export default function ProfileSetupPage() {
       return;
     }
     try {
-      // Pass the determinedRole, as 'role' might not be in 'data' for team members
-      await setRoleAndCompleteProfile(determinedRole, data);
+      // Pass determinedRole, as 'role' might not be in 'data' if schema doesn't include it (e.g. teamMemberProfileSchema)
+      await setRoleAndCompleteProfile(determinedRole, data); 
     } catch (error) {
       // Errors are handled by toast in AuthContext method
     }
@@ -285,6 +290,7 @@ export default function ProfileSetupPage() {
     }
     try {
       await deleteCurrentUserAccount();
+      // Redirection or UI update handled by AuthContext after successful deletion
     } catch (error) {
       // Errors are handled by toast in AuthContext method
     }
@@ -313,7 +319,7 @@ export default function ProfileSetupPage() {
     );
   }
 
-  if (determinedRole === 'ADMIN_FACULTY' && !isTeamMemberForIdea) { // Admin who is NOT also a team member
+  if (determinedRole === 'ADMIN_FACULTY' && !isTeamMemberForIdea) {
      if (!userProfile && !isAutoSubmittingAdmin) {
         return (
              <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
@@ -352,7 +358,7 @@ export default function ProfileSetupPage() {
             {isTeamMemberForIdea ? 'Complete Your Team Member Profile' : (userProfile ? 'Edit Your PIERC Portal Profile' : 'Complete Your PIERC Portal Profile')}
           </CardTitle>
           <CardDescription>
-            {isTeamMemberForIdea ? `Welcome, ${user?.displayName || 'User'}! You've been added as a team member for "${isTeamMemberForIdea.title}". Please provide these basic details.` : (userProfile ? 'Update your details as needed.' : `Welcome, ${user?.displayName || 'User'}! Please provide these details to get started.`)}
+            {isTeamMemberForIdea ? `Welcome, ${user?.displayName || 'User'}! You've been added as a team member for "${isTeamMemberForIdea.title}". Please provide/confirm your details.` : (userProfile ? 'Update your details as needed.' : `Welcome, ${user?.displayName || 'User'}! Please provide these details to get started.`)}
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
@@ -360,8 +366,7 @@ export default function ProfileSetupPage() {
             <div>
               <Label>Your Role (auto-assigned)</Label>
               <Input value={getRoleDisplayString(determinedRole)} readOnly className="bg-muted/50"/>
-              <Controller name={"role" as any} control={control} render={({ field }) => <input type="hidden" {...field} value={determinedRole} />} />
-              {errors.role && <p className="text-sm text-destructive mt-1">{(errors.role as any).message}</p>}
+              {/* Role is not a form field, it's determined by AuthContext */}
             </div>
 
             <div>
@@ -375,7 +380,51 @@ export default function ProfileSetupPage() {
               {errors.contactNumber && <p className="text-sm text-destructive mt-1">{errors.contactNumber.message}</p>}
             </div>
 
-            {/* Conditional fields for Idea Owners / Standard Users */}
+            {/* Fields for Team Members / or Idea Owners if they are also Parul Users */}
+            {(isTeamMemberForIdea || !isTeamMemberForIdea && determinedRole === 'STUDENT') && (
+              <>
+                {isParulEmail && (
+                  <>
+                    <div>
+                      <Label htmlFor="enrollmentNumber">{isTeamMemberForIdea ? 'Enrollment Number (Optional)' : 'Enrollment Number *'}</Label>
+                      <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Your Parul Enrollment Number" {...field} value={field.value || ''} />} />
+                      {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="college">{isTeamMemberForIdea ? 'College/Faculty (Optional)' : 'College/Faculty at Parul University *'}</Label>
+                      <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
+                      {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {/* Field for Team Members (External) or Idea Owners (External/Staff/Alumni) */}
+             {((isTeamMemberForIdea && !isParulEmail) || 
+               (!isTeamMemberForIdea && (determinedRole === 'EXTERNAL_USER' || selectedApplicantCategory === 'OTHERS' || selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI'))) && (
+                <>
+                  {(!isTeamMemberForIdea && (selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI')) && (
+                    <div>
+                      <Label htmlFor="college">College/Department/Last Affiliated College at PU *</Label>
+                       <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Dept of CS / PIET" {...field} value={field.value || ''} />} />
+                       {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                    </div>
+                  )}
+                  {((isTeamMemberForIdea && !isParulEmail) || (!isTeamMemberForIdea && (selectedApplicantCategory === 'OTHERS' || determinedRole === 'EXTERNAL_USER'))) && (
+                     <div>
+                        <Label htmlFor="instituteName">
+                            {isTeamMemberForIdea ? 'Name of Your Institute/Organization (Optional)' : 'Name of Institute/Organization *'}
+                        </Label>
+                        <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute/organization name" {...field} value={field.value || ''} />} />
+                        {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
+                    </div>
+                  )}
+                </>
+            )}
+
+
+            {/* Conditional fields ONLY for Idea Owners (not team members) */}
             {!isTeamMemberForIdea && (
               <>
                 <div>
@@ -395,32 +444,20 @@ export default function ProfileSetupPage() {
                   {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{errors.applicantCategory.message}</p>}
                 </div>
 
-                {selectedApplicantCategory === 'PARUL_STUDENT' && (
+                {/* Specific fields for applicant categories (only shown to idea owners) */}
+                {selectedApplicantCategory === 'PARUL_STUDENT' && determinedRole === 'STUDENT' && (
                   <>
-                    <div>
-                      <Label htmlFor="enrollmentNumber">Enrollment Number *</Label>
-                      <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Your Parul Enrollment Number" {...field} value={field.value || ''} />} />
-                      {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
-                    </div>
-                    <div>
-                      <Label htmlFor="college">College/Faculty at Parul University *</Label>
-                      <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
-                      {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
-                    </div>
+                    {/* Enrollment and College already rendered above for STUDENT role */}
                   </>
                 )}
                 {(selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI') && (
                     <div>
-                      <Label htmlFor="college">College/Department/Last Affiliated College at Parul University *</Label>
-                      <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Department of Computer Science / PIET" {...field} value={field.value || ''} />} />
-                      {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                      {/* College/Dept already rendered above */}
                     </div>
                 )}
                 {selectedApplicantCategory === 'OTHERS' && (
                   <div>
-                    <Label htmlFor="instituteName">Name of Institute/Organization *</Label>
-                    <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute/organization name" {...field} value={field.value || ''} />} />
-                    {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
+                     {/* Institute Name already rendered above */}
                   </div>
                 )}
 
@@ -430,7 +467,7 @@ export default function ProfileSetupPage() {
                   {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="teamMembers">Team Members (Names, comma-separated)</Label>
+                  <Label htmlFor="teamMembers">Team Members (Names, comma-separated, if any)</Label>
                   <Controller name="teamMembers" control={control} render={({ field }) => <Input id="teamMembers" placeholder="e.g., John Doe, Jane Smith (leave empty if none)" {...field} value={field.value || ''}/>} />
                   {errors.teamMembers && <p className="text-sm text-destructive mt-1">{errors.teamMembers.message}</p>}
                 </div>
@@ -466,29 +503,6 @@ export default function ProfileSetupPage() {
                   {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
                 </div>
               </>
-            )}
-
-            {/* Fields also relevant for team members for context if they are Parul students/staff */}
-             {(isTeamMemberForIdea && (determinedRole === 'STUDENT' || isParulEmail)) && (
-                 <>
-                    <div>
-                        <Label htmlFor="enrollmentNumber">Enrollment Number (Optional)</Label>
-                        <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Your Parul Enrollment Number" {...field} value={field.value || ''} />} />
-                        {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
-                    </div>
-                    <div>
-                        <Label htmlFor="college">College/Faculty at Parul University (Optional)</Label>
-                        <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
-                        {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
-                    </div>
-                 </>
-             )}
-            {(isTeamMemberForIdea && determinedRole === 'EXTERNAL_USER' && !isParulEmail) && (
-                <div>
-                    <Label htmlFor="instituteName">Name of Your Institute/Organization (Optional)</Label>
-                    <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute/organization name" {...field} value={field.value || ''} />} />
-                    {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
-                </div>
             )}
 
           </CardContent>
