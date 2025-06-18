@@ -130,9 +130,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       </Sidebar>
       
       {/* Main content area for the dashboard pages */}
-      <div className="flex-1 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] group-data-[state=expanded]/sidebar-wrapper:md:ml-[var(--sidebar-width)]">
+      <div className="flex-1 w-0 transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] group-data-[state=expanded]/sidebar-wrapper:md:ml-[var(--sidebar-width)]">
          {/* The container and padding for dashboard pages go here now */}
-        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 h-full"> {/* Added h-full here for children to potentially flex-grow */}
            {children}
         </div>
       </div>

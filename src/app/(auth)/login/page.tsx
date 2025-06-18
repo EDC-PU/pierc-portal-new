@@ -81,7 +81,7 @@ export default function LoginPage() {
   // This spinner is for the very first time the AuthContext is initializing.
   if (!initialLoadComplete) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] p-4 text-center">
         <LoadingSpinner size={48} />
       </div>
     );
@@ -92,7 +92,7 @@ export default function LoginPage() {
   if (user && userProfile) {
     // The useEffect above will handle the router.push. Show "Redirecting to dashboard..."
      return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] p-4 text-center">
         <div className="flex flex-col sm:flex-row items-center gap-3">
             <p className="text-lg text-muted-foreground">Redirecting to dashboard...</p>
             <LoadingSpinner size={32} />
@@ -105,7 +105,7 @@ export default function LoginPage() {
   // AuthContext will redirect them to /profile-setup. Show a generic message.
   if (user && !userProfile) {
     return (
-      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+      <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] p-4 text-center">
         <div className="flex flex-col sm:flex-row items-center gap-3">
             <p className="text-lg text-muted-foreground">Checking profile status...</p>
             <LoadingSpinner size={32} />
@@ -117,7 +117,7 @@ export default function LoginPage() {
   // 4. Initial load is complete and no user is authenticated: Show the login form.
   // The `loading` prop on the submit button handles the spinner during the sign-in API call itself.
   return (
-    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] bg-gradient-to-br from-background to-secondary/30 animate-fade-in">
+    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))] bg-gradient-to-br from-background to-secondary/30 animate-fade-in">
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-headline">

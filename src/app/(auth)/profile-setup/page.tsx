@@ -300,7 +300,7 @@ export default function ProfileSetupPage() {
 
   if (!initialLoadComplete || (loading && !isAutoSubmittingAdmin && !userProfile) || (isAutoSubmittingAdmin && !userProfile)) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+      <div className="flex flex-col items-center justify-center flex-grow p-4 text-center"> {/* Use flex-grow */}
         <LoadingSpinner size={48} />
         {isAutoSubmittingAdmin && <p className="mt-4 text-lg text-muted-foreground">Setting up Administrator account...</p>}
          {!isAutoSubmittingAdmin && loading && <p className="mt-4 text-lg text-muted-foreground">Loading profile...</p>}
@@ -310,7 +310,7 @@ export default function ProfileSetupPage() {
 
   if (!user && initialLoadComplete) {
     return (
-        <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+        <div className="flex items-center justify-center flex-grow p-4 text-center"> {/* Use flex-grow */}
             <div className="flex flex-col sm:flex-row items-center gap-3">
                 <p className="text-lg text-muted-foreground">Redirecting to login...</p>
                 <LoadingSpinner size={32}/>
@@ -322,7 +322,7 @@ export default function ProfileSetupPage() {
   if (determinedRole === 'ADMIN_FACULTY' && !isTeamMemberForIdea) {
      if (!userProfile && !isAutoSubmittingAdmin) {
         return (
-             <div className="flex flex-col items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+             <div className="flex flex-col items-center justify-center flex-grow p-4 text-center"> {/* Use flex-grow */}
                 <p className="text-destructive mb-4 text-xl">Administrator account setup encountered an issue.</p>
                 <p className="text-muted-foreground mb-4">Please ensure your Firestore permissions are correctly set.</p>
                 <Button onClick={() => window.location.reload()}>Try Again</Button>
@@ -332,7 +332,7 @@ export default function ProfileSetupPage() {
      }
      if (userProfile || isAutoSubmittingAdmin) {
         return (
-            <div className="flex items-center justify-center min-h-[calc(100vh_-_theme(spacing.20))] p-4 text-center">
+            <div className="flex items-center justify-center flex-grow p-4 text-center"> {/* Use flex-grow */}
                 <div className="flex flex-col sm:flex-row items-center gap-3">
                     <p className="text-lg text-muted-foreground">Redirecting to dashboard or completing setup...</p>
                     <LoadingSpinner size={32} />
@@ -351,7 +351,7 @@ export default function ProfileSetupPage() {
   };
 
   return (
-    <div className="flex items-center justify-center py-12 min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.24))] animate-fade-in">
+    <div className="flex flex-col items-center justify-center flex-grow w-full p-4 md:p-6 lg:p-8 animate-fade-in"> {/* Use flex-grow and standard padding */}
       <Card className="w-full max-w-2xl shadow-2xl">
         <CardHeader>
           <CardTitle className="text-3xl font-headline">
@@ -362,7 +362,7 @@ export default function ProfileSetupPage() {
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit(onSubmit)}>
-          <CardContent className="space-y-6 max-h-[70vh] overflow-y-auto pr-2">
+          <CardContent className="space-y-6 max-h-[calc(100vh_-_20rem)] md:max-h-[calc(100vh_-_22rem)] lg:max-h-[70vh] overflow-y-auto pr-2 sm:pr-4"> {/* Adjusted max-h and pr for scrollbar */}
             <div>
               <Label>Your Role (auto-assigned)</Label>
               <Input value={getRoleDisplayString(determinedRole)} readOnly className="bg-muted/50"/>
