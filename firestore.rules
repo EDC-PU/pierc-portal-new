@@ -9,11 +9,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Helper function to get user data (memoized by Firestore)
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
-    }
-
     // Helper function to check if the currently authenticated user is the owner of the resource
     function isUser(userId) {
       return isAuthenticated() && request.auth.uid == userId;
@@ -21,180 +16,178 @@ service cloud.firestore {
 
     // Helper function to check if the user has an 'ADMIN_FACULTY' role
     function isAdmin() {
-      return isAuthenticated() && getUserData(request.auth.uid).role == 'ADMIN_FACULTY';
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
     }
 
     // Helper function to check if the user is a Super Admin
     function isSuperAdmin() {
-      return isAuthenticated() && getUserData(request.auth.uid).isSuperAdmin == true;
-    }
-    
-    function isPrimarySuperAdminEmail(email) {
-      return email == 'pranavrathi07@gmail.com';
+      // Ensure isAdmin() is true before checking isSuperAdmin to avoid errors if role is not ADMIN_FACULTY
+      return isAdmin() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
     }
 
-    // Validates if the data being written for a user profile is acceptable during creation.
-    function isCreatingOwnValidProfile(userId, data) {
-      let isAttemptingPrivilegeEscalation = data.isSuperAdmin == true || data.role == 'ADMIN_FACULTY';
-      let isAllowedToSetPrivilegedRole = isPrimarySuperAdminEmail(request.auth.token.email);
-      
-      // Common conditions
-      let commonConditions = request.auth.uid == userId &&
-                             data.uid == userId &&
-                             data.email == request.auth.token.email &&
-                             data.fullName != null && data.fullName.size() > 0 &&
-                             data.contactNumber != null && data.contactNumber.size() >= 10;
+    // Helper function to validate profile data upon creation
+    function isCreatingOwnValidProfile(userId, data, requestAuth) {
+      // Basic auth check: UID and email in data must match auth context
+      let authValid = data.uid == userId && data.email == requestAuth.token.email;
+      if (!authValid) { return false; }
 
-      // Role and superAdmin checks
-      let roleCheck = (data.role == 'ADMIN_FACULTY' || data.isSuperAdmin == true) ? isAllowedToSetPrivilegedRole : true;
+      // Role and SuperAdmin assignment check
+      let isPrimaryAdminCreator = requestAuth.token.email == 'pranavrathi07@gmail.com';
+      if (data.role == 'ADMIN_FACULTY' && !isPrimaryAdminCreator) { return false; } // Cannot self-assign ADMIN_FACULTY unless primary admin
+      if (data.isSuperAdmin == true && !isPrimaryAdminCreator) { return false; }   // Cannot self-assign isSuperAdmin unless primary admin
+      // If primary admin is creating their own profile, role MUST be ADMIN_FACULTY and isSuperAdmin MUST be true
+      if (isPrimaryAdminCreator && (data.role != 'ADMIN_FACULTY' || data.isSuperAdmin != true)) { return false; }
 
-      // Idea owner specific field checks (must be present if not team member only)
-      let ideaOwnerFieldsValid = (
-        data.applicantCategory != null &&
-        data.currentStage != null &&
-        data.startupTitle != null && data.startupTitle.size() > 0 &&
-        data.problemDefinition != null && data.problemDefinition.size() > 0 &&
-        data.solutionDescription != null && data.solutionDescription.size() > 0 &&
-        data.uniqueness != null && data.uniqueness.size() > 0
-      );
-      
-      // Team member specific field checks (must be present if team member only)
-      let teamMemberFieldsValid = (
-        data.associatedIdeaId != null &&
-        data.associatedTeamLeaderUid != null
-      );
+      // Required common fields
+      if (!(data.fullName is string && data.fullName.size() > 0 &&
+            data.contactNumber is string && data.contactNumber.size() > 0)) {
+        return false;
+      }
 
-      // Ensure no cross-contamination of fields for specific roles
-      let noIdeaFieldsIfTeamMember = (
-        data.applicantCategory == null &&
-        data.currentStage == null &&
-        (data.startupTitle == null || data.startupTitle == "") && // allow empty string for initial nulls
-        (data.problemDefinition == null || data.problemDefinition == "") &&
-        (data.solutionDescription == null || data.solutionDescription == "") &&
-        (data.uniqueness == null || data.uniqueness == "")
-      );
+      // Field consistency based on isTeamMemberOnly
+      if (data.isTeamMemberOnly == true) {
+        // Team member MUST have association fields and MUST NOT have idea owner fields (or they must be null)
+        return data.associatedIdeaId is string && data.associatedIdeaId.size() > 0 &&
+               data.associatedTeamLeaderUid is string && data.associatedTeamLeaderUid.size() > 0 &&
+               data.startupTitle == null &&
+               data.problemDefinition == null &&
+               data.solutionDescription == null &&
+               data.uniqueness == null &&
+               data.applicantCategory == null &&
+               data.currentStage == null &&
+               data.teamMembers == null; // teamMembers (text field) is for idea owners
+      } else { // isTeamMemberOnly is false or not present (implies idea owner or admin)
+        // Idea owner MUST have idea fields and MUST NOT have team association fields (or they must be null)
+        let ideaFieldsValid = (data.startupTitle is string && data.startupTitle.size() > 0 && data.startupTitle != 'Administrative Account' &&
+                               data.problemDefinition is string && data.problemDefinition.size() > 0 &&
+                               data.solutionDescription is string && data.solutionDescription.size() > 0 &&
+                               data.uniqueness is string && data.uniqueness.size() > 0 &&
+                               data.applicantCategory is string && data.applicantCategory.size() > 0 && // Assuming these are string enums
+                               data.currentStage is string && data.currentStage.size() > 0);
 
-      let noTeamAssocFieldsIfOwner = (
-        data.associatedIdeaId == null &&
-        data.associatedTeamLeaderUid == null
-      );
+        // Special case for the primary admin creating their 'Administrative Account' profile
+        let primaryAdminSpecialProfileValid = (isPrimaryAdminCreator &&
+                                               data.startupTitle == 'Administrative Account' &&
+                                               data.applicantCategory == 'OTHERS' && // Must be string
+                                               data.currentStage == 'IDEA');       // Must be string
 
-      return commonConditions && roleCheck &&
-             (
-               (data.isTeamMemberOnly == true && teamMemberFieldsValid && noIdeaFieldsIfTeamMember) ||
-               ((data.isTeamMemberOnly == false || !('isTeamMemberOnly' in data)) && ideaOwnerFieldsValid && noTeamAssocFieldsIfOwner) ||
-               (isPrimarySuperAdminEmail(request.auth.token.email) && (data.role == 'ADMIN_FACULTY' && data.isSuperAdmin == true)) // Special case for primary admin setup
-             );
+        return (ideaFieldsValid || primaryAdminSpecialProfileValid) &&
+               data.associatedIdeaId == null &&
+               data.associatedTeamLeaderUid == null;
+      }
     }
-
-    // Validates if a user is updating their own profile with allowed fields.
-    function isUpdatingOwnAllowedProfileFields(newData, oldData) {
-      // Fields a user CANNOT change about themselves directly after creation
-      let forbiddenToChange = ['uid', 'email', 'role', 'isSuperAdmin', 'createdAt', 
-                               'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid'];
-      let changedKeys = newData.diff(oldData).affectedKeys();
-      
-      return request.auth.uid == newData.uid && // Must be their own profile
-             !changedKeys.hasAny(forbiddenToChange); // Must not change forbidden fields
-    }
-    
-    // Validates if an idea owner is updating their idea with allowed fields.
-    function isIdeaOwnerUpdatingAllowedIdeaFields(newData, oldData) {
-        // Fields an idea owner CANNOT change directly
-        let forbiddenToChange = [
-            'userId', 'status', 'programPhase', 'phase2Marks', 'rejectionRemarks', 
-            'rejectedByUid', 'rejectedAt', 'nextPhaseDate', 'nextPhaseStartTime', 
-            'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines', 'mentor', 
-            'submittedAt', 'cohortId' // cohortId for future
-        ];
-        let changedKeys = newData.diff(oldData).affectedKeys();
-
-        return request.auth.uid == oldData.userId && // Must be the idea owner
-               !changedKeys.hasAny(forbiddenToChange);
-    }
-
 
     // User Profiles
     match /users/{userId} {
       allow read: if isAuthenticated();
 
-      allow create: if isCreatingOwnValidProfile(userId, request.resource.data);
+      allow create: if isUser(userId) &&
+                      isCreatingOwnValidProfile(userId, request.resource.data, request.auth);
 
-      allow update: if (
-                      // Admin can update, with protection for primary super admin
-                      (isAdmin() && 
-                        (resource.data.email != "pranavrathi07@gmail.com" || 
-                          (request.resource.data.role == 'ADMIN_FACULTY' && request.resource.data.isSuperAdmin == true)
-                        ) &&
-                        // Admin cannot change creation timestamp or user's email/uid
-                        request.resource.data.uid == resource.data.uid &&
-                        request.resource.data.email == resource.data.email &&
-                        request.resource.data.createdAt.toMillis() == resource.data.createdAt.toMillis()
-                      ) ||
-                      // User can update their own allowed fields
-                      (isUser(userId) && isUpdatingOwnAllowedProfileFields(request.resource.data, resource.data))
-                    );
-      
-      allow delete: if isAdmin() && resource.data.email != "pranavrathi07@gmail.com";
+      allow update: if (isAdmin() &&
+                        // Admin cannot change primary super admin's role from ADMIN_FACULTY or demote from isSuperAdmin.
+                        (resource.data.email != "pranavrathi07@gmail.com" ||
+                         (request.resource.data.role == 'ADMIN_FACULTY' && request.resource.data.isSuperAdmin == true))
+                       ) ||
+                     (isUser(userId) &&
+                       // User cannot change their own uid, email, role, isSuperAdmin status, createdAt, or team association fields directly.
+                       // These are managed by specific processes or admins.
+                       request.resource.data.uid == resource.data.uid &&
+                       request.resource.data.email == resource.data.email &&
+                       request.resource.data.role == resource.data.role &&
+                       request.resource.data.isSuperAdmin == resource.data.isSuperAdmin &&
+                       request.resource.data.createdAt == resource.data.createdAt &&
+                       request.resource.data.isTeamMemberOnly == resource.data.isTeamMemberOnly &&
+                       request.resource.data.associatedIdeaId == resource.data.associatedIdeaId &&
+                       request.resource.data.associatedTeamLeaderUid == resource.data.associatedTeamLeaderUid &&
+                       // Ensure only allowed fields are being modified by user self-update
+                       request.writeFields.hasOnly([
+                         'fullName', 'contactNumber', 'photoURL', 'displayName', // Common editable fields
+                         'enrollmentNumber', 'college', 'instituteName', // Optional common
+                         'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', // Idea owner fields
+                         'applicantCategory', 'currentStage', 'teamMembers', // Idea owner fields
+                         'updatedAt' // Always allow updating this
+                       ])
+                     );
+
+      allow delete: if isSuperAdmin() && resource.data.email != "pranavrathi07@gmail.com"; // Only SuperAdmins can delete users, not primary
     }
 
     // Idea Submissions
     match /ideas/{ideaId} {
       allow read: if isAuthenticated() &&
-                     (isUser(resource.data.userId) ||
-                      (resource.data.teamMemberEmails != null && request.auth.token.email in resource.data.teamMemberEmails) ||
-                      isAdmin());
+                     (isUser(resource.data.userId) || // Owner
+                      (resource.data.teamMemberEmails is list && request.auth.token.email in resource.data.teamMemberEmails) || // Team Member
+                      isAdmin() // Admin
+                     );
 
-      // User must be authenticated and be the owner specified in the idea data.
-      // Basic data validation (e.g. required fields for an idea).
-      allow create: if isAuthenticated() && 
-                      isUser(request.resource.data.userId) &&
-                      request.resource.data.title != null && request.resource.data.title.size() > 0 &&
-                      request.resource.data.status == 'SUBMITTED'; // Initial status
+      allow create: if isAuthenticated() && isUser(request.resource.data.userId) &&
+                       request.resource.data.status == 'SUBMITTED' && // Must be SUBMITTED on create
+                       request.resource.data.programPhase == null; // Must be null on create
 
-      allow update: if isAuthenticated() && (
-                      isAdmin() || // Admins can update
-                      (isUser(resource.data.userId) && isIdeaOwnerUpdatingAllowedIdeaFields(request.resource.data, resource.data)) || // Idea owner restricted update
-                      ( // Team member updating their own details in structuredTeamMembers
-                        resource.data.teamMemberEmails != null && request.auth.token.email in resource.data.teamMemberEmails &&
-                        request.writeFields.hasOnly(['structuredTeamMembers', 'updatedAt']) && // MUST only be these top-level fields
-                        request.resource.data.structuredTeamMembers.size() == resource.data.structuredTeamMembers.size() && // Array size cannot change
-                        // Ensure the change to structuredTeamMembers is valid:
-                        // 1. Only one member object is different between old and new array.
-                        // 2. That different member object in the new array has an email matching request.auth.token.email.
-                        // 3. That different member object in the new array has an id matching request.auth.uid.
-                        // (This is a simplified check; complex array diffs are hard in rules. Client must be robust.)
-                        (
-                            // This logic is complex to express perfectly. We trust the client to form the correct
-                            // structuredTeamMembers array and here we mostly ensure no other fields are touched
-                            // and the array size remains the same.
-                            // The client ensures only the member's own data is changed and their ID is set to their UID.
-                            true 
-                        )
-                      )
-                    );
+      allow update: if isAuthenticated() &&
+                     ( isAdmin() || // Admins can update any field
+                       (isUser(resource.data.userId) && // Owner updating their idea
+                        // Owner cannot change ownership or admin-controlled status/phase/marks/details directly
+                        request.resource.data.userId == resource.data.userId &&
+                        request.resource.data.status == resource.data.status &&
+                        request.resource.data.programPhase == resource.data.programPhase &&
+                        request.resource.data.phase2Marks == resource.data.phase2Marks &&
+                        request.resource.data.mentor == resource.data.mentor &&
+                        request.resource.data.rejectionRemarks == resource.data.rejectionRemarks &&
+                        request.resource.data.rejectedByUid == resource.data.rejectedByUid &&
+                        request.resource.data.rejectedAt == resource.data.rejectedAt &&
+                        request.resource.data.nextPhaseDate == resource.data.nextPhaseDate &&
+                        request.resource.data.nextPhaseStartTime == resource.data.nextPhaseStartTime &&
+                        request.resource.data.nextPhaseEndTime == resource.data.nextPhaseEndTime &&
+                        request.resource.data.nextPhaseVenue == resource.data.nextPhaseVenue &&
+                        request.resource.data.nextPhaseGuidelines == resource.data.nextPhaseGuidelines &&
+                        // Owner can update other fields (title, problem, solution, teamMembers array etc.)
+                        request.writeFields.hasAny([ // Check some common fields owner might update
+                            'title', 'category', 'problem', 'solution', 'uniqueness',
+                            'developmentStage', 'applicantType', 'teamMembers',
+                            'structuredTeamMembers', 'teamMemberEmails',
+                            'fileURL', 'fileName', 'studioLocation',
+                            'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
+                            'updatedAt'
+                        ])
+                       ) ||
+                       ( // Team Member updating their details within structuredTeamMembers
+                         resource.data.teamMemberEmails is list && request.auth.token.email in resource.data.teamMemberEmails &&
+                         request.writeFields.hasOnly(['structuredTeamMembers', 'updatedAt']) && // Critical: only these top-level fields
+                         // Ensure idea's core attributes are not changed by team member
+                         request.resource.data.userId == resource.data.userId &&
+                         request.resource.data.status == resource.data.status &&
+                         request.resource.data.programPhase == resource.data.programPhase &&
+                         request.resource.data.teamMemberEmails.toSet().equals(resource.data.teamMemberEmails.toSet()) && // flat email list unchanged
+                         // Ensure array size of structuredTeamMembers is consistent
+                         (request.resource.data.structuredTeamMembers is list &&
+                          resource.data.structuredTeamMembers is list &&
+                          request.resource.data.structuredTeamMembers.size() == resource.data.structuredTeamMembers.size())
+                       )
+                     );
 
-      allow delete: if isAuthenticated() && (isUser(resource.data.userId) || isAdmin());
+      allow delete: if isAuthenticated() && (isUser(resource.data.userId) || isSuperAdmin()); // Owner or SuperAdmin can delete
     }
 
     // Announcements
     match /announcements/{announcementId} {
       allow read: if isAuthenticated();
-      allow list: if isAuthenticated(); // For feeds
       allow create, update, delete: if isAdmin();
-    }
-    
-    // Activity Logs
-    match /activityLogs/{logId} {
-      allow read: if isAdmin(); // Only admins can read logs
-      // Authenticated users can create log entries, but only if they are the actor
-      allow create: if isAuthenticated() && request.resource.data.actorUid == request.auth.uid;
     }
 
     // System Settings (single document 'config')
     match /systemSettings/config {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // Activity Logs
+    // Users can create their own activity logs. Admins can read all logs.
+    match /activityLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuthenticated() && request.resource.data.actorUid == request.auth.uid;
+      allow update, delete: if false; // Logs should be immutable
     }
   }
 }

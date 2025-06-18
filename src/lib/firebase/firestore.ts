@@ -35,60 +35,70 @@ export const logUserActivity = async (
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
 
-  const profileDataForWrite: Partial<UserProfile> = {
+  // Base profile common to all
+  const baseProfileData: Partial<UserProfile> = {
     uid: userId,
     email: data.email ?? null,
     displayName: data.displayName || data.fullName || 'User',
     photoURL: data.photoURL ?? null,
-    role: data.role ?? null, // Role will be determined/validated by AuthContext/rules
-    fullName: data.fullName,
-    contactNumber: data.contactNumber,
+    role: data.role ?? null,
     isSuperAdmin: data.email === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
-    createdAt: serverTimestamp() as Timestamp, // Firestore will set this
-    updatedAt: serverTimestamp() as Timestamp, // Firestore will set this
-    isTeamMemberOnly: data.isTeamMemberOnly === true, // Explicitly check for true
+    createdAt: serverTimestamp() as Timestamp,
+    updatedAt: serverTimestamp() as Timestamp,
+    fullName: data.fullName, // This will be present from the form
+    contactNumber: data.contactNumber, // This will be present from the form
+    // Optional common fields, will be included if present in `data`
+    ...(data.enrollmentNumber && { enrollmentNumber: data.enrollmentNumber }),
+    ...(data.college && { college: data.college }),
+    ...(data.instituteName && { instituteName: data.instituteName }),
   };
 
-  // Conditionally add fields based on whether the user is only a team member or an idea owner
-  if (profileDataForWrite.isTeamMemberOnly) {
-    profileDataForWrite.associatedIdeaId = data.associatedIdeaId;
-    profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid;
-    if (data.enrollmentNumber) profileDataForWrite.enrollmentNumber = data.enrollmentNumber;
-    if (data.college) profileDataForWrite.college = data.college;
-    if (data.instituteName) profileDataForWrite.instituteName = data.instituteName;
-    // Ensure idea-specific fields are explicitly null or not present for team members
-    profileDataForWrite.applicantCategory = null as any; // Firestore handles null fine
-    profileDataForWrite.currentStage = null as any;
-    profileDataForWrite.startupTitle = '';
-    profileDataForWrite.problemDefinition = '';
-    profileDataForWrite.solutionDescription = '';
-    profileDataForWrite.uniqueness = '';
-    profileDataForWrite.teamMembers = '';
+  let specificProfileData: Partial<UserProfile>;
 
-  } else { // Assumed to be an idea owner (or admin setting up their special profile)
-    profileDataForWrite.applicantCategory = data.applicantCategory;
-    profileDataForWrite.currentStage = data.currentStage;
-    profileDataForWrite.startupTitle = data.startupTitle;
-    profileDataForWrite.problemDefinition = data.problemDefinition;
-    profileDataForWrite.solutionDescription = data.solutionDescription;
-    profileDataForWrite.uniqueness = data.uniqueness;
-    profileDataForWrite.teamMembers = data.teamMembers || ''; // Can be empty string
-    if (data.enrollmentNumber) profileDataForWrite.enrollmentNumber = data.enrollmentNumber;
-    if (data.college) profileDataForWrite.college = data.college;
-    if (data.instituteName) profileDataForWrite.instituteName = data.instituteName;
+  if (data.isTeamMemberOnly === true) {
+    specificProfileData = {
+      isTeamMemberOnly: true,
+      associatedIdeaId: data.associatedIdeaId,
+      associatedTeamLeaderUid: data.associatedTeamLeaderUid,
+      // Ensure idea-owner specific fields are explicitly null or absent for team members
+      startupTitle: null,
+      problemDefinition: null,
+      solutionDescription: null,
+      uniqueness: null,
+      applicantCategory: null,
+      currentStage: null,
+      teamMembers: null, // Text field for team members (not applicable)
+    };
+  } else { // Idea owner or admin
+    specificProfileData = {
+      isTeamMemberOnly: false, // Or undefined, which Firestore treats as absent if not set
+      // Idea owner specific fields
+      startupTitle: data.startupTitle,
+      problemDefinition: data.problemDefinition,
+      solutionDescription: data.solutionDescription,
+      uniqueness: data.uniqueness,
+      applicantCategory: data.applicantCategory,
+      currentStage: data.currentStage,
+      teamMembers: data.teamMembers || '',
+      // Ensure team-member association fields are explicitly null or absent for idea owners
+      associatedIdeaId: null,
+      associatedTeamLeaderUid: null,
+    };
   }
 
-  // Remove any undefined properties before writing to Firestore
-  const finalProfileData = Object.fromEntries(
-    Object.entries(profileDataForWrite).filter(([, value]) => value !== undefined)
+  const finalProfilePayload = { ...baseProfileData, ...specificProfileData };
+
+  // Clean out any truly undefined values before setDoc, as Firestore doesn't like them.
+  // Null values are fine and will be written.
+  const cleanedFinalProfileData = Object.fromEntries(
+    Object.entries(finalProfilePayload).filter(([, value]) => value !== undefined)
   );
 
-  await setDoc(userProfileRef, finalProfileData);
+  await setDoc(userProfileRef, cleanedFinalProfileData);
 
   const docSnap = await getDoc(userProfileRef);
   if (docSnap.exists()) {
     const rawData = docSnap.data();
-    // Construct the UserProfile object carefully, providing defaults for potentially missing fields
     const fetchedProfile: UserProfile = {
         uid: docSnap.id,
         email: rawData.email ?? null,
@@ -97,8 +107,8 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         role: rawData.role ?? null,
         fullName: rawData.fullName ?? '',
         contactNumber: rawData.contactNumber ?? '',
-        applicantCategory: rawData.applicantCategory as ApplicantCategory, // Assuming it's set or null
-        currentStage: rawData.currentStage as CurrentStage, // Assuming it's set or null
+        applicantCategory: rawData.applicantCategory as ApplicantCategory,
+        currentStage: rawData.currentStage as CurrentStage,
         startupTitle: rawData.startupTitle ?? '',
         problemDefinition: rawData.problemDefinition ?? '',
         solutionDescription: rawData.solutionDescription ?? '',
@@ -107,9 +117,9 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
         enrollmentNumber: rawData.enrollmentNumber,
         college: rawData.college,
         instituteName: rawData.instituteName,
-        createdAt: rawData.createdAt as Timestamp, // Ensure it's cast correctly
-        updatedAt: rawData.updatedAt as Timestamp, // Ensure it's cast correctly
-        isSuperAdmin: rawData.email === 'pranavrathi07@gmail.com' ? true : (rawData.isSuperAdmin === true),
+        createdAt: rawData.createdAt as Timestamp,
+        updatedAt: rawData.updatedAt as Timestamp,
+        isSuperAdmin: rawData.isSuperAdmin === true,
         isTeamMemberOnly: rawData.isTeamMemberOnly === true,
         associatedIdeaId: rawData.associatedIdeaId,
         associatedTeamLeaderUid: rawData.associatedTeamLeaderUid,
@@ -811,7 +821,7 @@ export const addTeamMemberToIdea = async (ideaId: string, ideaTitle: string, new
 
   await updateDoc(ideaRef, {
     structuredTeamMembers: arrayUnion(newMemberWithId),
-    teamMemberEmails: arrayUnion(newMemberWithId.email.toLowerCase()),
+    teamMemberEmails: arrayUnion(newMemberData.email.toLowerCase()),
     updatedAt: serverTimestamp(),
   });
 
@@ -870,7 +880,7 @@ export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, 
 
 export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   ideaId: string,
-  ideaTitle: string,
+  ideaTitle: string, // For logging
   memberUser: User, // The team member who just completed their profile
   memberProfileDataFromForm: { // Data from their profile setup form
     fullName: string;
@@ -895,40 +905,35 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   let memberUpdated = false;
 
   const updatedMembersArray = currentMembers.map(member => {
-    // Match by email (which was used when leader added them)
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
       memberUpdated = true;
       return {
-        ...member, // Keep existing fields not directly from form (e.g., original nanoid ID if needed for some reason, though it should become uid)
+        // ...member, // Keep existing fields, but overwrite specific ones
         id: memberUser.uid, // IMPORTANT: Update ID to the member's actual Firebase UID
         name: memberProfileDataFromForm.fullName,
+        email: memberUser.email!, // Ensure email is from auth
         phone: memberProfileDataFromForm.contactNumber,
-        // Update other fields from their profile setup
         institute: memberProfileDataFromForm.instituteName || member.institute || '',
-        department: member.department || '', // Assuming department is not in profile form, keep existing
+        department: member.department || '', // Keep existing if not in form
         enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
-        college: memberProfileDataFromForm.college || member.college || '', // For Parul students
+        // college: memberProfileDataFromForm.college || member.college || '', // Only if applicable
       };
     }
-    return member;
+    return member; // Return other members untouched
   });
 
   if (!memberUpdated) {
-    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} structuredTeamMembers during profile setup update. This indicates an issue with how the member was initially added or matched.`);
-    // Potentially log this anomaly. For now, we won't throw an error to allow profile creation,
-    // but the idea document might not be perfectly synced for this member.
-    // However, their profile IS created.
+    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} structuredTeamMembers during profile setup update. Idea document not updated for this member's details.`);
     return;
   }
 
-  // Strict update: only change structuredTeamMembers and updatedAt
-  await updateDoc(ideaRef, {
+  // Construct the precise update payload for the idea document
+  const updatePayload: { structuredTeamMembers: TeamMember[], updatedAt: Timestamp } = {
     structuredTeamMembers: updatedMembersArray,
-    updatedAt: serverTimestamp(),
-  });
+    updatedAt: serverTimestamp() as Timestamp,
+  };
 
-  // Logging for this event is handled by the caller (AuthContext) which has broader context
-  // (e.g., USER_PROFILE_CREATED or USER_PROFILE_UPDATED)
+  await updateDoc(ideaRef, updatePayload);
 };
 
 
@@ -1142,4 +1147,3 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   }
   return null;
 };
-
