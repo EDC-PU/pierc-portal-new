@@ -70,7 +70,7 @@ export interface IdeaSubmission {
   id?: string;
   userId: string; // UID of the idea owner/leader
   title: string;
-  category: string; // This seems redundant if applicantType is used, but keeping for now if it has a different meaning.
+  category: string; // This seems to be covered by applicantType, but keeping for now if it has a different meaning.
   problem: string;
   solution: string;
   uniqueness: string;
@@ -113,6 +113,17 @@ export interface IdeaSubmission {
   applicantEmail?: string;
 }
 
+export interface CohortScheduleEntry {
+  id: string; // Client-side generated unique ID (e.g., nanoid) for useFieldArray key and potential DB sub-collection key later
+  date: string; // e.g., "2024-06-16"
+  day: string; // e.g., "Day 1" or "1"
+  time: string; // e.g., "10:00 AM - 12:00 PM"
+  category: string;
+  topicActivity: string;
+  content: string;
+  speakerVenue: string;
+}
+
 export interface Cohort {
   id?: string;
   name: string;
@@ -120,6 +131,7 @@ export interface Cohort {
   endDate: Timestamp;
   batchSize: number; // Max number of ideas/teams this cohort can have
   ideaIds: string[]; // List of IdeaSubmission IDs assigned to this cohort
+  schedule?: CohortScheduleEntry[]; // Array of schedule entries
   createdAt: Timestamp;
   createdByUid: string; // UID of the admin who created the cohort
   creatorDisplayName: string | null;
@@ -181,7 +193,8 @@ export type ActivityLogAction =
   | 'ADMIN_ANNOUNCEMENT_DELETED'
   // Admin - Cohorts
   | 'ADMIN_COHORT_CREATED'
-  | 'ADMIN_COHORT_UPDATED'
+  | 'ADMIN_COHORT_UPDATED' // General update
+  | 'ADMIN_COHORT_SCHEDULE_UPDATED' // Specific for schedule
   | 'ADMIN_COHORT_DELETED'
   // Admin - System Settings
   | 'ADMIN_SYSTEM_SETTINGS_UPDATED';
