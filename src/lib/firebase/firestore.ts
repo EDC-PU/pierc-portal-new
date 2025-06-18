@@ -25,6 +25,7 @@ export const logUserActivity = async (
       ...(details && { details }),
     };
     await addDoc(activityLogRef, logEntry);
+    console.log(`Activity logged: ${action} by ${actorDisplayName || actorUid}`, target);
   } catch (error) {
     console.error("Error logging user activity:", error, { actorUid, action, target, details });
   }
@@ -34,93 +35,93 @@ export const logUserActivity = async (
 // User Profile Functions
 export const createUserProfileFS = async (userId: string, data: Partial<UserProfile>): Promise<UserProfile> => {
   const userProfileRef = doc(db, 'users', userId);
-  const currentAuthUser = auth.currentUser; 
+  const currentAuthUser = auth.currentUser;
+  console.log("createUserProfileFS: Called for", userId, "with data:", data);
 
-  const profileDataForWrite: any = { 
+  const profileDataForWrite: any = {
     uid: userId,
     email: data.email ?? currentAuthUser?.email ?? null,
     displayName: data.displayName || data.fullName || currentAuthUser?.displayName || 'New User',
     photoURL: data.photoURL ?? currentAuthUser?.photoURL ?? null,
     role: data.role ?? null,
     isSuperAdmin: (data.email ?? currentAuthUser?.email) === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
-
-    fullName: data.fullName,
-    contactNumber: data.contactNumber,
-
-    isTeamMemberOnly: data.isTeamMemberOnly === true, 
+    fullName: data.fullName || '',
+    contactNumber: data.contactNumber || '',
+    isTeamMemberOnly: data.isTeamMemberOnly === true,
+    enrollmentNumber: data.enrollmentNumber || null,
+    college: data.college || null,
+    instituteName: data.instituteName || null,
   };
 
-  profileDataForWrite.enrollmentNumber = data.enrollmentNumber || null;
-  profileDataForWrite.college = data.college || null;
-  profileDataForWrite.instituteName = data.instituteName || null;
-
   if (profileDataForWrite.isTeamMemberOnly) {
-    profileDataForWrite.associatedIdeaId = data.associatedIdeaId ?? null;
-    profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid ?? null;
-
+    profileDataForWrite.associatedIdeaId = data.associatedIdeaId || null;
+    profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid || null;
     profileDataForWrite.startupTitle = null;
     profileDataForWrite.problemDefinition = null;
     profileDataForWrite.solutionDescription = null;
     profileDataForWrite.uniqueness = null;
     profileDataForWrite.applicantCategory = null;
     profileDataForWrite.currentStage = null;
-    profileDataForWrite.teamMembers = null; 
-  } else { 
-    profileDataForWrite.startupTitle = data.startupTitle ?? null;
-    profileDataForWrite.problemDefinition = data.problemDefinition ?? null;
-    profileDataForWrite.solutionDescription = data.solutionDescription ?? null;
-    profileDataForWrite.uniqueness = data.uniqueness ?? null;
-    profileDataForWrite.applicantCategory = data.applicantCategory ?? null;
-    profileDataForWrite.currentStage = data.currentStage ?? null;
-    profileDataForWrite.teamMembers = data.teamMembers || ''; 
-
+    profileDataForWrite.teamMembers = null;
+  } else {
     profileDataForWrite.associatedIdeaId = null;
     profileDataForWrite.associatedTeamLeaderUid = null;
+    profileDataForWrite.startupTitle = data.startupTitle || null;
+    profileDataForWrite.problemDefinition = data.problemDefinition || null;
+    profileDataForWrite.solutionDescription = data.solutionDescription || null;
+    profileDataForWrite.uniqueness = data.uniqueness || null;
+    profileDataForWrite.applicantCategory = data.applicantCategory || null;
+    profileDataForWrite.currentStage = data.currentStage || null;
+    profileDataForWrite.teamMembers = data.teamMembers || '';
   }
 
   const existingProfileSnap = await getDoc(userProfileRef);
   if (existingProfileSnap.exists()) {
     profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
-    delete profileDataForWrite.createdAt; // Do not overwrite createdAt on update
+    delete profileDataForWrite.createdAt;
+    console.log("createUserProfileFS: Updating existing profile for", userId);
     await updateDoc(userProfileRef, profileDataForWrite);
   } else {
     profileDataForWrite.createdAt = serverTimestamp() as Timestamp;
     profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
+    console.log("createUserProfileFS: Creating new profile for", userId);
     await setDoc(userProfileRef, profileDataForWrite);
   }
 
   const docSnap = await getDoc(userProfileRef);
-  if (docSnap.exists()) {
-    const rawData = docSnap.data();
-    const fetchedProfile: UserProfile = {
-        uid: docSnap.id,
-        email: rawData.email ?? null,
-        displayName: rawData.displayName ?? null,
-        photoURL: rawData.photoURL ?? null,
-        role: rawData.role ?? null,
-        fullName: rawData.fullName ?? '',
-        contactNumber: rawData.contactNumber ?? '',
-        applicantCategory: rawData.applicantCategory ?? null, 
-        currentStage: rawData.currentStage ?? null, 
-        startupTitle: rawData.startupTitle ?? null, 
-        problemDefinition: rawData.problemDefinition ?? null, 
-        solutionDescription: rawData.solutionDescription ?? null, 
-        uniqueness: rawData.uniqueness ?? null, 
-        teamMembers: rawData.teamMembers ?? null, 
-        enrollmentNumber: rawData.enrollmentNumber || null, 
-        college: rawData.college || null, 
-        instituteName: rawData.instituteName || null, 
-        createdAt: rawData.createdAt as Timestamp,
-        updatedAt: rawData.updatedAt as Timestamp,
-        isSuperAdmin: rawData.isSuperAdmin === true,
-        isTeamMemberOnly: rawData.isTeamMemberOnly === true,
-        associatedIdeaId: rawData.associatedIdeaId ?? null, 
-        associatedTeamLeaderUid: rawData.associatedTeamLeaderUid ?? null, 
-    };
-    return fetchedProfile;
+  if (!docSnap.exists()) {
+    console.error("createUserProfileFS: Failed to create/retrieve profile for", userId);
+    throw new Error("Failed to create or retrieve user profile after write operation.");
   }
-  throw new Error("Failed to create or retrieve user profile after write operation.");
+  const rawData = docSnap.data()!;
+  console.log("createUserProfileFS: Successfully created/updated profile for", userId);
+  return {
+    uid: docSnap.id,
+    email: rawData.email ?? null,
+    displayName: rawData.displayName ?? null,
+    photoURL: rawData.photoURL ?? null,
+    role: rawData.role ?? null,
+    fullName: rawData.fullName ?? '',
+    contactNumber: rawData.contactNumber ?? '',
+    applicantCategory: rawData.applicantCategory ?? null,
+    currentStage: rawData.currentStage ?? null,
+    startupTitle: rawData.startupTitle ?? null,
+    problemDefinition: rawData.problemDefinition ?? null,
+    solutionDescription: rawData.solutionDescription ?? null,
+    uniqueness: rawData.uniqueness ?? null,
+    teamMembers: rawData.teamMembers ?? '',
+    enrollmentNumber: rawData.enrollmentNumber ?? null,
+    college: rawData.college ?? null,
+    instituteName: rawData.instituteName ?? null,
+    createdAt: rawData.createdAt as Timestamp,
+    updatedAt: rawData.updatedAt as Timestamp,
+    isSuperAdmin: rawData.isSuperAdmin === true,
+    isTeamMemberOnly: rawData.isTeamMemberOnly === true,
+    associatedIdeaId: rawData.associatedIdeaId ?? null,
+    associatedTeamLeaderUid: rawData.associatedTeamLeaderUid ?? null,
+  };
 };
+
 
 export const getUserProfile = async (userId: string): Promise<UserProfile | null> => {
   const userProfileRef = doc(db, 'users', userId);
@@ -141,14 +142,14 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         problemDefinition: data.problemDefinition ?? null,
         solutionDescription: data.solutionDescription ?? null,
         uniqueness: data.uniqueness ?? null,
-        teamMembers: data.teamMembers ?? null,
+        teamMembers: data.teamMembers ?? '',
         enrollmentNumber: data.enrollmentNumber || null,
         college: data.college || null,
         instituteName: data.instituteName || null,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
-        isSuperAdmin: false, 
-        isTeamMemberOnly: data.isTeamMemberOnly ?? false,
+        isSuperAdmin: false,
+        isTeamMemberOnly: data.isTeamMemberOnly === true, // Ensure boolean
         associatedIdeaId: data.associatedIdeaId ?? null,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
     };
@@ -156,7 +157,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
     if (profile.email === 'pranavrathi07@gmail.com') {
         profile.isSuperAdmin = true;
         if (profile.role !== 'ADMIN_FACULTY') {
-            profile.role = 'ADMIN_FACULTY'; 
+            profile.role = 'ADMIN_FACULTY';
         }
     } else if (data.isSuperAdmin === true) {
         profile.isSuperAdmin = true;
@@ -172,6 +173,7 @@ export const updateUserProfile = async (
   actorProfile?: UserProfile | null
 ): Promise<void> => {
   const userProfileRef = doc(db, 'users', targetUserId);
+  // Prevent disallowed fields from being updated by self
   const { uid, email, createdAt, role, isSuperAdmin, ...updateData } = data;
 
   const cleanedUpdateData: Partial<UserProfile> = { ...updateData };
@@ -225,14 +227,14 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         problemDefinition: data.problemDefinition ?? null,
         solutionDescription: data.solutionDescription ?? null,
         uniqueness: data.uniqueness ?? null,
-        teamMembers: data.teamMembers ?? null,
+        teamMembers: data.teamMembers ?? '',
         enrollmentNumber: data.enrollmentNumber || null,
         college: data.college || null,
         instituteName: data.instituteName || null,
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
         isSuperAdmin: false,
-        isTeamMemberOnly: data.isTeamMemberOnly ?? false,
+        isTeamMemberOnly: data.isTeamMemberOnly === true, // Ensure boolean
         associatedIdeaId: data.associatedIdeaId ?? null,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
     };
@@ -276,7 +278,7 @@ export const updateUserRoleAndPermissionsFS = async (targetUserId: string, newRo
     updates.isSuperAdmin = true;
   }
 
-  await updateDoc(userProfileRef, updates as any); 
+  await updateDoc(userProfileRef, updates as any);
 
   await logUserActivity(
     adminProfile.uid,
@@ -429,106 +431,66 @@ export const deleteAnnouncement = async (announcementId: string, adminProfile: U
 
 // Idea Submission functions
 export const createIdeaFromProfile = async (
-    userId: string,
-    profileIdeaData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
+  userId: string,
+  profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
-  console.log("createIdeaFromProfile: Entered for user:", userId, "with data:", JSON.stringify(profileIdeaData, null, 2));
+  console.log("[createIdeaFromProfile] Attempting for user:", userId, "with profile data:", profileData);
   const userProfile = await getUserProfile(userId);
   if (!userProfile) {
-    console.error("createIdeaFromProfile: User profile not found for UID:", userId, "Cannot create idea.");
-    return null;
-  }
-  if (userProfile.role === 'ADMIN_FACULTY' && profileIdeaData.startupTitle === 'Administrative Account') {
-    console.log("createIdeaFromProfile: Skipping idea creation for admin administrative account profile.");
-    return null;
-  }
-  if (userProfile.isTeamMemberOnly) {
-    console.log("createIdeaFromProfile: Skipping idea creation for a user who is only a team member.");
-    return null;
-  }
-  if (!profileIdeaData.startupTitle || !profileIdeaData.problemDefinition || !profileIdeaData.solutionDescription || !profileIdeaData.uniqueness || !profileIdeaData.currentStage || !profileIdeaData.applicantCategory) {
-    console.warn("createIdeaFromProfile: Skipping idea creation due to missing essential idea fields in profileIdeaData:", profileIdeaData);
+    console.error("[createIdeaFromProfile] User profile not found for UID:", userId);
     return null;
   }
 
-  // Construct the payload with only fields that should exist at creation.
-  // Optional fields not set at this stage (like fileURL, mentor, etc.) are omitted.
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'fileURL' | 'fileName' | 'studioLocation' | 'cohortId' | 'mentor' | 'category'> = {
+  if ((userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Administrative Account') || userProfile.isTeamMemberOnly) {
+    console.log("[createIdeaFromProfile] Skipping idea creation for admin/team-member profile.");
+    return null;
+  }
+
+  if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
+    console.warn("[createIdeaFromProfile] Skipping: missing essential idea fields in profileData:", profileData);
+    return null;
+  }
+
+  const finalPayload: Omit<IdeaSubmission, 'id'> = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
-    title: profileIdeaData.startupTitle!,
-    problem: profileIdeaData.problemDefinition!,
-    solution: profileIdeaData.solutionDescription!,
-    uniqueness: profileIdeaData.uniqueness!,
-    developmentStage: profileIdeaData.currentStage!,
-    applicantType: profileIdeaData.applicantCategory!,
-    teamMembers: profileIdeaData.teamMembers || '', // Original free-text field
-    structuredTeamMembers: [], // Initialize as empty array
-    teamMemberEmails: [],      // Initialize as empty array
+    title: profileData.startupTitle!,
+    category: profileData.applicantCategory || 'GENERAL',
+    problem: profileData.problemDefinition!,
+    solution: profileData.solutionDescription!,
+    uniqueness: profileData.uniqueness!,
+    developmentStage: profileData.currentStage!,
+    applicantType: profileData.applicantCategory!,
+    teamMembers: profileData.teamMembers || '',
+    structuredTeamMembers: [],
+    teamMemberEmails: [],
     status: 'SUBMITTED',
-    programPhase: null, // Explicitly null
+    programPhase: null,
+    phase2Marks: {},
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
+    // Optional fields like fileURL, fileName, studioLocation, mentor, cohortId, rejectionRemarks etc., are intentionally OMITTED
+    // as they are not set at this initial stage. They will not have 'undefined' values.
   };
-  
-  console.log("createIdeaFromProfile: Final payload for addDoc:", JSON.stringify(newIdeaPayload, null, 2));
+
+  console.log("[createIdeaFromProfile] Final payload for addDoc:", finalPayload);
 
   try {
-    const docRef = await addDoc(collection(db, 'ideas'), newIdeaPayload); 
+    const docRef = await addDoc(collection(db, 'ideas'), finalPayload);
+    console.log("[createIdeaFromProfile] Idea document created with ID:", docRef.id);
     const newDocSnap = await getDoc(docRef);
     if (!newDocSnap.exists()) {
-      console.error("createIdeaFromProfile: Failed to create idea submission, document does not exist after addDoc.");
-      throw new Error("Could not create idea submission from profile.");
+      console.error("[createIdeaFromProfile] Created idea doc not found for ID:", docRef.id);
+      throw new Error("Could not create idea submission from profile (doc not found after creation).");
     }
-    console.log("createIdeaFromProfile: Idea document created with ID:", newDocSnap.id);
-
-    const data = newDocSnap.data();
-    // Construct the full IdeaSubmission object for return, ensuring all fields from the type are present or null/undefined
-    return {
-      id: newDocSnap.id,
-      userId: data.userId,
-      applicantDisplayName: data.applicantDisplayName,
-      applicantEmail: data.applicantEmail,
-      title: data.title,
-      problem: data.problem,
-      solution: data.solution,
-      uniqueness: data.uniqueness,
-      developmentStage: data.developmentStage,
-      applicantType: data.applicantType,
-      teamMembers: data.teamMembers,
-      structuredTeamMembers: data.structuredTeamMembers || [],
-      teamMemberEmails: data.teamMemberEmails || [],
-      status: data.status,
-      programPhase: data.programPhase,
-      submittedAt: data.submittedAt as Timestamp,
-      updatedAt: data.updatedAt as Timestamp,
-      // Optional fields that would be undefined here, matching IdeaSubmission type
-      fileURL: data.fileURL,
-      fileName: data.fileName,
-      studioLocation: data.studioLocation,
-      cohortId: data.cohortId,
-      mentor: data.mentor,
-      category: data.category, // If category was part of the payload
-      phase2Marks: data.phase2Marks || {},
-      rejectionRemarks: data.rejectionRemarks,
-      rejectedByUid: data.rejectedByUid,
-      rejectedAt: data.rejectedAt,
-      phase2PptUrl: data.phase2PptUrl,
-      phase2PptFileName: data.phase2PptFileName,
-      phase2PptUploadedAt: data.phase2PptUploadedAt,
-      nextPhaseDate: data.nextPhaseDate,
-      nextPhaseStartTime: data.nextPhaseStartTime,
-      nextPhaseEndTime: data.nextPhaseEndTime,
-      nextPhaseVenue: data.nextPhaseVenue,
-      nextPhaseGuidelines: data.nextPhaseGuidelines,
-    } as IdeaSubmission;
+    const data = newDocSnap.data()!;
+    return { id: newDocSnap.id, ...data } as IdeaSubmission;
   } catch (error) {
-    console.error("createIdeaFromProfile: Firebase addDoc error:", error);
-    throw error; 
+    console.error("[createIdeaFromProfile] Firestore addDoc error:", error);
+    throw error;
   }
 };
-
 
 
 export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission[]> => {
@@ -649,7 +611,7 @@ export const updateIdeaStatusAndPhase = async (
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (!newPhase) { 
+    } else if (!newPhase) {
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
@@ -657,7 +619,7 @@ export const updateIdeaStatusAndPhase = async (
         updates.nextPhaseGuidelines = null;
         updates.mentor = deleteField();
     }
-  } else { 
+  } else {
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -669,7 +631,7 @@ export const updateIdeaStatusAndPhase = async (
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminProfile.uid;
       updates.rejectedAt = serverTimestamp() as Timestamp;
-    } else { 
+    } else {
       updates.rejectionRemarks = deleteField();
       updates.rejectedByUid = deleteField();
       updates.rejectedAt = deleteField();
@@ -703,7 +665,7 @@ export const assignMentorToIdea = async (ideaId: string, ideaTitle: string, ment
   } else {
     updates.mentor = mentorName;
   }
-  await updateDoc(ideaRef, updates as any); 
+  await updateDoc(ideaRef, updates as any);
 
   await logUserActivity(
     adminProfile.uid,
@@ -895,7 +857,7 @@ export const updateTeamMemberInIdea = async (ideaId: string, ideaTitle: string, 
   }
 
   const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
-  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id || (member.email.toLowerCase() === updatedMemberData.email.toLowerCase() && !updatedMemberData.id)); 
+  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id || (member.email.toLowerCase() === updatedMemberData.email.toLowerCase() && !updatedMemberData.id));
 
 
   if (memberIndex === -1) {
@@ -944,9 +906,9 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   memberProfileDataFromForm: {
     fullName: string;
     contactNumber: string;
-    enrollmentNumber?: string | null; 
-    college?: string | null; 
-    instituteName?: string | null; 
+    enrollmentNumber?: string | null;
+    college?: string | null;
+    instituteName?: string | null;
   }
 ): Promise<void> => {
   if (!memberUser.email) {
@@ -968,14 +930,14 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   const updatedStructuredMembersArray = currentMembers.map(member => {
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
       memberFoundAndUpdated = true;
-      return { 
-        id: memberUser.uid, 
+      return {
+        id: memberUser.uid, // Update member ID to user's UID now that they have a profile
         name: memberProfileDataFromForm.fullName,
         email: memberUser.email!,
         phone: memberProfileDataFromForm.contactNumber,
-        institute: memberProfileDataFromForm.instituteName || member.institute || '',
-        department: member.department || '', 
-        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '', 
+        institute: memberProfileDataFromForm.instituteName || member.institute || '', // Prefer form data, fallback to existing
+        department: member.department || '', // Department is not typically on profile-setup, keep existing
+        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '', // Prefer form data
       };
     }
     return member;
@@ -996,9 +958,9 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   await logUserActivity(
     memberUser.uid,
     memberProfileDataFromForm.fullName,
-    'IDEA_TEAM_MEMBER_UPDATED',
+    'IDEA_TEAM_MEMBER_UPDATED', // Or a more specific action like 'IDEA_TEAM_MEMBER_PROFILE_SYNCED'
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
-    { memberEmail: memberUser.email, detailsUpdated: ['id (to UID)', 'name', 'phone', 'institute', 'enrollmentNumber', 'college (via institute)'] }
+    { memberEmail: memberUser.email, detailsUpdated: ['id (to UID)', 'name', 'phone', 'institute', 'enrollmentNumber'] }
   );
 };
 
@@ -1033,12 +995,12 @@ export const removeTeamMemberFromIdea = async (ideaId: string, ideaTitle: string
 export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<IdeaSubmission | null> => {
   if (!userEmail) return null;
   const ideasCol = collection(db, 'ideas');
-  
+
   const q = query(ideasCol, where('teamMemberEmails', 'array-contains', userEmail.toLowerCase()));
   const querySnapshot = await getDocs(q);
 
   if (!querySnapshot.empty) {
-    
+
     const ideaDoc = querySnapshot.docs[0];
     const data = ideaDoc.data();
      const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
@@ -1126,29 +1088,35 @@ export const createIdeaSubmission = async (
   ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload = {
-    ...ideaData,
+  const newIdeaPayload: any = {
     userId: actorProfile.uid,
     applicantDisplayName: actorProfile.displayName || actorProfile.fullName || 'N/A',
     applicantEmail: actorProfile.email || 'N/A',
-    status: 'SUBMITTED',
-    programPhase: null,
-    phase2Marks: {},
+    title: ideaData.title,
+    category: ideaData.category,
+    problem: ideaData.problem,
+    solution: ideaData.solution,
+    uniqueness: ideaData.uniqueness,
+    developmentStage: ideaData.developmentStage,
+    applicantType: ideaData.applicantType,
     teamMembers: ideaData.teamMembers || '',
     structuredTeamMembers: ideaData.structuredTeamMembers || [],
     teamMemberEmails: ideaData.teamMemberEmails || [],
+    status: 'SUBMITTED',
+    programPhase: null,
+    phase2Marks: {},
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
-  } as const;
-  // Ensure optional fields that might be undefined are omitted
-  const finalPayload: any = { ...newIdeaPayload };
-  if (ideaData.fileURL === undefined) delete finalPayload.fileURL;
-  if (ideaData.fileName === undefined) delete finalPayload.fileName;
-  if (ideaData.studioLocation === undefined) delete finalPayload.studioLocation;
-  if (ideaData.cohortId === undefined) delete finalPayload.cohortId;
+  };
+
+  // Only include optional fields if they have a value.
+  if (ideaData.fileURL) newIdeaPayload.fileURL = ideaData.fileURL;
+  if (ideaData.fileName) newIdeaPayload.fileName = ideaData.fileName;
+  if (ideaData.studioLocation) newIdeaPayload.studioLocation = ideaData.studioLocation;
+  if (ideaData.cohortId) newIdeaPayload.cohortId = ideaData.cohortId;
 
 
-  const docRef = await addDoc(ideaCol, finalPayload);
+  const docRef = await addDoc(ideaCol, newIdeaPayload);
   const newDocSnap = await getDoc(docRef);
   if (!newDocSnap.exists()) throw new Error("Could not create idea submission.");
 
@@ -1224,4 +1192,3 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
   return null;
 };
 
-    

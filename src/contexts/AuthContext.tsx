@@ -105,8 +105,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
              logUserActivity(firebaseUser.uid, profile.displayName || profile.fullName, 'USER_SIGNED_IN', undefined, { ipAddress: 'N/A', userAgent: 'N/A' });
           }
           // Conditional navigation: if profile exists and current page is login, or profile-setup when it shouldn't be, redirect.
-          // The check for idea submission before redirecting to dashboard from profile-setup will be handled in setRoleAndCompleteProfile.
-          if (router && (window.location.pathname === '/login' || (window.location.pathname === '/profile-setup' && profile.startupTitle && !profile.isTeamMemberOnly))) {
+          if (router && (window.location.pathname === '/login' || (window.location.pathname === '/profile-setup' && profile.startupTitle && !profile.isTeamMemberOnly && profile.startupTitle !== 'Administrative Account'))) {
             router.push('/dashboard');
           }
         } else {
@@ -206,7 +205,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return Promise.reject(new Error("No user logged in."));
     }
     setLoading(true);
-    const wasProfileExisting = !!userProfile;
+    const wasProfileExisting = !!userProfile; // Check if profile existed before this operation
 
     let actualRole = roleFromForm;
     const isSuperAdminEmail = user.email === 'pranavrathi07@gmail.com';
@@ -214,7 +213,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       actualRole = 'ADMIN_FACULTY';
     }
 
-    const settingUpAsTeamMember = isTeamMemberForIdea !== null;
+    const settingUpAsTeamMember = isTeamMemberForIdea !== null && !wasProfileExisting; // Only consider team member if it's a NEW profile setup based on invite
 
     const profileDataForCreation: Partial<UserProfile> = {
       role: actualRole,
@@ -230,7 +229,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (settingUpAsTeamMember && isTeamMemberForIdea) {
       profileDataForCreation.associatedIdeaId = isTeamMemberForIdea.id;
       profileDataForCreation.associatedTeamLeaderUid = isTeamMemberForIdea.userId;
-
+      // Explicitly nullify idea-specific fields for team members
       profileDataForCreation.startupTitle = null;
       profileDataForCreation.problemDefinition = null;
       profileDataForCreation.solutionDescription = null;
@@ -239,6 +238,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       profileDataForCreation.currentStage = null;
       profileDataForCreation.teamMembers = null;
     } else {
+      // For idea owners or admins, or existing profiles being updated
       profileDataForCreation.startupTitle = additionalData.startupTitle;
       profileDataForCreation.problemDefinition = additionalData.problemDefinition;
       profileDataForCreation.solutionDescription = additionalData.solutionDescription;
@@ -246,14 +246,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       profileDataForCreation.applicantCategory = additionalData.applicantCategory;
       profileDataForCreation.currentStage = additionalData.currentStage;
       profileDataForCreation.teamMembers = additionalData.teamMembers || '';
-
+      // Explicitly nullify team association fields for non-team members
       profileDataForCreation.associatedIdeaId = null;
       profileDataForCreation.associatedTeamLeaderUid = null;
     }
 
     try {
       const createdOrUpdatedProfile = await createUserProfileFS(user.uid, profileDataForCreation);
-      setUserProfile(createdOrUpdatedProfile);
+      setUserProfile(createdOrUpdatedProfile); // Update context with fresh profile
 
       const logAction: ActivityLogAction = wasProfileExisting ? 'USER_PROFILE_UPDATED' : 'USER_PROFILE_CREATED';
       await logUserActivity(
@@ -263,16 +263,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         { type: 'USER_PROFILE', id: user.uid, displayName: createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName || undefined },
         { role: createdOrUpdatedProfile.role, isTeamMember: createdOrUpdatedProfile.isTeamMemberOnly }
       );
-      
-      let ideaCreationSuccessfulOrNotApplicable = true;
 
-      // ---> Critical section for idea creation <---
-      if (
-        !createdOrUpdatedProfile.isTeamMemberOnly &&
-        createdOrUpdatedProfile.startupTitle && createdOrUpdatedProfile.startupTitle.trim() !== '' &&
-        createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
-        !wasProfileExisting // Only for brand new profiles of idea owners
-      ) {
+      let ideaCreationSuccessfulOrNotApplicable = true; // Assume success or not applicable
+
+      // Condition for creating an idea:
+      // 1. It's a new profile setup (!wasProfileExisting)
+      // 2. The profile is NOT for a team member only (!createdOrUpdatedProfile.isTeamMemberOnly)
+      // 3. The startup title is valid and not the admin placeholder
+      if (!wasProfileExisting &&
+          !createdOrUpdatedProfile.isTeamMemberOnly &&
+          createdOrUpdatedProfile.startupTitle &&
+          createdOrUpdatedProfile.startupTitle.trim() !== '' &&
+          createdOrUpdatedProfile.startupTitle !== 'Administrative Account') {
         console.log("AuthContext: Attempting to create idea from profile for new idea owner:", user.uid);
         try {
           const profileIdeaDataForCreation = {
@@ -302,7 +304,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               variant: "destructive",
               duration: 10000,
             });
-            ideaCreationSuccessfulOrNotApplicable = false; // Mark as failed
+            ideaCreationSuccessfulOrNotApplicable = false;
           }
         } catch (ideaError: any) {
             console.error("AuthContext: Error during createIdeaFromProfile call:", ideaError);
@@ -312,17 +314,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               variant: "destructive",
               duration: 10000,
             });
-            ideaCreationSuccessfulOrNotApplicable = false; // Mark as failed
+            ideaCreationSuccessfulOrNotApplicable = false;
         }
       }
 
-
-      if (createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
+      // If the user was setting up as a team member and their profile details are now complete
+      if (settingUpAsTeamMember && createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
         await updateTeamMemberDetailsInIdeaAfterProfileSetup(
           createdOrUpdatedProfile.associatedIdeaId,
-          isTeamMemberForIdea.title,
-          user,
-          {
+          isTeamMemberForIdea.title, // Pass the idea title for logging
+          user, // Pass the Firebase User object
+          { // Pass the relevant profile data
             fullName: createdOrUpdatedProfile.fullName,
             contactNumber: createdOrUpdatedProfile.contactNumber,
             enrollmentNumber: createdOrUpdatedProfile.enrollmentNumber,
@@ -330,6 +332,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             instituteName: createdOrUpdatedProfile.instituteName,
           }
         );
+        // Refresh team member idea context
         const updatedIdea = await getIdeaById(createdOrUpdatedProfile.associatedIdeaId);
         setIsTeamMemberForIdea(updatedIdea);
         if (updatedIdea && updatedIdea.userId) {
@@ -337,20 +340,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setTeamLeaderProfileForMember(leader);
         }
       }
-      
+
+      // Navigate to dashboard only if everything relevant was successful
       if (ideaCreationSuccessfulOrNotApplicable) {
           router.push('/dashboard');
           toast({ title: "Profile Saved", description: "Your profile has been successfully set up." });
-      } else {
-          // If idea creation failed, we do not navigate. The user stays on profile-setup.
-          // The toast from the idea creation failure block above has already informed them.
       }
+      // If ideaCreationSuccessfulOrNotApplicable is false, user stays on profile-setup page, toast already shown.
 
     } catch (error: any) {
       console.error("Profile setup failed", error);
       toast({ title: "Profile Setup Error", description: error.message || "Failed to set up profile.", variant: "destructive" });
-      // Do not navigate to dashboard if general profile save fails
-      // throw error; // re-throwing might be too aggressive if partial success is possible, rely on toast and no navigation
     } finally {
       setLoading(false);
     }
@@ -382,8 +382,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         { type: 'USER_PROFILE', id: user.uid, displayName: userProfile.displayName || userProfile.fullName || undefined }
       );
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted. You have been signed out." });
+      // Sign out will be triggered by onAuthStateChanged
     } catch (error: any) {
       console.error("Error deleting user account:", error);
+      // Attempt to sign out even if deletion fails partially
       try { await firebaseSignOut(auth); } catch (e) { console.error("Sign out failed after delete error:", e); }
       toast({ title: "Account Deletion Failed", description: error.message || "Could not fully delete your account. Please contact support.", variant: "destructive" });
       throw error;
@@ -404,6 +406,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await firebaseSignOut(auth);
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
+      // onAuthStateChanged will handle redirect to /login
     } catch (error: any) {
       handleAuthError(error, "sign-out");
     } finally {
@@ -447,5 +450,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
-    
