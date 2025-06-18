@@ -81,7 +81,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   const existingProfileSnap = await getDoc(userProfileRef);
   if (existingProfileSnap.exists()) {
     profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
-    delete profileDataForWrite.createdAt;
+    delete profileDataForWrite.createdAt; // Do not overwrite createdAt on update
     await updateDoc(userProfileRef, profileDataForWrite);
   } else {
     profileDataForWrite.createdAt = serverTimestamp() as Timestamp;
@@ -430,14 +430,14 @@ export const deleteAnnouncement = async (announcementId: string, adminProfile: U
 // Idea Submission functions
 export const createIdeaFromProfile = async (
     userId: string,
-    profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
+    profileIdeaData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
 ): Promise<IdeaSubmission | null> => {
   const userProfile = await getUserProfile(userId);
   if (!userProfile) {
     console.error("User profile not found, cannot create idea.");
     return null;
   }
-  if (userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Administrative Account') {
+  if (userProfile.role === 'ADMIN_FACULTY' && profileIdeaData.startupTitle === 'Administrative Account') {
     console.log("Skipping idea creation for admin administrative account profile.");
     return null;
   }
@@ -445,25 +445,24 @@ export const createIdeaFromProfile = async (
     console.log("Skipping idea creation for a user who is only a team member.");
     return null;
   }
-  if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
-    console.warn("Skipping idea creation due to missing essential idea fields in profile data:", profileData);
+  if (!profileIdeaData.startupTitle || !profileIdeaData.problemDefinition || !profileIdeaData.solutionDescription || !profileIdeaData.uniqueness || !profileIdeaData.currentStage || !profileIdeaData.applicantCategory) {
+    console.warn("Skipping idea creation due to missing essential idea fields in profileIdeaData:", profileIdeaData);
     return null;
   }
 
   const ideaCol = collection(db, 'ideas');
   
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'mentor'> = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'mentor' | 'fileURL' | 'fileName' | 'studioLocation' | 'cohortId' | 'category'> = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
-    title: profileData.startupTitle!, 
-    category: 'General Profile Submission', 
-    problem: profileData.problemDefinition!, 
-    solution: profileData.solutionDescription!, 
-    uniqueness: profileData.uniqueness!, 
-    developmentStage: profileData.currentStage!, 
-    applicantType: profileData.applicantCategory!, 
-    teamMembers: profileData.teamMembers || '', 
+    title: profileIdeaData.startupTitle!, 
+    problem: profileIdeaData.problemDefinition!, 
+    solution: profileIdeaData.solutionDescription!, 
+    uniqueness: profileIdeaData.uniqueness!, 
+    developmentStage: profileIdeaData.currentStage!, 
+    applicantType: profileIdeaData.applicantCategory!, 
+    teamMembers: profileIdeaData.teamMembers || '', 
     structuredTeamMembers: [], 
     teamMemberEmails: [], 
     status: 'SUBMITTED',
@@ -472,6 +471,7 @@ export const createIdeaFromProfile = async (
 
   const docRef = await addDoc(ideaCol, {
     ...newIdeaPayload,
+    category: 'General Profile Submission', // This was missing from the Omit but should be set
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   });

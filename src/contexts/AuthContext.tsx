@@ -219,9 +219,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       isSuperAdmin: isSuperAdminEmail,
       fullName: additionalData.fullName,
       contactNumber: additionalData.contactNumber,
-      enrollmentNumber: additionalData.enrollmentNumber || undefined,
-      college: additionalData.college || undefined,
-      instituteName: additionalData.instituteName || undefined,
+      enrollmentNumber: additionalData.enrollmentNumber || null,
+      college: additionalData.college || null,
+      instituteName: additionalData.instituteName || null,
       isTeamMemberOnly: settingUpAsTeamMember,
     };
 
