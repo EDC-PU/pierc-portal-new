@@ -613,23 +613,25 @@ export default function StudentDashboard() {
                     <Table>
                         <TableHeader>
                             <TableRow>
+                                <TableHead className="w-[100px]">Member #</TableHead>
                                 <TableHead className="min-w-[150px]">Name</TableHead>
                                 <TableHead className="min-w-[200px]">Email</TableHead>
                                 <TableHead className="min-w-[120px]">Phone</TableHead>
                                 <TableHead className="min-w-[150px]">Institute</TableHead>
                                 <TableHead className="min-w-[150px]">Department</TableHead>
-                                <TableHead className="min-w-[150px]">Enrollment No. (Optional)</TableHead>
+                                <TableHead className="min-w-[150px]">Enrollment No.</TableHead>
                                 <TableHead className="w-[50px] text-right">Del</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
                             {fields.map((item, index) => (
                                 <TableRow key={item.id}>
+                                    <TableCell className="p-1 font-medium text-muted-foreground">Member {index + 1}</TableCell>
                                     <TableCell className="p-1">
                                         <Controller
                                             name={`members.${index}.name`}
                                             control={control}
-                                            render={({ field }) => <Input placeholder="Full Name" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.name && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.name?.message}</p>}
                                     </TableCell>
@@ -637,7 +639,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.email`}
                                             control={control}
-                                            render={({ field }) => <Input type="email" placeholder="Email" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input type="email" {...field} className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.email && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.email?.message}</p>}
                                     </TableCell>
@@ -645,7 +647,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.phone`}
                                             control={control}
-                                            render={({ field }) => <Input type="tel" placeholder="Phone" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input type="tel" {...field} className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.phone && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.phone?.message}</p>}
                                     </TableCell>
@@ -653,7 +655,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.institute`}
                                             control={control}
-                                            render={({ field }) => <Input placeholder="Institute" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.institute && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.institute?.message}</p>}
                                     </TableCell>
@@ -661,7 +663,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.department`}
                                             control={control}
-                                            render={({ field }) => <Input placeholder="Department" {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
                                         />
                                         {teamManagementErrors.members?.[index]?.department && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.department?.message}</p>}
                                     </TableCell>
@@ -669,7 +671,7 @@ export default function StudentDashboard() {
                                         <Controller
                                             name={`members.${index}.enrollmentNumber`}
                                             control={control}
-                                            render={({ field }) => <Input placeholder="Enrollment No." {...field} className="text-xs h-9" />}
+                                            render={({ field }) => <Input {...field} className="text-xs h-9" />}
                                         />
                                     </TableCell>
                                     <TableCell className="p-1 text-right">
@@ -733,4 +735,5 @@ export default function StudentDashboard() {
     
 
     
+
 
