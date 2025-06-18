@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions } from './config'; // functions aliased to avoid conflict
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -353,7 +353,7 @@ export const createIdeaFromProfile = async (
   }
 
   const ideaCol = collection(db, 'ideas');
-  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMemberEmails'> = {
+  const newIdeaPayload: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMemberEmails' | 'mentor'> = {
     userId: userId,
     title: profileData.startupTitle,
     category: 'General Profile Submission',
@@ -431,6 +431,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       nextPhaseEndTime: ideaData.nextPhaseEndTime,
       nextPhaseVenue: ideaData.nextPhaseVenue,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines,
+      mentor: ideaData.mentor,
     } as IdeaSubmission);
   }
   return ideaSubmissions;
@@ -466,6 +467,8 @@ export const updateIdeaStatusAndPhase = async (
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
       }
+    } else if (newPhase !== 'COHORT') { // Don't clear mentor if moving to other phases, only if becoming not-cohort
+        updates.mentor = deleteField();
     }
     if (newPhase && nextPhaseDetails) {
       updates.nextPhaseDate = nextPhaseDetails.date;
@@ -479,6 +482,7 @@ export const updateIdeaStatusAndPhase = async (
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
+        updates.mentor = deleteField(); 
     }
   } else {
     updates.programPhase = null;
@@ -487,6 +491,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseEndTime = null;
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
+    updates.mentor = deleteField();
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminUid;
@@ -499,6 +504,21 @@ export const updateIdeaStatusAndPhase = async (
   }
   await updateDoc(ideaRef, updates);
 };
+
+export const assignMentorToIdea = async (ideaId: string, mentorName: MentorName | null, adminUid: string): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const updates: { mentor?: MentorName | null | typeof deleteField, updatedAt: Timestamp, updatedByMentorAssignerUid: string } = {
+    updatedAt: serverTimestamp() as Timestamp,
+    updatedByMentorAssignerUid: adminUid,
+  };
+  if (mentorName === null) {
+    updates.mentor = deleteField();
+  } else {
+    updates.mentor = mentorName;
+  }
+  await updateDoc(ideaRef, updates);
+};
+
 
 export const submitOrUpdatePhase2Mark = async (
   ideaId: string,
@@ -561,6 +581,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         nextPhaseEndTime: data.nextPhaseEndTime,
         nextPhaseVenue: data.nextPhaseVenue,
         nextPhaseGuidelines: data.nextPhaseGuidelines,
+        mentor: data.mentor,
     } as IdeaSubmission);
   });
   return userIdeas;
@@ -630,7 +651,7 @@ export const addTeamMemberToIdea = async (ideaId: string, newMemberData: Omit<Te
 
   const newMemberWithId: TeamMember = {
     ...newMemberData,
-    id: nanoid(), // Generate unique ID for this member entry
+    id: nanoid(), // Generate unique nanoid for this member entry initially
   };
 
   await updateDoc(ideaRef, {
@@ -649,11 +670,21 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
   }
 
   const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
-  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id);
+  const memberIndex = currentMembers.findIndex(member => member.id === updatedMemberData.id || member.email.toLowerCase() === updatedMemberData.email.toLowerCase());
+
 
   if (memberIndex === -1) {
-    throw new Error(`Team member with ID ${updatedMemberData.id} not found to update.`);
+    // If not found by ID, try to find by email for cases where ID might not be synced yet (before member profile setup)
+    const emailIndex = currentMembers.findIndex(member => member.email.toLowerCase() === updatedMemberData.email.toLowerCase());
+    if (emailIndex === -1) {
+      throw new Error(`Team member with ID ${updatedMemberData.id} or email ${updatedMemberData.email} not found to update.`);
+    }
+     // If found by email, use that index and ensure the ID from the form (which might be the user's UID) is used
+    currentMembers[emailIndex] = { ...updatedMemberData, id: updatedMemberData.id || currentMembers[emailIndex].id };
+  } else {
+     currentMembers[memberIndex] = updatedMemberData;
   }
+
 
   const oldEmail = currentMembers[memberIndex].email.toLowerCase();
   const newEmail = updatedMemberData.email.toLowerCase();
@@ -666,7 +697,7 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
     updatedAt: serverTimestamp(),
   };
 
-  if (oldEmail !== newEmail) {
+  if (oldEmail !== newEmail || !(ideaDoc.data()?.teamMemberEmails as string[]).includes(newEmail)) {
     const newTeamMemberEmails = updatedMembersArray.map(m => m.email.toLowerCase());
     updates.teamMemberEmails = newTeamMemberEmails;
   }
@@ -676,8 +707,8 @@ export const updateTeamMemberInIdea = async (ideaId: string, updatedMemberData: 
 
 export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   ideaId: string,
-  memberUser: User, // Firebase Auth User
-  memberProfileDataFromForm: { // Data from the simplified profile setup form
+  memberUser: User, 
+  memberProfileDataFromForm: { 
     fullName: string;
     contactNumber: string;
     enrollmentNumber?: string;
@@ -700,32 +731,31 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   let memberUpdated = false;
 
   const updatedMembersArray = currentMembers.map(member => {
+    // Match by email initially, as the ID in structuredTeamMembers might be a nanoid before profile setup
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
       memberUpdated = true;
       return {
-        ...member, // Keep existing fields like original nanoid id if needed, or overwrite
-        id: memberUser.uid, // CRITICAL: Update ID to the member's actual UID
+        ...member, 
+        id: memberUser.uid, // CRITICAL: Update ID to the member's actual Firebase UID
         name: memberProfileDataFromForm.fullName,
         phone: memberProfileDataFromForm.contactNumber,
-        // Update other fields if they were part of the team member's profile setup
         enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
         college: memberProfileDataFromForm.college || member.college || '',
-        institute: memberProfileDataFromForm.instituteName || member.institute || '', // Assuming instituteName from form maps to institute
-        // department might not be asked in team member's profile setup, so keep existing or clear
+        institute: memberProfileDataFromForm.instituteName || member.institute || '', 
+        // department: member.department // Keep existing department or clear if not in form
       };
     }
     return member;
   });
 
   if (!memberUpdated) {
-    // This case should ideally not happen if AuthContext correctly identifies the member
-    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} during profile setup update.`);
-    // Optionally, you could add them if not found, but the primary flow assumes they were added by the leader.
+    console.warn(`Team member with email ${memberUser.email} not found in idea ${ideaId} during profile setup update. This should ideally not happen if member was added correctly.`);
     return;
   }
 
   await updateDoc(ideaRef, {
     structuredTeamMembers: updatedMembersArray,
+    // teamMemberEmails should already contain the email, so no change needed here unless email itself was editable (which it's not here)
     updatedAt: serverTimestamp(),
   });
 };
@@ -754,12 +784,11 @@ export const removeTeamMemberFromIdea = async (ideaId: string, memberIdToRemove:
 export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<IdeaSubmission | null> => {
   if (!userEmail) return null;
   const ideasCol = collection(db, 'ideas');
-  // Ensure email is queried in lowercase as it's stored in lowercase in teamMemberEmails
   const q = query(ideasCol, where('teamMemberEmails', 'array-contains', userEmail.toLowerCase()));
   const querySnapshot = await getDocs(q);
 
   if (!querySnapshot.empty) {
-    const ideaDoc = querySnapshot.docs[0];
+    const ideaDoc = querySnapshot.docs[0]; // Take the first match
     const data = ideaDoc.data();
      const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
@@ -786,6 +815,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         nextPhaseEndTime: data.nextPhaseEndTime,
         nextPhaseVenue: data.nextPhaseVenue,
         nextPhaseGuidelines: data.nextPhaseGuidelines,
+        mentor: data.mentor,
     } as IdeaSubmission;
   }
   return null;
@@ -832,7 +862,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
   }
 };
 
-export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }): Promise<IdeaSubmission> => {
+export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload = {
     ...ideaData,
@@ -841,7 +871,7 @@ export const createIdeaSubmission = async (ideaData: Omit<IdeaSubmission, 'id' |
     phase2Marks: {},
     teamMembers: ideaData.teamMembers || '',
     structuredTeamMembers: ideaData.structuredTeamMembers || [],
-    teamMemberEmails: ideaData.teamMemberEmails || [], // Initialize properly
+    teamMemberEmails: ideaData.teamMemberEmails || [], 
     submittedAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   } as const;
@@ -899,8 +929,8 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         nextPhaseEndTime: data.nextPhaseEndTime,
         nextPhaseVenue: data.nextPhaseVenue,
         nextPhaseGuidelines: data.nextPhaseGuidelines,
+        mentor: data.mentor,
     } as IdeaSubmission;
   }
   return null;
 };
-

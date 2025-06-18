@@ -6,6 +6,15 @@ export type Role = 'STUDENT' | 'EXTERNAL_USER' | 'ADMIN_FACULTY' | null;
 export type ApplicantCategory = 'PARUL_STUDENT' | 'PARUL_STAFF' | 'PARUL_ALUMNI' | 'OTHERS';
 export type CurrentStage = 'IDEA' | 'PROTOTYPE_STAGE' | 'STARTUP_STAGE';
 
+export const AVAILABLE_MENTORS = [
+  'Prashant Khanna', 'Anup Chaudhari', 'Riddhi Bagha', 'Sonal Sudani', 
+  'Jay Sudani', 'Nikhil Jumde', 'Vishal SIngh', 'Hardik Kharva', 
+  'Tushar Thakur', 'Pancham Baraiya', 'Paritosh Sharma', 'Juned Shaikh'
+] as const;
+
+export type MentorName = typeof AVAILABLE_MENTORS[number];
+
+
 export interface UserProfile {
   uid: string;
   email: string | null;
@@ -48,7 +57,7 @@ export interface AdminMark {
 }
 
 export interface TeamMember {
-  id: string; // Unique ID for the team member entry, generated client-side (e.g., nanoid)
+  id: string; // Unique ID for the team member entry, generated client-side (e.g., nanoid or user's UID after profile setup)
   name: string;
   email: string;
   phone: string;
@@ -78,6 +87,7 @@ export interface IdeaSubmission {
   status: IdeaStatus;
   programPhase: ProgramPhase | null;
   phase2Marks?: { [adminUid: string]: AdminMark };
+  mentor?: MentorName; // Mentor assigned if in COHORT phase
 
   rejectionRemarks?: string;
   rejectedByUid?: string; // UID of admin who rejected
@@ -96,8 +106,9 @@ export interface IdeaSubmission {
 
   submittedAt: Timestamp;
   updatedAt: Timestamp;
-  cohortId?: string;
+  cohortId?: string; // This can be used later if a separate 'cohorts' collection is made
 
+  // Denormalized fields for easier display
   applicantDisplayName?: string;
   applicantEmail?: string;
 }

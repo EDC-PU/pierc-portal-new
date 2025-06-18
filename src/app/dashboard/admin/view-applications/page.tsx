@@ -8,9 +8,11 @@ import {
     getAllIdeaSubmissionsWithDetails, 
     updateIdeaStatusAndPhase, 
     deleteIdeaSubmission as deleteIdeaSubmissionFS,
-    submitOrUpdatePhase2Mark 
+    submitOrUpdatePhase2Mark,
+    assignMentorToIdea as assignMentorFS // New import
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName } from '@/types';
+import { AVAILABLE_MENTORS } from '@/types'; // New import
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -35,7 +37,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore'; 
 import { getDoc, doc } from 'firebase/firestore'; 
@@ -77,6 +79,7 @@ export default function ViewApplicationsPage() {
   const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
   const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
   const [isSavingMark, setIsSavingMark] = useState(false);
+  const [isAssigningMentor, setIsAssigningMentor] = useState(false);
 
   const [isRejectionDialogVisible, setIsRejectionDialogVisible] = useState(false);
   const [currentIdeaForRejection, setCurrentIdeaForRejection] = useState<IdeaSubmission | null>(null);
@@ -327,6 +330,36 @@ export default function ViewApplicationsPage() {
     }
   };
 
+  const handleAssignMentor = async (ideaId: string, mentorName: MentorName | null) => {
+    if (!userProfile || !userProfile.isSuperAdmin) {
+        toast({title: "Unauthorized", description: "Only Super Admins can assign mentors.", variant: "destructive"});
+        return;
+    }
+    setIsAssigningMentor(true);
+    try {
+        await assignMentorFS(ideaId, mentorName, userProfile.uid);
+        toast({title: "Mentor Assignment Updated", description: `Mentor ${mentorName ? 'assigned: '+mentorName : 'unassigned'}.`});
+        
+        // Optimistically update local state or re-fetch
+        const appDocRef = doc(db, 'ideas', ideaId);
+        const updatedAppSnap = await getDoc(appDocRef);
+        const updatedAppData = updatedAppSnap.exists() ? ({ id: updatedAppSnap.id, ...updatedAppSnap.data() } as IdeaSubmission) : null;
+
+        if (updatedAppData) {
+          setSelectedApplication(prev => prev ? {...prev, mentor: updatedAppData.mentor, updatedAt: updatedAppData.updatedAt} : null);
+          setApplications(prevApps => prevApps.map(app => app.id === updatedAppData.id ? {...app, mentor: updatedAppData.mentor, updatedAt: updatedAppData.updatedAt} : app));
+        } else {
+          fetchApplications(); 
+        }
+    } catch (error) {
+        console.error("Error assigning mentor:", error);
+        toast({title: "Mentor Assignment Error", description: (error as Error).message || "Could not update mentor assignment.", variant: "destructive"});
+    } finally {
+        setIsAssigningMentor(false);
+    }
+  };
+
+
   const getStatusBadgeVariant = (status: IdeaStatus) => {
     switch (status) {
       case 'SELECTED': return 'default';
@@ -406,7 +439,7 @@ export default function ViewApplicationsPage() {
     const headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members (Free Text)',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Program Phase', 'Rejection Remarks', 'Studio Location', 
+      'Status', 'Program Phase', 'Assigned Mentor', 'Rejection Remarks', 'Studio Location', 
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At', 
@@ -421,7 +454,7 @@ export default function ViewApplicationsPage() {
     }
     
     const adminMarkAdminUIDs: string[] = [];
-    if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications[0]?.phase2Marks) {
+    if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications.some(app => app.phase2Marks && Object.keys(app.phase2Marks).length > 0)) {
         const allAdminUIDsInMarks = new Set<string>();
         applications.forEach(app => {
             if (app.phase2Marks) {
@@ -458,6 +491,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.uniqueness),
         escapeCsvField(app.status.replace(/_/g, ' ')),
         escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
+        escapeCsvField(app.mentor || 'N/A'),
         escapeCsvField(app.rejectionRemarks),
         escapeCsvField(app.studioLocation),
         escapeCsvField(app.fileURL),
@@ -539,7 +573,7 @@ export default function ViewApplicationsPage() {
         <CardHeader>
           <CardTitle>All Submitted Applications</CardTitle>
           <CardDescription>
-            Set status for applications. If 'Selected', assign a Program Phase & meeting details. If 'Not Selected', provide remarks. For 'Phase 2' ideas, provide marks in the details dialog.
+            Set status for applications. If 'Selected', assign a Program Phase & meeting details. If 'Not Selected', provide remarks. For 'Phase 2' ideas, provide marks. For 'COHORT' phase, Super Admins can assign a mentor.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -795,6 +829,46 @@ export default function ViewApplicationsPage() {
 
               </div>
 
+                {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase === 'COHORT' && (
+                    <Card className="mt-4 pt-0">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-lg font-headline flex items-center">
+                                <Award className="h-5 w-5 mr-2 text-amber-500" /> Mentor Assignment
+                            </CardTitle>
+                            <CardDescription>Assign or view the mentor for this COHORT idea.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {userProfile.isSuperAdmin ? (
+                                <div>
+                                    <Label htmlFor="mentorSelect">Assign Mentor</Label>
+                                    <Select
+                                        value={selectedApplication.mentor || ''}
+                                        onValueChange={(value) => handleAssignMentor(selectedApplication.id!, value === '' ? null : value as MentorName)}
+                                        disabled={isAssigningMentor}
+                                    >
+                                        <SelectTrigger id="mentorSelect" className="w-full md:w-[250px]">
+                                            <SelectValue placeholder="Select a mentor" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="">Unassign Mentor</SelectItem>
+                                            {AVAILABLE_MENTORS.map(mentor => (
+                                                <SelectItem key={mentor} value={mentor}>{mentor}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    {isAssigningMentor && <LoadingSpinner size={16} className="ml-2 inline-block" />}
+                                </div>
+                            ) : (
+                                <div>
+                                    <h4 className="font-semibold text-muted-foreground">Assigned Mentor</h4>
+                                    <p>{selectedApplication.mentor || 'Not yet assigned'}</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                )}
+
+
               {selectedApplication.programPhase === 'PHASE_2' && (
                 <Card className="mt-4 pt-0">
                   <CardHeader className="pb-2">
@@ -1027,4 +1101,3 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
-

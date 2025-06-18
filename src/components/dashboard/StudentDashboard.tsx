@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -314,8 +314,10 @@ export default function StudentDashboard() {
                 const currentIdeaMemberCount = currentIdeaData?.structuredTeamMembers?.length || 0;
                 
                 if (currentIdeaMemberCount < 4) {
-                   const { id, ...newMemberData } = memberData;
-                   await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, newMemberData);
+                   // For a new member, the ID is the nanoid generated above.
+                   // If the user later signs up, AuthContext's `setRoleAndCompleteProfile`
+                   // will call `updateTeamMemberDetailsInIdeaAfterProfileSetup` to update this nanoid to their Firebase UID.
+                   await addTeamMemberToIdea(selectedIdeaForTeamMgmt.id, memberData);
                    membersAddedOrUpdatedCount++;
                 } else {
                    toast({title: "Team Full", description: `Could not add member ${memberData.name}. Maximum 4 members allowed.`, variant: "default"});
@@ -402,6 +404,12 @@ export default function StudentDashboard() {
                 </div>
               )}
             </div>
+             {isTeamMemberForIdea.programPhase === 'COHORT' && isTeamMemberForIdea.mentor && (
+                <div className="pt-2">
+                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><Award className="h-4 w-4 mr-1.5 text-amber-500"/> Assigned Mentor</Label>
+                    <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{isTeamMemberForIdea.mentor}</p>
+                </div>
+            )}
              {isTeamMemberForIdea.nextPhaseDate && (
                 <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
                     <CardHeader className="pb-2 pt-4 px-4">
@@ -525,6 +533,11 @@ export default function StudentDashboard() {
                               {(idea.structuredTeamMembers && idea.structuredTeamMembers.length > 0) && (
                                 <p className="text-xs text-muted-foreground mt-1">
                                     <span className="font-medium">Team Members ({idea.structuredTeamMembers.length}):</span> {idea.structuredTeamMembers.map(m => m.name).join(', ')}
+                                </p>
+                              )}
+                              {idea.programPhase === 'COHORT' && idea.mentor && (
+                                 <p className="text-xs text-muted-foreground mt-1 flex items-center">
+                                    <Award className="h-3.5 w-3.5 mr-1 text-amber-500"/> <span className="font-medium">Mentor:</span> {idea.mentor}
                                 </p>
                               )}
                           </div>
