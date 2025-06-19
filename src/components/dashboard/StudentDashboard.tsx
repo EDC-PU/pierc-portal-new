@@ -7,11 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon } from 'lucide-react'; // Added GroupIcon
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
   type IdeaSubmission,
+  type Cohort, // Added Cohort
+  getAllCohortsStream, // Added getAllCohortsStream
   updateIdeaPhase2PptDetails,
   addTeamMemberToIdea,
   removeTeamMemberFromIdea,
@@ -28,7 +30,7 @@ import { db } from '@/lib/firebase/config';
 import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
-import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow'; // Added
+import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -45,8 +47,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent as ModalContent, DialogHeader as ModalHeader, DialogTitle as ModalTitle, DialogDescription as ModalDescription, DialogFooter as ModalFooter } from '@/components/ui/dialog'; // For AI Outline Modal
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'; // For AI Outline Display
+import { Dialog, DialogContent as ModalContent, DialogHeader as ModalHeader, DialogTitle as ModalTitle, DialogDescription as ModalDescription, DialogFooter as ModalFooter } from '@/components/ui/dialog';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -73,7 +75,7 @@ const currentStageLabels: Record<CurrentStage, string> = {
 };
 
 const teamMemberSchema = z.object({
-  id: z.string().optional(), // Firestore doc ID for existing members, or client-generated for new form rows
+  id: z.string().optional(),
   name: z.string().min(1, "Name is required").max(100).optional().or(z.literal('')),
   email: z.string().email("Invalid email address").optional().or(z.literal('')),
   phone: z.string().min(10, "Contact number must be at least 10 digits").max(15).optional().or(z.literal('')),
@@ -106,6 +108,8 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
   const [loadingIdeas, setLoadingIdeas] = useState(true);
+  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]); // Added state for cohorts
+  const [loadingCohorts, setLoadingCohorts] = useState(true); // Added loading state for cohorts
   const [selectedPptFile, setSelectedPptFile] = useState<File | null>(null);
   const [uploadingPptIdeaId, setUploadingPptIdeaId] = useState<string | null>(null);
   const [isUploadingPpt, setIsUploadingPpt] = useState(false);
@@ -173,6 +177,24 @@ export default function StudentDashboard() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.uid, isTeamMemberForIdea]);
+
+
+  useEffect(() => {
+    if (user?.uid) { // Fetch cohorts if user is logged in, regardless of being idea owner or team member
+      setLoadingCohorts(true);
+      const unsubscribeCohorts = getAllCohortsStream((fetchedCohorts) => {
+        setAllCohorts(fetchedCohorts);
+        setLoadingCohorts(false);
+      });
+      return () => {
+        unsubscribeCohorts();
+      };
+    } else {
+      setAllCohorts([]);
+      setLoadingCohorts(false);
+    }
+  }, [user?.uid]);
+
 
   useEffect(() => {
     if (selectedIdeaForTeamMgmt && !isTeamMemberForIdea) {
@@ -421,7 +443,7 @@ export default function StudentDashboard() {
     setMemberToRemove(null);
   };
 
-  if (loadingIdeas) {
+  if (loadingIdeas || loadingCohorts) {
      return (
       <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -431,6 +453,7 @@ export default function StudentDashboard() {
   }
 
   if (isTeamMemberForIdea) {
+    const assignedCohort = isTeamMemberForIdea.cohortId ? allCohorts.find(c => c.id === isTeamMemberForIdea.cohortId) : null;
     return (
       <div className="space-y-6 animate-slide-in-up">
         <Card>
@@ -475,6 +498,12 @@ export default function StudentDashboard() {
                 <div className="pt-2">
                     <Label className="text-sm font-semibold text-muted-foreground flex items-center"><Award className="h-4 w-4 mr-1.5 text-amber-500"/> Assigned Mentor</Label>
                     <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{isTeamMemberForIdea.mentor}</p>
+                </div>
+            )}
+            {isTeamMemberForIdea.programPhase === 'COHORT' && assignedCohort && (
+                <div className="pt-2">
+                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><GroupIcon className="h-4 w-4 mr-1.5 text-primary"/> Assigned Cohort</Label>
+                    <p className="text-sm p-2 bg-primary/10 rounded-md shadow-sm border border-primary/30">{assignedCohort.name}</p>
                 </div>
             )}
              {isTeamMemberForIdea.status === 'SELECTED' && isTeamMemberForIdea.programPhase && isTeamMemberForIdea.nextPhaseDate && (
@@ -586,7 +615,9 @@ export default function StudentDashboard() {
             ) : (
               <ScrollArea className="h-auto max-h-[calc(100vh-26rem)] pr-3" key={userIdeas.map(i=>i.id).join(',')}>
                 <ul className="space-y-4">
-                  {userIdeas.map((idea) => (
+                  {userIdeas.map((idea) => {
+                    const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null;
+                    return (
                     <li key={idea.id} className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors shadow-sm">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-2">
                           <div>
@@ -607,6 +638,11 @@ export default function StudentDashboard() {
                               {idea.programPhase === 'COHORT' && idea.mentor && (
                                  <p className="text-xs text-muted-foreground mt-1 flex items-center">
                                     <Award className="h-3.5 w-3.5 mr-1 text-amber-500"/> <span className="font-medium">Mentor:</span> {idea.mentor}
+                                </p>
+                              )}
+                              {idea.programPhase === 'COHORT' && assignedCohort && (
+                                 <p className="text-xs text-muted-foreground mt-1 flex items-center">
+                                    <GroupIcon className="h-3.5 w-3.5 mr-1 text-primary"/> <span className="font-medium">Cohort:</span> {assignedCohort.name}
                                 </p>
                               )}
                           </div>
@@ -748,7 +784,7 @@ export default function StudentDashboard() {
                         </div>
                       )}
                     </li>
-                  ))}
+                  )})}
                 </ul>
               </ScrollArea>
             )}
@@ -1033,3 +1069,4 @@ export default function StudentDashboard() {
   );
 }
 
+    
