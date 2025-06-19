@@ -343,12 +343,12 @@ export default function ProfileSetupPage() {
               <h3 className="font-semibold text-lg text-primary border-t pt-4">Personal Information</h3>
               <div>
                 <Label htmlFor="fullName">Full Name *</Label>
-                <Controller name="fullName" control={control} render={({ field }) => <Input id="fullName" placeholder="Enter your full name" {...field} />} />
+                <Controller name="fullName" control={control} render={({ field }) => <Input id="fullName" placeholder="Enter your full name" {...field} value={field.value || ''} />} />
                 {errors.fullName && <p className="text-sm text-destructive mt-1">{errors.fullName.message}</p>}
               </div>
               <div>
                 <Label htmlFor="contactNumber">Contact Number *</Label>
-                <Controller name="contactNumber" control={control} render={({ field }) => <Input id="contactNumber" type="tel" placeholder="e.g., +91 XXXXXXXXXX" {...field} />} />
+                <Controller name="contactNumber" control={control} render={({ field }) => <Input id="contactNumber" type="tel" placeholder="e.g., +91 XXXXXXXXXX" {...field} value={field.value || ''} />} />
                 {errors.contactNumber && <p className="text-sm text-destructive mt-1">{errors.contactNumber.message}</p>}
               </div>
             </section>
@@ -443,7 +443,7 @@ export default function ProfileSetupPage() {
                         </div>
                         <div>
                         <Label htmlFor="startupTitle">Title of the Startup/Idea *</Label>
-                        <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your brilliant startup/idea name" {...field} />} />
+                        <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your brilliant startup/idea name" {...field} value={field.value || ''} />} />
                         {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
                         </div>
                          <div>
@@ -453,17 +453,17 @@ export default function ProfileSetupPage() {
                         </div>
                         <div>
                             <Label htmlFor="problemDefinition">Define the Problem you are solving *</Label>
-                            <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} rows={3}/>} />
+                            <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} value={field.value || ''} rows={3}/>} />
                             {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{errors.problemDefinition.message}</p>}
                         </div>
                         <div>
                             <Label htmlFor="solutionDescription">Describe your Solution *</Label>
-                            <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="Explain your proposed solution in detail" {...field} rows={3}/>} />
+                            <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="Explain your proposed solution in detail" {...field} value={field.value || ''} rows={3}/>} />
                             {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{errors.solutionDescription.message}</p>}
                         </div>
                         <div>
                             <Label htmlFor="uniqueness">What is Unique/Distinctive about your idea? *</Label>
-                            <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="Highlight the novelty and competitive advantage" {...field} rows={3}/>} />
+                            <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="Highlight the novelty and competitive advantage" {...field} value={field.value || ''} rows={3}/>} />
                             {errors.uniqueness && <p className="text-sm text-destructive mt-1">{errors.uniqueness.message}</p>}
                         </div>
                         <div>
