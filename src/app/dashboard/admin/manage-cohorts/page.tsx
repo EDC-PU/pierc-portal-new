@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Cohort, UserProfile, CohortScheduleEntry } from '@/types';
+import type { Cohort, UserProfile, CohortScheduleEntry, IdeaSubmission } from '@/types'; // Added IdeaSubmission
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { CreateCohortForm, type CreateCohortFormData } from '@/components/admin/CreateCohortForm';
@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { createCohortFS, getAllCohortsStream, updateCohortScheduleFS } from '@/lib/firebase/firestore';
+import { createCohortFS, getAllCohortsStream, updateCohortScheduleFS, getIdeaById } from '@/lib/firebase/firestore'; // Added getIdeaById
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format, isValid } from 'date-fns';
@@ -30,7 +30,7 @@ import * as XLSX from 'xlsx';
 
 const scheduleEntrySchema = z.object({
   id: z.string().default(() => nanoid()),
-  date: z.string().min(1, "Date is required"), // Store as string, will be YYYY-MM-DD from <input type="date">
+  date: z.string().min(1, "Date is required"),
   day: z.string().min(1, "Day is required"),
   time: z.string().min(1, "Time is required"),
   category: z.string().min(1, "Category is required"),
@@ -58,16 +58,22 @@ const scheduleCategories = [
 
 const dayOptions = Array.from({ length: 15 }, (_, i) => `Day-${i + 1}`);
 
+interface DetailedCohort extends Cohort {
+  participantNames: string[];
+  totalParticipants: number;
+}
 
 export default function ManageCohortsPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
 
-  const [cohorts, setCohorts] = useState<Cohort[]>([]);
+  const [cohorts, setCohorts] = useState<Cohort[]>([]); // Raw cohorts from stream
+  const [detailedCohorts, setDetailedCohorts] = useState<DetailedCohort[]>([]); // Cohorts augmented with idea details
   const [loadingCohorts, setLoadingCohorts] = useState(true);
+  const [loadingIdeaDetails, setLoadingIdeaDetails] = useState(false);
   const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
-  const [editingCohort, setEditingCohort] = useState<Cohort | null>(null); // For future editing of cohort details
+  const [editingCohort, setEditingCohort] = useState<Cohort | null>(null);
 
   const [selectedCohortForSchedule, setSelectedCohortForSchedule] = useState<Cohort | null>(null);
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
@@ -77,7 +83,7 @@ export default function ManageCohortsPage() {
     defaultValues: { schedule: [] },
   });
 
-  const { fields: scheduleFields, append: appendScheduleEntry, remove: removeScheduleEntry, update: updateScheduleEntry } = useFieldArray({
+  const { fields: scheduleFields, append: appendScheduleEntry, remove: removeScheduleEntry } = useFieldArray({
     control: scheduleControl,
     name: "schedule",
   });
@@ -98,20 +104,63 @@ export default function ManageCohortsPage() {
   useEffect(() => {
     if (userProfile?.role === 'ADMIN_FACULTY') {
       setLoadingCohorts(true);
-      const unsubscribe = getAllCohortsStream((fetchedCohorts) => {
-        setCohorts(fetchedCohorts.map(c => ({ ...c, schedule: c.schedule || [] }))); // Ensure schedule exists
+      const unsubscribe = getAllCohortsStream(async (fetchedCohorts) => {
+        const mappedCohorts = fetchedCohorts.map(c => ({ ...c, schedule: c.schedule || [] }));
+        setCohorts(mappedCohorts); // Set raw cohorts
         setLoadingCohorts(false);
+
+        if (mappedCohorts.length > 0) {
+            setLoadingIdeaDetails(true);
+            const ideaIdsToFetch = new Set<string>();
+            mappedCohorts.forEach(cohort => {
+                (cohort.ideaIds || []).forEach(id => ideaIdsToFetch.add(id));
+            });
+
+            const ideasMap = new Map<string, { applicantName: string, participantCount: number }>();
+            if (ideaIdsToFetch.size > 0) {
+                const ideaPromises = Array.from(ideaIdsToFetch).map(id =>
+                    getIdeaById(id).then(ideaDoc => {
+                        if (ideaDoc) {
+                            const participantCount = 1 + (ideaDoc.structuredTeamMembers?.length || 0);
+                            ideasMap.set(id, {
+                                applicantName: ideaDoc.applicantDisplayName || 'Unknown Applicant',
+                                participantCount: participantCount
+                            });
+                        }
+                    }).catch(err => console.error(`Failed to fetch idea ${id}`, err))
+                );
+                await Promise.all(ideaPromises);
+            }
+
+            const newDetailedCohortsData = mappedCohorts.map(cohort => {
+                let totalParticipants = 0;
+                const participantNames: string[] = [];
+                (cohort.ideaIds || []).forEach(ideaId => {
+                    const ideaDetail = ideasMap.get(ideaId);
+                    if (ideaDetail) {
+                        participantNames.push(ideaDetail.applicantName);
+                        totalParticipants += ideaDetail.participantCount;
+                    }
+                });
+                return { ...cohort, participantNames, totalParticipants };
+            });
+            setDetailedCohorts(newDetailedCohortsData);
+            setLoadingIdeaDetails(false);
+        } else {
+            setDetailedCohorts([]);
+            setLoadingIdeaDetails(false);
+        }
       });
       return () => unsubscribe();
     }
   }, [userProfile]);
 
+
   useEffect(() => {
     if (selectedCohortForSchedule) {
-      // Ensure dates from Firestore (if they were Timestamps originally and converted to string) are in YYYY-MM-DD
       const scheduleToReset = (selectedCohortForSchedule.schedule || []).map(entry => ({
         ...entry,
-        date: entry.date ? (entry.date.includes('T') ? entry.date.split('T')[0] : entry.date) : '', // Basic check for ISO string vs simple date
+        date: entry.date ? (entry.date.includes('T') ? entry.date.split('T')[0] : entry.date) : '',
       }));
       resetScheduleForm({ schedule: scheduleToReset });
     } else {
@@ -133,7 +182,6 @@ export default function ManageCohortsPage() {
     }
     try {
         if (editingCohort && editingCohort.id) {
-            // Update logic will go here later
             toast({title: "Update Not Implemented", description: "Cohort update functionality is coming soon.", variant: "default"});
         } else {
             await createCohortFS(data, userProfile);
@@ -152,8 +200,12 @@ export default function ManageCohortsPage() {
     try {
         await updateCohortScheduleFS(selectedCohortForSchedule.id, data.schedule, userProfile);
         toast({title: "Schedule Saved", description: `Schedule for ${selectedCohortForSchedule.name} updated.`});
-        // Optimistically update local state or re-fetch if necessary
-        setCohorts(prev => prev.map(c => c.id === selectedCohortForSchedule.id ? {...c, schedule: data.schedule} : c));
+        
+        // Optimistically update local detailedCohorts state for schedule entries count
+        setDetailedCohorts(prevDetailedCohorts => prevDetailedCohorts.map(dc => 
+            dc.id === selectedCohortForSchedule.id ? {...dc, schedule: data.schedule} : dc
+        ));
+        
         setIsScheduleDialogOpen(false);
     } catch (error: any) {
         toast({ title: "Save Schedule Error", description: error.message || "Could not save cohort schedule.", variant: "destructive"});
@@ -165,7 +217,7 @@ export default function ManageCohortsPage() {
     setIsCreateFormOpen(true);
   };
 
-  const openScheduleDialog = (cohort: Cohort) => {
+  const openScheduleDialog = (cohort: DetailedCohort) => { // Use DetailedCohort
     setSelectedCohortForSchedule(cohort);
     setIsScheduleDialogOpen(true);
   };
@@ -174,18 +226,15 @@ export default function ManageCohortsPage() {
     if (!timestampOrDateString) return 'N/A';
     
     let dateToFormat: Date;
-    if ((timestampOrDateString as Timestamp)?.toDate) { // Check if it's a Firestore Timestamp
+    if ((timestampOrDateString as Timestamp)?.toDate) {
       dateToFormat = (timestampOrDateString as Timestamp).toDate();
-    } else if (timestampOrDateString instanceof Date) { // Check if it's already a Date object
+    } else if (timestampOrDateString instanceof Date) {
       dateToFormat = timestampOrDateString;
-    } else if (typeof timestampOrDateString === 'string') { // If it's a string
-        // Attempt to parse common date string formats, especially YYYY-MM-DD from input
+    } else if (typeof timestampOrDateString === 'string') {
         const parts = timestampOrDateString.split('-');
         if (parts.length === 3) {
-            // Create date in UTC to avoid timezone issues with simple YYYY-MM-DD
             dateToFormat = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2])));
         } else {
-            // Try parsing as a generic date string (might be ISO with time)
             dateToFormat = new Date(timestampOrDateString);
         }
     } else {
@@ -197,7 +246,7 @@ export default function ManageCohortsPage() {
   };
 
 
-  const exportScheduleToXLSX = (cohort: Cohort) => {
+  const exportScheduleToXLSX = (cohort: DetailedCohort) => { // Use DetailedCohort
     if (!cohort.schedule || cohort.schedule.length === 0) {
       toast({ title: "No Schedule Data", description: "This cohort has no schedule to export.", variant: "default" });
       return;
@@ -222,8 +271,7 @@ export default function ManageCohortsPage() {
 
     const worksheet = XLSX.utils.json_to_sheet(dataForSheet, { header: headers });
     
-    // Apply borders to all cells
-    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1'); // Default to A1 if ref is undefined
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
     const thinBorderStyle = { style: "thin", color: { auto: 1 } };
     const cellBorder = {
       top: thinBorderStyle,
@@ -235,20 +283,15 @@ export default function ManageCohortsPage() {
     for (let R = range.s.r; R <= range.e.r; ++R) {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const cell_address = XLSX.utils.encode_cell({ c: C, r: R });
-        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' }; // Create cell if it doesn't exist, default to string type
-        if (!worksheet[cell_address].s) worksheet[cell_address].s = {}; // Create style object if it doesn't exist
+        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' };
+        if (!worksheet[cell_address].s) worksheet[cell_address].s = {};
         worksheet[cell_address].s.border = cellBorder;
       }
     }
 
     const wscols = [
-        { wch: 12 }, // Date
-        { wch: 10 }, // Day
-        { wch: 20 }, // Time
-        { wch: 20 }, // Category
-        { wch: 30 }, // Topic/Activity
-        { wch: 40 }, // Content
-        { wch: 25 }, // Speaker/Venue
+        { wch: 12 }, { wch: 10 }, { wch: 20 }, { wch: 20 },
+        { wch: 30 }, { wch: 40 }, { wch: 25 },
     ];
     worksheet['!cols'] = wscols;
 
@@ -259,8 +302,8 @@ export default function ManageCohortsPage() {
   };
 
 
-  if (authLoading || !initialLoadComplete || loadingCohorts) {
-    return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
+  if (authLoading || !initialLoadComplete || loadingCohorts || (cohorts.length > 0 && loadingIdeaDetails)) {
+    return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /> <span className="ml-2 text-muted-foreground">Loading cohorts data...</span></div>;
   }
   if (userProfile?.role !== 'ADMIN_FACULTY') {
     return <div className="flex justify-center items-center h-screen"><p>Access Denied. Redirecting...</p></div>;
@@ -311,7 +354,7 @@ export default function ManageCohortsPage() {
           <CardDescription>List of all created cohorts. Manage their schedules or export data.</CardDescription>
         </CardHeader>
         <CardContent>
-          {cohorts.length === 0 ? (
+          {detailedCohorts.length === 0 && !loadingCohorts && !loadingIdeaDetails ? (
             <p className="text-center text-muted-foreground py-8">No cohorts found. Create one to get started!</p>
           ) : (
             <div className="overflow-x-auto">
@@ -319,25 +362,31 @@ export default function ManageCohortsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="min-w-[150px]">Cohort Name</TableHead>
+                    <TableHead className="hidden lg:table-cell min-w-[200px]">Assigned Leaders</TableHead>
+                    <TableHead className="hidden lg:table-cell">Participants</TableHead>
+                    <TableHead className="hidden md:table-cell">Batch Size</TableHead>
+                    <TableHead className="hidden xl:table-cell">Schedule Entries</TableHead>
                     <TableHead className="hidden md:table-cell">Start Date</TableHead>
                     <TableHead className="hidden md:table-cell">End Date</TableHead>
-                    <TableHead className="hidden sm:table-cell">Batch Size</TableHead>
-                    <TableHead className="hidden lg:table-cell">Schedule Entries</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {cohorts.map((cohort) => (
+                  {detailedCohorts.map((cohort) => (
                     <TableRow key={cohort.id}>
                       <TableCell className="font-medium max-w-xs truncate" title={cohort.name}>{cohort.name}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs max-w-[200px] truncate" title={cohort.participantNames.join(', ')}>
+                        {cohort.participantNames.length > 0 ? cohort.participantNames.join(', ') : 'N/A'}
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm">{cohort.totalParticipants}</TableCell>
+                      <TableCell className="hidden md:table-cell text-sm">{cohort.batchSize}</TableCell>
+                      <TableCell className="hidden xl:table-cell text-sm">{cohort.schedule?.length || 0}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                         {formatDateForDisplay(cohort.startDate)}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                         {formatDateForDisplay(cohort.endDate)}
                       </TableCell>
-                      <TableCell className="hidden sm:table-cell text-sm">{cohort.batchSize}</TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm">{cohort.schedule?.length || 0}</TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
                         <Button variant="outline" size="sm" onClick={() => openScheduleDialog(cohort)}>
                           <CalendarRange className="mr-1 h-3.5 w-3.5" /> Manage Schedule
@@ -479,3 +528,4 @@ export default function ManageCohortsPage() {
   );
 }
 
+    
