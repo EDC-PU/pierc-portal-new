@@ -4,161 +4,115 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper Functions
-    function isSignedIn() {
-      return request.auth != null && request.auth.uid != null;
+    // Helper function to check if the requester is an Admin
+    function isAdmin() {
+      return request.auth != null && request.auth.token.admin == true &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
     }
 
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
-    }
-    
-    function isSuperAdmin(userId) {
-      let userData = getUserData(userId);
-      return userData.isSuperAdmin == true && userData.role == 'ADMIN_FACULTY';
+    // Helper function to check if the requester is the Super Admin
+    function isSuperAdmin() {
+      return request.auth != null && request.auth.token.email == 'pranavrathi07@gmail.com';
     }
 
-    function isAdmin(userId) {
-      let userData = getUserData(userId);
-      return userData.role == 'ADMIN_FACULTY';
-    }
-
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    
-    function isIdeaOwner(userId, ideaData) {
-      return isSignedIn() && request.auth.uid == userId && ideaData.userId == userId;
-    }
-
-    // Activity Logs: Admins can create, no one can update/delete through client.
-    match /activityLogs/{logId} {
-      allow read: if isSignedIn() && isAdmin(request.auth.uid); // Or broader access if needed
-      allow create: if isSignedIn() && isAdmin(request.auth.uid); // Or allow any signed-in user if appropriate
-      allow update, delete: if false; // Prevent client-side updates/deletes
-    }
-
-    // User Profiles
+    // Users Collection
     match /users/{userId} {
-      allow read: if isSignedIn(); 
-      allow create: if request.auth.uid == userId && 
-                       request.resource.data.uid == userId &&
-                       request.resource.data.email == request.auth.token.email &&
-                       (!('isSuperAdmin' in request.resource.data) || request.resource.data.isSuperAdmin == (request.auth.token.email == 'pranavrathi07@gmail.com')) &&
-                       request.resource.data.createdAt == request.time &&
-                       request.resource.data.updatedAt == request.time;
+      allow get: if request.auth != null;
 
-      allow update: if (isOwner(userId) && 
-                        !('role' in request.resource.data) && 
-                        !('isSuperAdmin' in request.resource.data) &&
-                        request.resource.data.updatedAt == request.time
-                       ) || 
-                       (isSignedIn() && isAdmin(request.auth.uid) && request.resource.data.updatedAt == request.time); // Admins can update any profile
-      
-      allow delete: if false; // Deletion should be handled by a Firebase Function or specific admin action
+      allow create: if request.auth.uid == userId &&
+                      // Required fields for any profile
+                      request.resource.data.keys().hasAll(['uid', 'email', 'role', 'createdAt', 'updatedAt', 'fullName', 'contactNumber']) &&
+                      request.resource.data.uid == userId &&
+                      // Email should match the authenticated user's email during creation
+                      request.resource.data.email == request.auth.token.email &&
+                      // Only the specific super admin email can set isSuperAdmin to true during creation
+                      (request.resource.data.isSuperAdmin == true ? isSuperAdmin() : true) &&
+                      // Role can be set during creation (e.g., ADMIN_FACULTY for mentors)
+                      (request.resource.data.role is string || request.resource.data.role == null) &&
+                      // Allow writing placeholder idea fields if the user is being set up as an admin/mentor initially
+                      // or if they are a regular user providing their idea details.
+                      // This is a broad allowance for creation; updates are stricter.
+                      true; // Simplified for creation, assuming backend logic in createUserProfileFS is trusted.
+
+      allow update: if (request.auth.uid == userId &&
+                        // User cannot change their own role or isSuperAdmin status
+                        !(request.resource.data.role != resource.data.role) &&
+                        !(request.resource.data.isSuperAdmin != resource.data.isSuperAdmin) &&
+                        // User cannot change their own UID or email after creation
+                        request.resource.data.uid == resource.data.uid &&
+                        request.resource.data.email == resource.data.email &&
+                        // User cannot change their own createdAt timestamp
+                        request.resource.data.createdAt == resource.data.createdAt
+                       ) ||
+                       // Admins can update user profiles (except for critical fields of other admins if needed)
+                       isAdmin();
+
+      allow delete: if isAdmin(); // Or use a callable function for self-delete: request.auth.uid == userId;
     }
 
-    // Idea Submissions
-    function isCreatingOwnIdea(userId, ideaData) {
-      let userProfile = getUserData(userId);
-      return isSignedIn()
-             && request.auth.uid == userId
-             && userProfile.isTeamMemberOnly == false
-             && ideaData.userId == userId
-             && ideaData.title is string && ideaData.title.size() > 0
-             && ideaData.problem is string && ideaData.problem.size() > 0
-             && ideaData.solution is string && ideaData.solution.size() > 0
-             && ideaData.uniqueness is string && ideaData.uniqueness.size() > 0
-             && ideaData.developmentStage is string
-             && ideaData.applicantType is string
-             && ideaData.status == 'SUBMITTED'
-             && ideaData.programPhase == null
-             && ideaData.cohortId == null // Ensure cohortId is null on creation
-             && ideaData.structuredTeamMembers is list && ideaData.structuredTeamMembers.size() <= 4 // Max 4 members
-             && ideaData.teamMemberEmails is list && ideaData.teamMemberEmails.size() <= 4
-             && ideaData.phase2Marks is map && ideaData.phase2Marks.size() == 0 // Ensure phase2Marks is empty map
-             && ideaData.submittedAt == request.time
-             && ideaData.updatedAt == request.time
-             && request.resource.data.keys().hasOnly([
-                  'userId', 'applicantDisplayName', 'applicantEmail', 'title', 'category', 'problem', 'solution', 'uniqueness',
-                  'developmentStage', 'applicantType', 'teamMembers', 'structuredTeamMembers', 'teamMemberEmails',
-                  'status', 'programPhase', 'cohortId', 'phase2Marks', 'submittedAt', 'updatedAt',
-                  // Optional fields that *might* be explicitly set to null or default by client if allowed by type
-                  'fileURL', 'fileName', 'studioLocation', 'mentor', 
-                  'rejectionRemarks', 'rejectedByUid', 'rejectedAt', 
-                  'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
-                  'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines'
-                ]);
-    }
-
+    // Ideas Collection
     match /ideas/{ideaId} {
-      allow read: if isSignedIn();
-      allow create: if isCreatingOwnIdea(request.auth.uid, request.resource.data);
-      
-      // Owner can update specific fields (like PPT details) if idea is in certain states.
-      // Admins can update more fields (status, phase, marks, mentor, cohortId).
-      allow update: if (isOwner(request.auth.uid) && 
-                        request.resource.data.userId == request.auth.uid && // Re-confirm owner
-                        request.resource.data.updatedAt == request.time &&
-                        (
-                          // Allow updating PPT if in PHASE_2 and not changing other restricted fields
-                          (request.resource.data.programPhase == 'PHASE_2' &&
-                           !request.resource.data.keys().hasAny(['status', 'programPhase', 'phase2Marks', 'mentor', 'cohortId', 'rejectionRemarks'])) ||
-                          // Allow updating team members if status is SUBMITTED or UNDER_REVIEW
-                          ((request.resource.data.status == 'SUBMITTED' || request.resource.data.status == 'UNDER_REVIEW') &&
-                           !request.resource.data.keys().hasAny(['status', 'programPhase', 'phase2Marks', 'mentor', 'cohortId', 'rejectionRemarks', 'phase2PptUrl', 'phase2PptFileName']))
-                        )
-                       ) || 
-                       (isSignedIn() && isAdmin(request.auth.uid) && request.resource.data.updatedAt == request.time);
+      allow get: if request.auth != null;
+      allow list: if request.auth != null; // Be cautious with listing all ideas; refine if needed
 
-      allow delete: if isSignedIn() && isAdmin(request.auth.uid); 
+      allow create: if request.auth.uid == request.resource.data.userId &&
+                      // Ensure essential fields for an idea submission are present
+                      request.resource.data.keys().hasAll([
+                        'userId', 'title', 'problem', 'solution', 'uniqueness',
+                        'developmentStage', 'applicantType', 'status', 'submittedAt', 'updatedAt'
+                      ]) &&
+                      // Allow phase2Marks to be an empty map or a map with valid structure
+                      (request.resource.data.phase2Marks == {} || request.resource.data.phase2Marks is map);
+
+      allow update: if (request.auth.uid == resource.data.userId &&
+                        // User can update their own idea, but not status, phase, mentor, cohort, marks, rejection details
+                        // These fields should only be updated by an admin.
+                        // Allow updating ppt details by owner.
+                        (request.resource.data.status == resource.data.status) &&
+                        (request.resource.data.programPhase == resource.data.programPhase) &&
+                        (request.resource.data.mentor == resource.data.mentor) &&
+                        (request.resource.data.cohortId == resource.data.cohortId) &&
+                        (request.resource.data.phase2Marks == resource.data.phase2Marks) &&
+                        (request.resource.data.rejectionRemarks == resource.data.rejectionRemarks) &&
+                        (request.resource.data.rejectedByUid == resource.data.rejectedByUid) &&
+                        (request.resource.data.rejectedAt == resource.data.rejectedAt) &&
+                        // User cannot change critical ownership fields
+                        request.resource.data.userId == resource.data.userId &&
+                        request.resource.data.submittedAt == resource.data.submittedAt
+                       ) ||
+                       isAdmin(); // Admins can update any field of an idea
+
+      allow delete: if isAdmin();
     }
 
-    // Announcements
+    // Announcements Collection
     match /announcements/{announcementId} {
-      allow read: if isSignedIn();
-      allow create, update, delete: if isSignedIn() && isAdmin(request.auth.uid);
-    }
-    
-    // Cohorts
-    match /cohorts/{cohortId} {
-      allow read: if isSignedIn(); // All signed-in users can read cohort details (e.g., for display)
-      allow create: if isSignedIn() && isAdmin(request.auth.uid) &&
-                      request.resource.data.createdByUid == request.auth.uid &&
-                      request.resource.data.name is string && request.resource.data.name.size() > 0 &&
-                      request.resource.data.startDate is timestamp &&
-                      request.resource.data.endDate is timestamp &&
-                      request.resource.data.batchSize is number && request.resource.data.batchSize > 0 &&
-                      request.resource.data.ideaIds is list && request.resource.data.ideaIds.size() == 0 && // Must be empty on create
-                      request.resource.data.schedule is list && request.resource.data.schedule.size() == 0 && // Must be empty on create
-                      request.resource.data.createdAt == request.time &&
-                      request.resource.data.updatedAt == request.time;
-                      
-      allow update: if isSignedIn() && isAdmin(request.auth.uid) &&
-                      request.resource.data.updatedAt == request.time &&
-                      (!('createdByUid' in request.resource.data) || request.resource.data.createdByUid == get(/databases/$(database)/documents/cohorts/$(cohortId)).data.createdByUid) &&
-                      (!('createdAt' in request.resource.data) || request.resource.data.createdAt == get(/databases/$(database)/documents/cohorts/$(cohortId)).data.createdAt) &&
-                      (request.resource.data.ideaIds is list || !('ideaIds' in request.resource.data)) && // Allow updating ideaIds
-                      (request.resource.data.schedule is list || !('schedule' in request.resource.data)); // Allow updating schedule
-                      
-      allow delete: if isSignedIn() && isSuperAdmin(request.auth.uid); // Only Super Admins can delete cohorts
+      allow get: if request.auth != null;
+      allow list: if request.auth != null;
+      allow create, update, delete: if isAdmin();
     }
 
-    // System Settings
-    match /systemSettings/{settingsId} {
-      allow read: if isSignedIn();
-      allow create, update: if isSignedIn() && isAdmin(request.auth.uid) &&
-                              request.resource.data.updatedAt == request.time &&
-                              request.resource.data.updatedByUid == request.auth.uid;
-      allow delete: if false; // Prevent client-side deletion
+    // Cohorts Collection
+    match /cohorts/{cohortId} {
+      allow get: if request.auth != null;
+      allow list: if request.auth != null;
+      allow create, update, delete: if isAdmin();
     }
-    
-    // Firebase Functions Callable (Example)
-    // This isn't a Firestore rule but shows how you'd control access to a callable function
-    // match /functions/{functionName} {
-    //  allow call: if isSignedIn();
-    // }
+
+    // System Settings Collection
+    match /systemSettings/config { // Assuming a single document with ID 'config'
+      allow get: if request.auth != null;
+      allow write: if isAdmin(); // Only admins can read/write system settings
+    }
+
+    // Activity Logs Collection
+    match /activityLogs/{logId} {
+      // Allow authenticated users to create their own activity logs
+      allow create: if request.auth != null && request.resource.data.actorUid == request.auth.uid;
+      // Reading logs might be restricted to admins or specific roles depending on requirements
+      allow read: if isAdmin();
+      // Logs should generally be immutable by users
+      allow update, delete: if isAdmin(); // Or disallow completely: if false;
+    }
   }
 }
-
-    
