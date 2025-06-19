@@ -355,7 +355,7 @@ export const getAnnouncementsStream = (callback: (announcements: Announcement[])
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol,
     where('isUrgent', '==', false),
-    where('targetAudience', '==', 'ALL'),
+    where('targetAudience', '==', 'ALL'), // TODO: Expand to handle cohort-specific for users
     orderBy('createdAt', 'desc')
   );
 
@@ -375,7 +375,7 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol,
     where('isUrgent', '==', true),
-    where('targetAudience', '==', 'ALL'),
+    where('targetAudience', '==', 'ALL'), // TODO: Expand to handle cohort-specific for users
     orderBy('createdAt', 'desc')
   );
 
@@ -475,6 +475,7 @@ export const createIdeaFromProfile = async (
     teamMemberEmails: [], // Initialize as empty
     status: 'SUBMITTED',
     programPhase: null,
+    cohortId: null,
     // Ensure phase2Marks is initialized if needed by rules or logic, or omit if truly optional at create
     phase2Marks: {}, // Explicitly initialize as an empty map
     submittedAt: serverTimestamp() as Timestamp,
@@ -554,6 +555,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       id: ideaDoc.id,
       ...ideaData,
       programPhase: ideaData.programPhase || null,
+      cohortId: ideaData.cohortId || null,
       phase2Marks: ideaData.phase2Marks || {},
       submittedAt,
       updatedAt,
@@ -617,6 +619,7 @@ export const updateIdeaStatusAndPhase = async (
       }
     } else if (newPhase !== 'COHORT') {
         updates.mentor = deleteField();
+        // updates.cohortId = deleteField(); // If moving out of cohort phase, cohortId should also be cleared here.
     }
     if (newPhase && nextPhaseDetails) {
       updates.nextPhaseDate = nextPhaseDetails.date;
@@ -624,15 +627,16 @@ export const updateIdeaStatusAndPhase = async (
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (!newPhase) {
+    } else if (!newPhase) { // If phase is set to null (e.g. selected but no phase assigned yet)
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
         updates.mentor = deleteField();
+        updates.cohortId = deleteField(); // Clear cohortId if phase is not COHORT or no phase.
     }
-  } else {
+  } else { // Status is not 'SELECTED'
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -640,6 +644,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
     updates.mentor = deleteField();
+    updates.cohortId = deleteField(); // Clear cohortId
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminProfile.uid;
@@ -746,6 +751,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         id: doc.id,
         ...data,
         programPhase: data.programPhase || null,
+        cohortId: data.cohortId || null,
         phase2Marks: data.phase2Marks || {},
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
@@ -793,9 +799,23 @@ export const getUserIdeaSubmissionsCount = async (userId: string): Promise<numbe
 export const deleteIdeaSubmission = async (ideaId: string, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaSnap = await getDoc(ideaRef);
-  const ideaTitle = ideaSnap.exists() ? ideaSnap.data().title : ideaId;
+  if (!ideaSnap.exists()) {
+    throw new Error("Idea not found.");
+  }
+  const ideaTitle = ideaSnap.data().title;
+  const ideaCohortId = ideaSnap.data().cohortId;
 
-  await deleteDoc(ideaRef);
+  const batch = writeBatch(db);
+  batch.delete(ideaRef);
+
+  if (ideaCohortId) {
+    const cohortRef = doc(db, 'cohorts', ideaCohortId);
+    batch.update(cohortRef, {
+      ideaIds: arrayRemove(ideaId),
+      updatedAt: serverTimestamp()
+    });
+  }
+  await batch.commit();
 
   await logUserActivity(
     adminProfile.uid,
@@ -1024,6 +1044,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         id: ideaDoc.id,
         ...data,
         programPhase: data.programPhase || null,
+        cohortId: data.cohortId || null,
         phase2Marks: data.phase2Marks || {},
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
@@ -1152,7 +1173,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1171,6 +1192,7 @@ export const createIdeaSubmission = async (
     teamMemberEmails: ideaData.teamMemberEmails || [],
     status: 'SUBMITTED',
     programPhase: null,
+    cohortId: null,
     phase2Marks: {},
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
@@ -1180,7 +1202,7 @@ export const createIdeaSubmission = async (
   if (ideaData.fileURL) newIdeaPayload.fileURL = ideaData.fileURL;
   if (ideaData.fileName) newIdeaPayload.fileName = ideaData.fileName;
   if (ideaData.studioLocation) newIdeaPayload.studioLocation = ideaData.studioLocation;
-  if (ideaData.cohortId) newIdeaPayload.cohortId = ideaData.cohortId;
+  // if (ideaData.cohortId) newIdeaPayload.cohortId = ideaData.cohortId; // This is handled by assignIdeaToCohort
 
 
   const docRef = await addDoc(ideaCol, newIdeaPayload);
@@ -1236,6 +1258,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         id: ideaDoc.id,
         ...data,
         programPhase: data.programPhase || null,
+        cohortId: data.cohortId || null,
         phase2Marks: data.phase2Marks || {},
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
@@ -1260,22 +1283,22 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
 };
 
 // Assign an idea to a cohort
-export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, cohortId: string | null, adminProfile: UserProfile): Promise<void> => {
+export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, newCohortId: string | null, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const batch = writeBatch(db);
 
   const oldIdeaSnap = await getDoc(ideaRef);
-  if (!oldIdeaSnap.exists()) throw new Error("Idea not found.");
-  const oldCohortId = oldIdeaSnap.data().cohortId;
+  if (!oldIdeaSnap.exists()) throw new Error("Idea not found to assign to cohort.");
+  const oldCohortId = oldIdeaSnap.data().cohortId as string | undefined | null;
 
-  // Update the idea document
+  // Update the idea document with the new cohortId (or null if unassigning)
   batch.update(ideaRef, {
-    cohortId: cohortId, // Set to null if unassigning
+    cohortId: newCohortId,
     updatedAt: serverTimestamp()
   });
 
-  // If unassigning from an old cohort, remove ideaId from old cohort's ideaIds list
-  if (oldCohortId && oldCohortId !== cohortId) {
+  // If previously assigned to a different cohort, remove it from that cohort's ideaIds list
+  if (oldCohortId && oldCohortId !== newCohortId) {
     const oldCohortRef = doc(db, 'cohorts', oldCohortId);
     batch.update(oldCohortRef, {
       ideaIds: arrayRemove(ideaId),
@@ -1283,9 +1306,9 @@ export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, coho
     });
   }
 
-  // If assigning to a new cohort, add ideaId to new cohort's ideaIds list
-  if (cohortId && cohortId !== oldCohortId) {
-    const newCohortRef = doc(db, 'cohorts', cohortId);
+  // If assigning to a new cohort, add it to the new cohort's ideaIds list
+  if (newCohortId && newCohortId !== oldCohortId) {
+    const newCohortRef = doc(db, 'cohorts', newCohortId);
     batch.update(newCohortRef, {
       ideaIds: arrayUnion(ideaId),
       updatedAt: serverTimestamp()
@@ -1299,6 +1322,8 @@ export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, coho
     adminProfile.displayName || adminProfile.fullName,
     'ADMIN_IDEA_ASSIGNED_TO_COHORT',
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
-    { oldCohortId, newCohortId: cohortId }
+    { oldCohortId: oldCohortId || null, newCohortId }
   );
 };
+
+    

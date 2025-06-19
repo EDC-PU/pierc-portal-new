@@ -214,3 +214,5 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>; // e.g., { fieldChanged: 'status', oldValue: 'SUBMITTED', newValue: 'SELECTED' }
 }
+
+    

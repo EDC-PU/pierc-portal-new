@@ -9,9 +9,11 @@ import {
     updateIdeaStatusAndPhase,
     deleteIdeaSubmission as deleteIdeaSubmissionFS,
     submitOrUpdatePhase2Mark,
-    assignMentorToIdea as assignMentorFS
+    assignMentorToIdea as assignMentorFS,
+    getAllCohortsStream, // Added
+    assignIdeaToCohort as assignIdeaToCohortFS // Added
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types'; // Added Cohort
 import { AVAILABLE_MENTORS } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -37,7 +39,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon } from 'lucide-react'; // Added GroupIcon
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -48,7 +50,8 @@ import { cn } from '@/lib/utils';
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
-const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__"; // Unique value for unassigning
+const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__"; 
+const UNASSIGN_COHORT_TRIGGER_VALUE = "__UNASSIGN_COHORT__"; // Added
 
 const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null | undefined): string => {
   if (!phase || phase === NO_PHASE_VALUE) return 'N/A';
@@ -74,13 +77,16 @@ export default function ViewApplicationsPage() {
   const { toast } = useToast();
 
   const [applications, setApplications] = useState<IdeaSubmission[]>([]);
+  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]); // Added for cohort selection
   const [loadingApplications, setLoadingApplications] = useState(true);
+  const [loadingCohorts, setLoadingCohorts] = useState(true); // Added
   const [selectedApplication, setSelectedApplication] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
   const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
   const [isSavingMark, setIsSavingMark] = useState(false);
   const [isAssigningMentor, setIsAssigningMentor] = useState(false);
+  const [isAssigningCohort, setIsAssigningCohort] = useState(false); // Added
 
   const [isRejectionDialogVisible, setIsRejectionDialogVisible] = useState(false);
   const [currentIdeaForRejection, setCurrentIdeaForRejection] = useState<IdeaSubmission | null>(null);
@@ -109,6 +115,7 @@ export default function ViewApplicationsPage() {
         router.push('/dashboard');
       } else {
         fetchApplications();
+        fetchCohorts(); // Added
       }
     }
   }, [userProfile, authLoading, initialLoadComplete, router, toast]);
@@ -130,6 +137,7 @@ export default function ViewApplicationsPage() {
                 updatedVersionInList.programPhase !== selectedApplication.programPhase ||
                 updatedVersionInList.status !== selectedApplication.status ||
                 updatedVersionInList.mentor !== selectedApplication.mentor ||
+                updatedVersionInList.cohortId !== selectedApplication.cohortId || // Added
                 (updatedVersionInList.phase2Marks && selectedApplication.phase2Marks && JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks)) ||
                 (updatedVersionInList.updatedAt && selectedApplication.updatedAt && updatedVersionInList.updatedAt.toMillis() !== selectedApplication.updatedAt.toMillis());
 
@@ -137,7 +145,6 @@ export default function ViewApplicationsPage() {
                 setSelectedApplication(updatedVersionInList);
             }
         } else {
-            // The selected application is no longer in the list, e.g., it was deleted.
             setIsDetailModalOpen(false);
             setSelectedApplication(null);
         }
@@ -156,6 +163,18 @@ export default function ViewApplicationsPage() {
     } finally {
       setLoadingApplications(false);
     }
+  };
+
+  const fetchCohorts = () => { // Added function
+    if (userProfile?.role === 'ADMIN_FACULTY') {
+      setLoadingCohorts(true);
+      const unsubscribe = getAllCohortsStream((fetchedCohorts) => {
+        setAllCohorts(fetchedCohorts);
+        setLoadingCohorts(false);
+      });
+      return unsubscribe;
+    }
+    return () => {};
   };
 
   const getDefaultPhaseDetails = (phase: ProgramPhase): Partial<PhaseDetailsFormData> => {
@@ -215,7 +234,6 @@ export default function ViewApplicationsPage() {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
 
-    // Optimistically update local state for select dropdowns before opening dialogs
     const updatedApplications = applications.map(app =>
         app.id === idea.id ? {...app, status: newStatus, programPhase: actualNewPhase } : app
     );
@@ -224,22 +242,19 @@ export default function ViewApplicationsPage() {
 
     if (newStatus === 'SELECTED' && actualNewPhase) {
         openPhaseDetailsDialog(idea, actualNewPhase);
-        // No immediate return, allow optimistic update to reflect, then dialog handles final save.
     } else if (newStatus === 'NOT_SELECTED') {
         setCurrentIdeaForRejection(idea);
         setRejectionRemarksInput(idea.rejectionRemarks || '');
         setIsRejectionDialogVisible(true);
-        // No immediate return, allow optimistic update, dialog handles final save.
     } else {
-        // For other status changes that don't open a dialog (e.g., to UNDER_REVIEW)
         try {
           await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined);
           toast({ title: "Update Successful", description: `Application updated.` });
-          fetchApplications(); // Re-fetch to confirm and get latest timestamps
+          fetchApplications(); 
         } catch (error) {
           console.error("Error updating status/phase:", error);
           toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-          fetchApplications(); // Revert optimistic update by re-fetching
+          fetchApplications(); 
         }
     }
   };
@@ -275,7 +290,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
         console.error("Error saving phase details:", error);
         toast({ title: "Save Error", description: "Could not save phase details.", variant: "destructive" });
-        fetchApplications(); // Revert optimistic updates if save fails
+        fetchApplications(); 
     }
   };
 
@@ -292,7 +307,7 @@ export default function ViewApplicationsPage() {
             currentIdeaForRejection.title,
             'NOT_SELECTED',
             userProfile,
-            null,
+            null, // No phase for rejection
             rejectionRemarksInput
         );
         toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
@@ -303,7 +318,7 @@ export default function ViewApplicationsPage() {
     } catch (error) {
         console.error("Error submitting rejection:", error);
         toast({ title: "Rejection Error", description: "Could not submit rejection.", variant: "destructive" });
-        fetchApplications(); // Revert optimistic updates if save fails
+        fetchApplications(); 
     }
   };
 
@@ -342,14 +357,12 @@ export default function ViewApplicationsPage() {
         await submitOrUpdatePhase2Mark(selectedApplication.id, selectedApplication.title, userProfile, markValue);
         toast({ title: "Mark Saved", description: "Your mark has been successfully submitted." });
 
-        // No need to re-fetch all applications here, the useEffect will update selectedApplication
-        // if 'applications' list is a dependency, or simply update selectedApplication directly:
         const updatedMarks = {
             ...(selectedApplication.phase2Marks || {}),
             [userProfile.uid]: {
                 mark: markValue,
                 adminDisplayName: userProfile.displayName || userProfile.fullName || 'Admin',
-                markedAt: Timestamp.now() // Approximate, server will set actual
+                markedAt: Timestamp.now() 
             }
         };
         if(markValue === null) {
@@ -357,7 +370,6 @@ export default function ViewApplicationsPage() {
         }
         
         setSelectedApplication(prev => prev ? {...prev, phase2Marks: updatedMarks, updatedAt: Timestamp.now()} : null);
-        // Also update the main list for consistency if other modals might be opened
         setApplications(prevApps => prevApps.map(app => 
             app.id === selectedApplication.id ? {...app, phase2Marks: updatedMarks, updatedAt: Timestamp.now()} : app
         ));
@@ -381,7 +393,6 @@ export default function ViewApplicationsPage() {
         await assignMentorFS(ideaId, ideaTitle, mentorName, userProfile);
         toast({title: "Mentor Assignment Updated", description: `Mentor ${mentorName ? 'assigned: '+mentorName : 'unassigned'}.`});
 
-        // Update local state immediately
         setSelectedApplication(prev => prev ? {...prev, mentor: mentorName || undefined, updatedAt: Timestamp.now()} : null);
         setApplications(prevApps => prevApps.map(app => 
             app.id === ideaId ? {...app, mentor: mentorName || undefined, updatedAt: Timestamp.now()} : app
@@ -392,6 +403,25 @@ export default function ViewApplicationsPage() {
         toast({title: "Mentor Assignment Error", description: (error as Error).message || "Could not update mentor assignment.", variant: "destructive"});
     } finally {
         setIsAssigningMentor(false);
+    }
+  };
+
+  const handleAssignCohort = async (idea: IdeaSubmission, newCohortId: string | null) => { // Added function
+    if (!userProfile || !userProfile.isSuperAdmin) {
+        toast({ title: "Unauthorized", description: "Only Super Admins can assign ideas to cohorts.", variant: "destructive" });
+        return;
+    }
+    setIsAssigningCohort(true);
+    try {
+      await assignIdeaToCohortFS(idea.id!, idea.title, newCohortId, userProfile);
+      toast({ title: "Cohort Assignment Updated", description: `Idea "${idea.title}" ${newCohortId ? 'assigned to cohort' : 'unassigned from cohort'}.` });
+      fetchApplications(); // Re-fetch to update list with new cohortId
+    } catch (error: any) {
+      console.error("Error assigning idea to cohort:", error);
+      toast({ title: "Cohort Assignment Error", description: error.message || "Could not update cohort assignment.", variant: "destructive" });
+      fetchApplications(); // Re-fetch to revert optimistic update on error
+    } finally {
+      setIsAssigningCohort(false);
     }
   };
 
@@ -475,7 +505,7 @@ export default function ViewApplicationsPage() {
     const headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members (Free Text)',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Program Phase', 'Assigned Mentor', 'Rejection Remarks', 'Studio Location',
+      'Status', 'Program Phase', 'Assigned Mentor', 'Assigned Cohort', 'Rejection Remarks', 'Studio Location',
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At',
@@ -500,13 +530,11 @@ export default function ViewApplicationsPage() {
         adminMarkAdminUIDs.push(...Array.from(allAdminUIDsInMarks).sort());
         adminMarkAdminUIDs.forEach(uid => {
             let adminDisplayName = `Mark by Admin ${uid.substring(0,5)}...`;
-            // Attempt to find a display name for this admin UID from any application
             const adminProfileEntry = applications.find(app => app.phase2Marks?.[uid]?.adminDisplayName);
             if (adminProfileEntry && adminProfileEntry.phase2Marks?.[uid]?.adminDisplayName) {
                  adminDisplayName = `Mark by ${adminProfileEntry.phase2Marks[uid].adminDisplayName}`;
             } else {
-                 // Fallback if no display name found for this UID across all marks (less likely with current logic)
-                 const profileForUID = applications.find(app => app.userId === uid); // Check if this admin is an applicant
+                 const profileForUID = applications.find(app => app.userId === uid); 
                  if (profileForUID) {
                      adminDisplayName = `Mark by ${profileForUID.applicantDisplayName || `Admin ${uid.substring(0,5)}...`}`;
                  }
@@ -519,6 +547,7 @@ export default function ViewApplicationsPage() {
     const csvRows = [headers.join(',')];
 
     applications.forEach(app => {
+      const assignedCohort = allCohorts.find(c => c.id === app.cohortId); // Find cohort name
       const row = [
         escapeCsvField(app.id),
         escapeCsvField(app.title),
@@ -533,6 +562,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.status.replace(/_/g, ' ')),
         escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
         escapeCsvField(app.mentor || 'N/A'),
+        escapeCsvField(assignedCohort ? assignedCohort.name : (app.cohortId ? 'Cohort ID: '+app.cohortId : 'N/A')), // Added cohort name
         escapeCsvField(app.rejectionRemarks),
         escapeCsvField(app.studioLocation),
         escapeCsvField(app.fileURL),
@@ -587,7 +617,7 @@ export default function ViewApplicationsPage() {
   };
 
 
-  if (authLoading || !initialLoadComplete || loadingApplications) {
+  if (authLoading || !initialLoadComplete || loadingApplications || loadingCohorts) {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
 
@@ -614,7 +644,7 @@ export default function ViewApplicationsPage() {
         <CardHeader>
           <CardTitle>All Submitted Applications</CardTitle>
           <CardDescription>
-            Set status for applications. If 'Selected', assign a Program Phase & meeting details. If 'Not Selected', provide remarks. For 'Phase 2' ideas, provide marks. For 'COHORT' phase, Super Admins can assign a mentor.
+            Set status, program phase, and cohort for applications. Manage meeting details, marks, and mentors.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -630,6 +660,7 @@ export default function ViewApplicationsPage() {
                     <TableHead className="hidden lg:table-cell">Submitted</TableHead>
                     <TableHead className="min-w-[180px]">Status</TableHead>
                     <TableHead className="min-w-[200px]">Program Phase</TableHead>
+                    <TableHead className="min-w-[200px] hidden xl:table-cell">Assigned Cohort</TableHead> 
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -687,6 +718,34 @@ export default function ViewApplicationsPage() {
                           <span className="text-xs text-muted-foreground italic">
                             {app.status === 'NOT_SELECTED' ? 'N/A (Rejected)' : "N/A (Status not 'Selected')"}
                           </span>
+                        )}
+                      </TableCell>
+                       <TableCell className="hidden xl:table-cell">
+                        {app.programPhase === 'COHORT' && userProfile.isSuperAdmin ? (
+                            <Select
+                                value={app.cohortId || UNASSIGN_COHORT_TRIGGER_VALUE}
+                                onValueChange={(value) => handleAssignCohort(app, value === UNASSIGN_COHORT_TRIGGER_VALUE ? null : value)}
+                                disabled={isAssigningCohort}
+                            >
+                                <SelectTrigger className="w-full max-w-[180px] h-9 text-xs">
+                                <SelectValue placeholder="Assign to Cohort" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                <SelectItem value={UNASSIGN_COHORT_TRIGGER_VALUE} className="text-xs italic">Unassign Cohort</SelectItem>
+                                {allCohorts.length === 0 && <SelectItem value="no-cohorts" disabled className="text-xs text-muted-foreground">No cohorts available</SelectItem>}
+                                {allCohorts.map(cohort => (
+                                    <SelectItem key={cohort.id} value={cohort.id!} className="text-xs">
+                                    {cohort.name}
+                                    </SelectItem>
+                                ))}
+                                </SelectContent>
+                            </Select>
+                        ) : app.programPhase === 'COHORT' && app.cohortId ? (
+                             <Badge variant="outline" className="text-xs">
+                                {allCohorts.find(c => c.id === app.cohortId)?.name || 'Unknown Cohort'}
+                            </Badge>
+                        ) : (
+                            <span className="text-xs text-muted-foreground italic">N/A (Not in Cohort Phase)</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
@@ -753,6 +812,15 @@ export default function ViewApplicationsPage() {
                     <div>
                         <h4 className="font-semibold text-muted-foreground">Program Phase</h4>
                         <p>{getProgramPhaseLabel(selectedApplication.programPhase)}</p>
+                    </div>
+                )}
+                {selectedApplication.programPhase === 'COHORT' && selectedApplication.cohortId && (
+                    <div>
+                        <h4 className="font-semibold text-muted-foreground">Assigned Cohort</h4>
+                        <p className="flex items-center gap-1">
+                            <GroupIcon className="h-4 w-4 text-primary" />
+                            {allCohorts.find(c => c.id === selectedApplication.cohortId)?.name || 'Unknown Cohort'}
+                        </p>
                     </div>
                 )}
                 <div>
@@ -923,8 +991,6 @@ export default function ViewApplicationsPage() {
                       const displayName = markEntry.adminDisplayName || 'Admin';
                       const isCurrentUserMark = adminUid === userProfile.uid;
 
-                      // Show other admins' marks only if current user is SuperAdmin OR it's not the current user's mark
-                      // (This logic was a bit complex, let's simplify: SuperAdmins see all. Regular admins only see their own edit field below)
                       if (userProfile.isSuperAdmin && !isCurrentUserMark) {
                         return (
                             <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
@@ -936,7 +1002,7 @@ export default function ViewApplicationsPage() {
                             </div>
                         );
                       }
-                      return null; // Regular admins don't see other admin's marks listed here
+                      return null; 
                     })}
                     {(() => {
                         const marksObject = selectedApplication.phase2Marks || {};
@@ -947,11 +1013,8 @@ export default function ViewApplicationsPage() {
                             if (totalMarksCount === 0) {
                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
                             }
-                            // SuperAdmins see their own mark in the input field if they've marked.
-                            // Other admin marks are listed above if they exist.
-                        } else { // Regular Admin
+                        } else { 
                             if (!currentUserHasMarked && totalMarksCount > 0) {
-                                // A regular admin hasn't marked, but others might have (they won't see those marks directly)
                                 return <p className="text-sm text-muted-foreground text-center py-2">Other marks may exist. Submit yours below.</p>;
                             }
                             if (totalMarksCount === 0) {
@@ -971,7 +1034,7 @@ export default function ViewApplicationsPage() {
                             type="number"
                             min="0"
                             max="100"
-                            value={currentAdminMark} // This is already state-managed based on selectedApplication & userProfile.uid
+                            value={currentAdminMark} 
                             onChange={(e) => setCurrentAdminMark(e.target.value)}
                             placeholder="Enter your mark"
                             className="max-w-[150px]"
@@ -1003,7 +1066,7 @@ export default function ViewApplicationsPage() {
                 setIsRejectionDialogVisible(false);
                 setCurrentIdeaForRejection(null);
                 setRejectionRemarksInput('');
-                fetchApplications(); // Re-fetch to ensure UI consistency if cancel
+                fetchApplications(); 
             } else {
                 setIsRejectionDialogVisible(isOpen);
             }
@@ -1031,7 +1094,7 @@ export default function ViewApplicationsPage() {
                         setIsRejectionDialogVisible(false);
                         setCurrentIdeaForRejection(null);
                         setRejectionRemarksInput('');
-                        fetchApplications(); // Re-fetch as the optimistic update might have changed table
+                        fetchApplications(); 
                     }}>Cancel</Button>
                     <Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button>
                 </DialogFooter>
@@ -1045,7 +1108,7 @@ export default function ViewApplicationsPage() {
                 setIsPhaseDetailsDialogVisible(false);
                 setCurrentIdeaForPhaseDetails(null);
                 setCurrentPhaseForDialog(null);
-                fetchApplications(); // Re-fetch to ensure UI consistency if cancel
+                fetchApplications(); 
             } else {
                 setIsPhaseDetailsDialogVisible(isOpen);
             }
@@ -1131,7 +1194,7 @@ export default function ViewApplicationsPage() {
                         setIsPhaseDetailsDialogVisible(false);
                         setCurrentIdeaForPhaseDetails(null);
                         setCurrentPhaseForDialog(null);
-                        fetchApplications(); // Re-fetch as the optimistic update might have changed table
+                        fetchApplications(); 
                     }}>Cancel</Button>
                     <Button onClick={handleSubmitPhaseDetails}>Save Details</Button>
                 </DialogFooter>
