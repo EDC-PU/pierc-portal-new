@@ -56,9 +56,19 @@ export interface UserProfile {
 export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED' | 'ARCHIVED_BY_ADMIN';
 export const ALL_IDEA_STATUSES: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED', 'ARCHIVED_BY_ADMIN'];
 
-export type ProgramPhase = 'PHASE_1' | 'PHASE_2' | 'COHORT';
-export const ALL_PROGRAM_PHASES: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
+export type ProgramPhase = 'PHASE_1' | 'PHASE_2' | 'COHORT' | 'INCUBATED';
+export const ALL_PROGRAM_PHASES: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT', 'INCUBATED'];
 
+export type SanctionApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'NOT_APPLICABLE';
+
+export interface ExpenseEntry {
+  id: string;
+  description: string;
+  amount: number;
+  proofUrl: string;
+  proofFileName: string;
+  uploadedAt: Timestamp;
+}
 
 export interface AdminMark {
   mark: number | null;
@@ -98,7 +108,7 @@ export interface IdeaSubmission {
   programPhase: ProgramPhase | null;
   phase2Marks?: { [adminUid: string]: AdminMark };
   mentor?: MentorName; 
-  cohortId?: string | null; // Can be null if not assigned
+  cohortId?: string | null; 
 
   rejectionRemarks?: string | null;
   rejectedByUid?: string | null; 
@@ -113,6 +123,31 @@ export interface IdeaSubmission {
   nextPhaseEndTime?: string | null;
   nextPhaseVenue?: string | null;
   nextPhaseGuidelines?: string | null;
+
+  // Incubation Funding Fields
+  totalFundingAllocated?: number | null;
+  sanction1Amount?: number | null;
+  sanction2Amount?: number | null;
+  sanction1DisbursedAt?: Timestamp | null;
+  sanction2DisbursedAt?: Timestamp | null;
+  sanction1Expenses?: ExpenseEntry[];
+  sanction2Expenses?: ExpenseEntry[];
+  beneficiaryName?: string | null;
+  beneficiaryAccountNo?: string | null;
+  beneficiaryBankName?: string | null;
+  beneficiaryIfscCode?: string | null;
+  sanction1AppliedForNext?: boolean; // True if user applied for S2 after S1
+  sanction1UtilizationStatus?: SanctionApprovalStatus;
+  sanction1UtilizationRemarks?: string | null;
+  sanction1UtilizationReviewedBy?: string | null; // Admin UID
+  sanction1UtilizationReviewedAt?: Timestamp | null;
+
+  // Sanction 2 specific application might not be needed if it's sequential after S1 approval
+  // sanction2AppliedAt?: Timestamp | null; // Or handled by S1 approval
+  sanction2UtilizationStatus?: SanctionApprovalStatus;
+  sanction2UtilizationRemarks?: string | null;
+  sanction2UtilizationReviewedBy?: string | null; // Admin UID
+  sanction2UtilizationReviewedAt?: Timestamp | null;
 
   submittedAt: Timestamp;
   updatedAt: Timestamp;
@@ -180,19 +215,25 @@ export type ActivityLogAction =
   | 'USER_ACCOUNT_DELETED_SELF'
   | 'USER_ACCOUNT_DELETED_BY_ADMIN'
   | 'IDEA_SUBMITTED' 
-  | 'IDEA_PROFILE_DATA_UPDATED' // When an existing idea is updated due to profile save
-  | 'IDEA_RESUBMITTED' // When an archived idea is resubmitted via profile save
+  | 'IDEA_PROFILE_DATA_UPDATED' 
+  | 'IDEA_RESUBMITTED' 
   | 'IDEA_PPT_UPLOADED'
   | 'IDEA_TEAM_MEMBER_ADDED'
   | 'IDEA_TEAM_MEMBER_UPDATED'
   | 'IDEA_TEAM_MEMBER_REMOVED'
   | 'USER_GENERATED_PITCH_DECK_OUTLINE'
+  | 'IDEA_BENEFICIARY_DETAILS_UPDATED'
+  | 'IDEA_EXPENSE_UPLOADED'
+  | 'IDEA_APPLIED_FOR_NEXT_SANCTION'
   | 'ADMIN_USER_ROLE_UPDATED'
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
   | 'ADMIN_IDEA_MENTOR_ASSIGNED'
   | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
   | 'ADMIN_IDEA_ARCHIVED_FOR_REVISION'
   | 'ADMIN_IDEA_ASSIGNED_TO_COHORT'
+  | 'ADMIN_IDEA_FUNDING_DETAILS_SET'
+  | 'ADMIN_IDEA_SANCTION_DISBURSED'
+  | 'ADMIN_IDEA_SANCTION_UTILIZATION_REVIEWED'
   | 'ADMIN_ANNOUNCEMENT_CREATED'
   | 'ADMIN_ANNOUNCEMENT_UPDATED'
   | 'ADMIN_ANNOUNCEMENT_DELETED'
@@ -208,8 +249,10 @@ export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
   'IDEA_SUBMITTED', 'IDEA_PROFILE_DATA_UPDATED', 'IDEA_RESUBMITTED', 'IDEA_PPT_UPLOADED',
   'IDEA_TEAM_MEMBER_ADDED', 'IDEA_TEAM_MEMBER_UPDATED', 'IDEA_TEAM_MEMBER_REMOVED',
   'USER_GENERATED_PITCH_DECK_OUTLINE',
+  'IDEA_BENEFICIARY_DETAILS_UPDATED', 'IDEA_EXPENSE_UPLOADED', 'IDEA_APPLIED_FOR_NEXT_SANCTION',
   'ADMIN_USER_ROLE_UPDATED', 'ADMIN_IDEA_STATUS_PHASE_UPDATED', 'ADMIN_IDEA_MENTOR_ASSIGNED',
   'ADMIN_IDEA_PHASE2_MARK_SUBMITTED', 'ADMIN_IDEA_ARCHIVED_FOR_REVISION', 'ADMIN_IDEA_ASSIGNED_TO_COHORT',
+  'ADMIN_IDEA_FUNDING_DETAILS_SET', 'ADMIN_IDEA_SANCTION_DISBURSED', 'ADMIN_IDEA_SANCTION_UTILIZATION_REVIEWED',
   'ADMIN_ANNOUNCEMENT_CREATED', 'ADMIN_ANNOUNCEMENT_UPDATED', 'ADMIN_ANNOUNCEMENT_DELETED',
   'ADMIN_COHORT_CREATED', 'ADMIN_COHORT_UPDATED', 'ADMIN_COHORT_SCHEDULE_UPDATED', 'ADMIN_COHORT_DELETED',
   'ADMIN_SYSTEM_SETTINGS_UPDATED'
@@ -230,7 +273,4 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>; 
 }
-
-    
-
     

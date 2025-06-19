@@ -1,7 +1,7 @@
 
-import { db, functions as firebaseFunctions, auth } from './config'; // functions aliased to avoid conflict, auth added
+import { db, functions as firebaseFunctions, auth } from './config'; 
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, AVAILABLE_MENTORS } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -340,7 +340,6 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
 
 export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  // For now, user-facing feed only shows 'ALL' targeted announcements
   const q = query(announcementsCol,
     where('isUrgent', '==', false),
     where('targetAudience', '==', 'ALL'),
@@ -361,7 +360,6 @@ export const getAnnouncementsStream = (callback: (announcements: Announcement[])
 
 export const getUrgentAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  // For now, user-facing feed only shows 'ALL' targeted urgent announcements
   const q = query(announcementsCol,
     where('isUrgent', '==', true),
     where('targetAudience', '==', 'ALL'), 
@@ -401,7 +399,7 @@ export const updateAnnouncement = async (announcementId: string, data: Partial<O
   
   const updateData = { ...data };
   if (data.targetAudience === 'ALL') {
-    updateData.cohortId = null; // Ensure cohortId is null if audience is ALL
+    updateData.cohortId = null; 
   }
 
   await updateDoc(announcementRef, {
@@ -504,6 +502,27 @@ export const createIdeaFromProfile = async (
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
+        // Reset funding fields if resubmitting archived idea
+        totalFundingAllocated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.totalFundingAllocated,
+        sanction1Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1Amount,
+        sanction2Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2Amount,
+        sanction1DisbursedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1DisbursedAt,
+        sanction2DisbursedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2DisbursedAt,
+        sanction1Expenses: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.sanction1Expenses || []),
+        sanction2Expenses: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.sanction2Expenses || []),
+        beneficiaryName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryName,
+        beneficiaryAccountNo: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryAccountNo,
+        beneficiaryBankName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryBankName,
+        beneficiaryIfscCode: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryIfscCode,
+        sanction1AppliedForNext: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? false : existingIdeaToUpdate.sanction1AppliedForNext,
+        sanction1UtilizationStatus: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'NOT_APPLICABLE' : (existingIdeaToUpdate.sanction1UtilizationStatus || 'NOT_APPLICABLE'),
+        sanction1UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1UtilizationRemarks,
+        sanction1UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1UtilizationReviewedBy,
+        sanction1UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1UtilizationReviewedAt,
+        sanction2UtilizationStatus: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'NOT_APPLICABLE' : (existingIdeaToUpdate.sanction2UtilizationStatus || 'NOT_APPLICABLE'),
+        sanction2UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationRemarks,
+        sanction2UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationReviewedBy,
+        sanction2UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationReviewedAt,
       };
       await updateDoc(ideaDocRef, updateData as any); 
       await logUserActivity(
@@ -533,6 +552,27 @@ export const createIdeaFromProfile = async (
         nextPhaseEndTime: null,
         nextPhaseVenue: null,
         nextPhaseGuidelines: null,
+        // Initialize funding fields
+        totalFundingAllocated: null,
+        sanction1Amount: null,
+        sanction2Amount: null,
+        sanction1DisbursedAt: null,
+        sanction2DisbursedAt: null,
+        sanction1Expenses: [],
+        sanction2Expenses: [],
+        beneficiaryName: null,
+        beneficiaryAccountNo: null,
+        beneficiaryBankName: null,
+        beneficiaryIfscCode: null,
+        sanction1AppliedForNext: false,
+        sanction1UtilizationStatus: 'NOT_APPLICABLE',
+        sanction1UtilizationRemarks: null,
+        sanction1UtilizationReviewedBy: null,
+        sanction1UtilizationReviewedAt: null,
+        sanction2UtilizationStatus: 'NOT_APPLICABLE',
+        sanction2UtilizationRemarks: null,
+        sanction2UtilizationReviewedBy: null,
+        sanction2UtilizationReviewedAt: null,
         submittedAt: serverTimestamp() as Timestamp,
       };
       ideaDocRef = await addDoc(collection(db, 'ideas'), newIdeaData);
@@ -628,6 +668,27 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       nextPhaseVenue: ideaData.nextPhaseVenue || null,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
+      // Include new funding fields
+      totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
+      sanction1Amount: ideaData.sanction1Amount ?? null,
+      sanction2Amount: ideaData.sanction2Amount ?? null,
+      sanction1DisbursedAt: ideaData.sanction1DisbursedAt ?? null,
+      sanction2DisbursedAt: ideaData.sanction2DisbursedAt ?? null,
+      sanction1Expenses: ideaData.sanction1Expenses || [],
+      sanction2Expenses: ideaData.sanction2Expenses || [],
+      beneficiaryName: ideaData.beneficiaryName ?? null,
+      beneficiaryAccountNo: ideaData.beneficiaryAccountNo ?? null,
+      beneficiaryBankName: ideaData.beneficiaryBankName ?? null,
+      beneficiaryIfscCode: ideaData.beneficiaryIfscCode ?? null,
+      sanction1AppliedForNext: ideaData.sanction1AppliedForNext ?? false,
+      sanction1UtilizationStatus: ideaData.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction1UtilizationRemarks: ideaData.sanction1UtilizationRemarks ?? null,
+      sanction1UtilizationReviewedBy: ideaData.sanction1UtilizationReviewedBy ?? null,
+      sanction1UtilizationReviewedAt: ideaData.sanction1UtilizationReviewedAt ?? null,
+      sanction2UtilizationStatus: ideaData.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
+      sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
+      sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission);
   });
 
@@ -706,6 +767,27 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       nextPhaseVenue: ideaData.nextPhaseVenue || null,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
+      // Include new funding fields
+      totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
+      sanction1Amount: ideaData.sanction1Amount ?? null,
+      sanction2Amount: ideaData.sanction2Amount ?? null,
+      sanction1DisbursedAt: ideaData.sanction1DisbursedAt ?? null,
+      sanction2DisbursedAt: ideaData.sanction2DisbursedAt ?? null,
+      sanction1Expenses: ideaData.sanction1Expenses || [],
+      sanction2Expenses: ideaData.sanction2Expenses || [],
+      beneficiaryName: ideaData.beneficiaryName ?? null,
+      beneficiaryAccountNo: ideaData.beneficiaryAccountNo ?? null,
+      beneficiaryBankName: ideaData.beneficiaryBankName ?? null,
+      beneficiaryIfscCode: ideaData.beneficiaryIfscCode ?? null,
+      sanction1AppliedForNext: ideaData.sanction1AppliedForNext ?? false,
+      sanction1UtilizationStatus: ideaData.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction1UtilizationRemarks: ideaData.sanction1UtilizationRemarks ?? null,
+      sanction1UtilizationReviewedBy: ideaData.sanction1UtilizationReviewedBy ?? null,
+      sanction1UtilizationReviewedAt: ideaData.sanction1UtilizationReviewedAt ?? null,
+      sanction2UtilizationStatus: ideaData.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
+      sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
+      sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission);
   });
 
@@ -749,11 +831,19 @@ export const updateIdeaStatusAndPhase = async (
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
       }
-    } else if (newPhase !== 'COHORT') { 
+    } else if (newPhase !== 'COHORT' && newPhase !== 'INCUBATED') { 
         updates.mentor = deleteField();
     }
+     if (newPhase === 'INCUBATED') {
+        // Initialize funding status if not already set
+        const currentData = oldIdeaSnap.exists() ? oldIdeaSnap.data() : {};
+        if (currentData && !currentData.sanction1UtilizationStatus) updates.sanction1UtilizationStatus = 'NOT_APPLICABLE';
+        if (currentData && !currentData.sanction2UtilizationStatus) updates.sanction2UtilizationStatus = 'NOT_APPLICABLE';
+        if (currentData && !currentData.sanction1Expenses) updates.sanction1Expenses = [];
+        if (currentData && !currentData.sanction2Expenses) updates.sanction2Expenses = [];
+    }
     
-    if (newPhase && (newPhase === 'PHASE_1' || newPhase === 'PHASE_2') && nextPhaseDetails) {
+    if (newPhase && (newPhase === 'PHASE_1' || newPhase === 'PHASE_2' || newPhase === 'INCUBATED') && nextPhaseDetails) {
       updates.nextPhaseDate = nextPhaseDetails.date;
       updates.nextPhaseStartTime = nextPhaseDetails.startTime;
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
@@ -765,15 +855,15 @@ export const updateIdeaStatusAndPhase = async (
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
-        if (newPhase !== 'COHORT') {
+        if (newPhase !== 'COHORT' && newPhase !== 'INCUBATED') {
           updates.mentor = deleteField();
         }
     }
-  } else if (newStatus === 'ARCHIVED_BY_ADMIN') { // Handle archive specifically
+  } else if (newStatus === 'ARCHIVED_BY_ADMIN') { 
     updates.programPhase = null;
     updates.phase2Marks = {};
     updates.mentor = deleteField();
-    updates.cohortId = deleteField(); // Remove from cohort when archived
+    updates.cohortId = deleteField(); 
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
@@ -782,7 +872,28 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseEndTime = null;
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
-  } else { // For other non-SELECTED statuses like SUBMITTED, UNDER_REVIEW, NOT_SELECTED
+     // Reset funding fields on archive
+    updates.totalFundingAllocated = deleteField();
+    updates.sanction1Amount = deleteField();
+    updates.sanction2Amount = deleteField();
+    updates.sanction1DisbursedAt = deleteField();
+    updates.sanction2DisbursedAt = deleteField();
+    updates.sanction1Expenses = [];
+    updates.sanction2Expenses = [];
+    updates.beneficiaryName = deleteField();
+    updates.beneficiaryAccountNo = deleteField();
+    updates.beneficiaryBankName = deleteField();
+    updates.beneficiaryIfscCode = deleteField();
+    updates.sanction1AppliedForNext = false;
+    updates.sanction1UtilizationStatus = 'NOT_APPLICABLE';
+    updates.sanction1UtilizationRemarks = deleteField();
+    updates.sanction1UtilizationReviewedBy = deleteField();
+    updates.sanction1UtilizationReviewedAt = deleteField();
+    updates.sanction2UtilizationStatus = 'NOT_APPLICABLE';
+    updates.sanction2UtilizationRemarks = deleteField();
+    updates.sanction2UtilizationReviewedBy = deleteField();
+    updates.sanction2UtilizationReviewedAt = deleteField();
+  } else { 
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -883,11 +994,8 @@ export const submitOrUpdatePhase2Mark = async (
 
 
 export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
-  // FIRESTORE_INDEX_REQUIRED: This query needs a composite index on
-  // Collection: 'ideas', Fields: 'userId' (Ascending), 'updatedAt' (Descending).
-  // Create it here: https://console.firebase.google.com/v1/r/project/pierc-portal/firestore/indexes?create_composite=Ckpwcm9qZWN0cy9waWVyYy1wb3J0YWwvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL2lkZWFzL2luZGV4ZXMvXxABGgoKBnVzZXJJZBABGg0KCXVwZGF0ZWRBdBACGgwKCF9fbmFtZV9fEAI
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, where('userId', '==', userId), orderBy('updatedAt', 'desc')); // Order by updatedAt to get the most recent first
+  const q = query(ideasCol, where('userId', '==', userId), orderBy('updatedAt', 'desc')); 
   const querySnapshot = await getDocs(q);
   const userIdeas: IdeaSubmission[] = [];
   querySnapshot.forEach((docSnap) => {
@@ -919,6 +1027,27 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
+        // Include new funding fields
+        totalFundingAllocated: data.totalFundingAllocated ?? null,
+        sanction1Amount: data.sanction1Amount ?? null,
+        sanction2Amount: data.sanction2Amount ?? null,
+        sanction1DisbursedAt: data.sanction1DisbursedAt ?? null,
+        sanction2DisbursedAt: data.sanction2DisbursedAt ?? null,
+        sanction1Expenses: data.sanction1Expenses || [],
+        sanction2Expenses: data.sanction2Expenses || [],
+        beneficiaryName: data.beneficiaryName ?? null,
+        beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
+        beneficiaryBankName: data.beneficiaryBankName ?? null,
+        beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+        sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
+        sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+        sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
+        sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
+        sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
+        sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+        sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
+        sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
+        sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission);
   });
   return userIdeas;
@@ -927,7 +1056,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
 
 export const getTotalIdeasCount = async (): Promise<number> => {
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, where('status', '!=', 'ARCHIVED_BY_ADMIN')); // Exclude archived from total active count
+  const q = query(ideasCol, where('status', '!=', 'ARCHIVED_BY_ADMIN')); 
   const snapshot = await getCountFromServer(q);
   return snapshot.data().count;
 };
@@ -961,7 +1090,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     programPhase: null,
     phase2Marks: {},
     mentor: deleteField(),
-    cohortId: deleteField(),
+    cohortId: deleteField(), 
     rejectionRemarks: deleteField(),
     rejectedByUid: deleteField(),
     rejectedAt: deleteField(),
@@ -970,6 +1099,27 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     nextPhaseEndTime: null,
     nextPhaseVenue: null,
     nextPhaseGuidelines: null,
+    // Reset funding fields as well when archiving
+    totalFundingAllocated: deleteField(),
+    sanction1Amount: deleteField(),
+    sanction2Amount: deleteField(),
+    sanction1DisbursedAt: deleteField(),
+    sanction2DisbursedAt: deleteField(),
+    sanction1Expenses: [],
+    sanction2Expenses: [],
+    beneficiaryName: deleteField(),
+    beneficiaryAccountNo: deleteField(),
+    beneficiaryBankName: deleteField(),
+    beneficiaryIfscCode: deleteField(),
+    sanction1AppliedForNext: false,
+    sanction1UtilizationStatus: 'NOT_APPLICABLE',
+    sanction1UtilizationRemarks: deleteField(),
+    sanction1UtilizationReviewedBy: deleteField(),
+    sanction1UtilizationReviewedAt: deleteField(),
+    sanction2UtilizationStatus: 'NOT_APPLICABLE',
+    sanction2UtilizationRemarks: deleteField(),
+    sanction2UtilizationReviewedBy: deleteField(),
+    sanction2UtilizationReviewedAt: deleteField(),
     updatedAt: serverTimestamp(),
   };
 
@@ -1164,12 +1314,12 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
 };
 
 
-export const removeTeamMemberFromIdea = async (ideaId: string, ideaTitle: string, memberIdToRemove: string, actorProfile: UserProfile): Promise<void> => {
+export const removeTeamMemberFromIdea = async (ideaId: string, ideaTitle: string, memberToRemove: TeamMember, actorProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
   if (ideaDoc.exists()) {
-    const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
-    const memberToRemove = currentMembers.find(m => m.id === memberIdToRemove);
+    // const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
+    // const memberToRemove = currentMembers.find(m => m.id === memberIdToRemove);
     if (memberToRemove) {
       await updateDoc(ideaRef, {
         structuredTeamMembers: arrayRemove(memberToRemove),
@@ -1228,6 +1378,27 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
+        // Include new funding fields
+        totalFundingAllocated: data.totalFundingAllocated ?? null,
+        sanction1Amount: data.sanction1Amount ?? null,
+        sanction2Amount: data.sanction2Amount ?? null,
+        sanction1DisbursedAt: data.sanction1DisbursedAt ?? null,
+        sanction2DisbursedAt: data.sanction2DisbursedAt ?? null,
+        sanction1Expenses: data.sanction1Expenses || [],
+        sanction2Expenses: data.sanction2Expenses || [],
+        beneficiaryName: data.beneficiaryName ?? null,
+        beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
+        beneficiaryBankName: data.beneficiaryBankName ?? null,
+        beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+        sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
+        sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+        sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
+        sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
+        sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
+        sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+        sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
+        sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
+        sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission;
   }
   return null;
@@ -1390,7 +1561,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1410,6 +1581,27 @@ export const createIdeaSubmission = async (
     programPhase: null,
     cohortId: null,
     phase2Marks: {},
+     // Initialize funding fields
+    totalFundingAllocated: null,
+    sanction1Amount: null,
+    sanction2Amount: null,
+    sanction1DisbursedAt: null,
+    sanction2DisbursedAt: null,
+    sanction1Expenses: [],
+    sanction2Expenses: [],
+    beneficiaryName: null,
+    beneficiaryAccountNo: null,
+    beneficiaryBankName: null,
+    beneficiaryIfscCode: null,
+    sanction1AppliedForNext: false,
+    sanction1UtilizationStatus: 'NOT_APPLICABLE',
+    sanction1UtilizationRemarks: null,
+    sanction1UtilizationReviewedBy: null,
+    sanction1UtilizationReviewedAt: null,
+    sanction2UtilizationStatus: 'NOT_APPLICABLE',
+    sanction2UtilizationRemarks: null,
+    sanction2UtilizationReviewedBy: null,
+    sanction2UtilizationReviewedAt: null,
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -1491,6 +1683,27 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
+        // Include new funding fields
+        totalFundingAllocated: data.totalFundingAllocated ?? null,
+        sanction1Amount: data.sanction1Amount ?? null,
+        sanction2Amount: data.sanction2Amount ?? null,
+        sanction1DisbursedAt: data.sanction1DisbursedAt ?? null,
+        sanction2DisbursedAt: data.sanction2DisbursedAt ?? null,
+        sanction1Expenses: data.sanction1Expenses || [],
+        sanction2Expenses: data.sanction2Expenses || [],
+        beneficiaryName: data.beneficiaryName ?? null,
+        beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
+        beneficiaryBankName: data.beneficiaryBankName ?? null,
+        beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+        sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
+        sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+        sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
+        sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
+        sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
+        sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+        sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
+        sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
+        sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission;
   }
   return null;
@@ -1545,10 +1758,6 @@ export const getActivityLogsStream = (
   let q = query(logsCol, orderBy('timestamp', 'desc'), limit(limitCount));
 
   if (filters.actorName) {
-    // Firestore does not support partial string matches directly in queries like 'string contains'.
-    // A common workaround is to fetch broader and filter client-side, or use a search service like Algolia/Typesense.
-    // For this implementation, we'll fetch and then filter client-side if actorName is provided.
-    // If you need more performant search, a dedicated search solution is recommended.
   }
   if (filters.actionType) {
     q = query(q, where('action', '==', filters.actionType));
@@ -1573,6 +1782,119 @@ export const getActivityLogsStream = (
     console.error("Error fetching activity logs:", error);
     callback([]);
   });
+};
+
+// Funding and Expense Management Functions
+export const updateIdeaFundingDetailsFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    fundingData: { totalFundingAllocated: number; sanction1Amount: number; sanction2Amount: number; },
+    adminProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    await updateDoc(ideaRef, {
+        totalFundingAllocated: fundingData.totalFundingAllocated,
+        sanction1Amount: fundingData.sanction1Amount,
+        sanction2Amount: fundingData.sanction2Amount,
+        updatedAt: serverTimestamp(),
+    });
+    await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_IDEA_FUNDING_DETAILS_SET', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, fundingData);
+};
+
+export const updateIdeaBeneficiaryDetailsFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    beneficiaryData: { beneficiaryName: string; beneficiaryAccountNo: string; beneficiaryBankName: string; beneficiaryIfscCode: string; },
+    userProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    await updateDoc(ideaRef, {
+        ...beneficiaryData,
+        updatedAt: serverTimestamp(),
+    });
+    await logUserActivity(userProfile.uid, userProfile.displayName || userProfile.fullName, 'IDEA_BENEFICIARY_DETAILS_UPDATED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { beneficiaryName: beneficiaryData.beneficiaryName });
+};
+
+export const addExpenseToSanctionFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    sanctionNumber: 1 | 2,
+    expenseData: Omit<ExpenseEntry, 'id' | 'uploadedAt'>,
+    userProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    const newExpense: ExpenseEntry = {
+        ...expenseData,
+        id: nanoid(),
+        uploadedAt: serverTimestamp() as Timestamp,
+    };
+    const expenseField = sanctionNumber === 1 ? 'sanction1Expenses' : 'sanction2Expenses';
+    await updateDoc(ideaRef, {
+        [expenseField]: arrayUnion(newExpense),
+        updatedAt: serverTimestamp(),
+    });
+     await logUserActivity(userProfile.uid, userProfile.displayName || userProfile.fullName, 'IDEA_EXPENSE_UPLOADED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { sanction: sanctionNumber, expenseDescription: expenseData.description, amount: expenseData.amount });
+};
+
+export const markSanctionAsDisbursedFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    sanctionNumber: 1 | 2,
+    adminProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    const disbursementField = sanctionNumber === 1 ? 'sanction1DisbursedAt' : 'sanction2DisbursedAt';
+    const utilizationStatusField = sanctionNumber === 1 ? 'sanction1UtilizationStatus' : 'sanction2UtilizationStatus';
+    await updateDoc(ideaRef, {
+        [disbursementField]: serverTimestamp(),
+        [utilizationStatusField]: 'PENDING', // Set to pending review upon disbursement
+        updatedAt: serverTimestamp(),
+    });
+    await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_IDEA_SANCTION_DISBURSED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { sanction: sanctionNumber });
+};
+
+export const reviewSanctionUtilizationFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    sanctionNumber: 'SANCTION_1' | 'SANCTION_2',
+    status: SanctionApprovalStatus,
+    remarks: string | null,
+    adminProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    const statusField = sanctionNumber === 'SANCTION_1' ? 'sanction1UtilizationStatus' : 'sanction2UtilizationStatus';
+    const remarksField = sanctionNumber === 'SANCTION_1' ? 'sanction1UtilizationRemarks' : 'sanction2UtilizationRemarks';
+    const reviewedByField = sanctionNumber === 'SANCTION_1' ? 'sanction1UtilizationReviewedBy' : 'sanction2UtilizationReviewedBy';
+    const reviewedAtField = sanctionNumber === 'SANCTION_1' ? 'sanction1UtilizationReviewedAt' : 'sanction2UtilizationReviewedAt';
+
+    await updateDoc(ideaRef, {
+        [statusField]: status,
+        [remarksField]: remarks,
+        [reviewedByField]: adminProfile.uid,
+        [reviewedAtField]: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+    });
+    await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_IDEA_SANCTION_UTILIZATION_REVIEWED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { sanction: sanctionNumber, status, remarks });
+};
+
+export const applyForNextSanctionFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    currentSanctionNumber: 1, // Currently only S1 applying for S2 is supported this way
+    userProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    if (currentSanctionNumber === 1) {
+        await updateDoc(ideaRef, {
+            sanction1AppliedForNext: true,
+            // When user applies for S2, set S1 utilization to PENDING for admin review if it wasn't already.
+            sanction1UtilizationStatus: 'PENDING', 
+            updatedAt: serverTimestamp(),
+        });
+        await logUserActivity(userProfile.uid, userProfile.displayName || userProfile.fullName, 'IDEA_APPLIED_FOR_NEXT_SANCTION', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { appliedForSanction: 2 });
+    } else {
+        throw new Error("Application for sanctions beyond Sanction 2 via this method is not supported.");
+    }
 };
     
 

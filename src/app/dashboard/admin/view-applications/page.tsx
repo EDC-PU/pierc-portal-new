@@ -11,9 +11,12 @@ import {
     submitOrUpdatePhase2Mark,
     assignMentorToIdea as assignMentorFS,
     getAllCohortsStream,
-    assignIdeaToCohortFS
+    assignIdeaToCohortFS,
+    updateIdeaFundingDetailsFS,
+    markSanctionAsDisbursedFS,
+    reviewSanctionUtilizationFS,
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry } from '@/types';
 import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -39,9 +42,10 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger as AlertDialogButtonTrigger, // Alias to avoid conflict
+  AlertDialogTrigger as AlertDialogButtonTrigger, 
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square } from 'lucide-react';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -64,6 +68,7 @@ const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null
     case 'PHASE_1': return 'Phase 1';
     case 'PHASE_2': return 'Phase 2';
     case 'COHORT': return 'Cohort';
+    case 'INCUBATED': return 'Incubated (Funding)';
     default: return 'N/A';
   }
 };
@@ -75,6 +80,18 @@ interface PhaseDetailsFormData {
     venue: string;
     guidelines: string;
 }
+
+interface FundingDetailsFormData {
+    totalFundingAllocated: number | string;
+    sanction1Amount: number | string;
+    sanction2Amount: number | string;
+}
+
+interface SanctionReviewFormData {
+    status: SanctionApprovalStatus;
+    remarks: string;
+}
+
 
 type SortableKeys = 'title' | 'applicantDisplayName' | 'submittedAt' | 'status' | 'programPhase';
 interface SortConfig {
@@ -129,7 +146,14 @@ export default function ViewApplicationsPage() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'submittedAt', direction: 'descending' });
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [isBulkActionLoading, setIsBulkActionLoading] = useState(false);
-  const [bulkActionTarget, setBulkActionTarget] = useState<string | null>(null); // For cohort ID or status
+  const [bulkActionTarget, setBulkActionTarget] = useState<string | null>(null); 
+  const [isFundingFormOpen, setIsFundingFormOpen] = useState(false);
+  const [fundingForm, setFundingForm] = useState<FundingDetailsFormData>({
+    totalFundingAllocated: '', sanction1Amount: '', sanction2Amount: ''
+  });
+  const [isSanctionReviewFormOpen, setIsSanctionReviewFormOpen] = useState(false);
+  const [sanctionToReview, setSanctionToReview] = useState<'SANCTION_1' | 'SANCTION_2' | null>(null);
+  const [sanctionReviewForm, setSanctionReviewForm] = useState<SanctionReviewFormData>({ status: 'PENDING', remarks: ''});
 
 
   useEffect(() => {
@@ -161,18 +185,25 @@ export default function ViewApplicationsPage() {
     if (isDetailModalOpen && selectedApplication?.id) {
         const updatedVersionInList = applications.find(app => app.id === selectedApplication.id);
         if (updatedVersionInList) {
-            const hasChanged =
+            const hasRelevantChange = 
                 updatedVersionInList.programPhase !== selectedApplication.programPhase ||
                 updatedVersionInList.status !== selectedApplication.status ||
                 updatedVersionInList.mentor !== selectedApplication.mentor ||
                 updatedVersionInList.cohortId !== selectedApplication.cohortId ||
-                (updatedVersionInList.phase2Marks && selectedApplication.phase2Marks && JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks)) ||
+                JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks) ||
+                updatedVersionInList.totalFundingAllocated !== selectedApplication.totalFundingAllocated ||
+                updatedVersionInList.sanction1Amount !== selectedApplication.sanction1Amount ||
+                updatedVersionInList.sanction2Amount !== selectedApplication.sanction2Amount ||
+                updatedVersionInList.sanction1DisbursedAt?.toMillis() !== selectedApplication.sanction1DisbursedAt?.toMillis() ||
+                updatedVersionInList.sanction2DisbursedAt?.toMillis() !== selectedApplication.sanction2DisbursedAt?.toMillis() ||
+                updatedVersionInList.sanction1UtilizationStatus !== selectedApplication.sanction1UtilizationStatus ||
+                updatedVersionInList.sanction2UtilizationStatus !== selectedApplication.sanction2UtilizationStatus ||
                 (updatedVersionInList.updatedAt && selectedApplication.updatedAt && updatedVersionInList.updatedAt.toMillis() !== selectedApplication.updatedAt.toMillis());
 
-            if (hasChanged) {
+            if (hasRelevantChange) {
                 setSelectedApplication(updatedVersionInList);
             }
-        } else {
+        } else { // Idea might have been removed from the list by a filter or action
             setIsDetailModalOpen(false);
             setSelectedApplication(null);
         }
@@ -185,7 +216,7 @@ export default function ViewApplicationsPage() {
     try {
       const fetchedApplications = await getAllIdeaSubmissionsWithDetails();
       setApplications(fetchedApplications);
-      setSelectedRowIds(new Set()); // Clear selections on data refresh
+      setSelectedRowIds(new Set()); 
     } catch (error) {
       console.error("Error fetching applications:", error);
       toast({ title: "Error", description: "Could not fetch incubation applications.", variant: "destructive" });
@@ -216,13 +247,13 @@ export default function ViewApplicationsPage() {
         (app.applicantDisplayName && app.applicantDisplayName.toLowerCase().includes(term))
       );
     }
-    if (filters.status) {
+    if (filters.status && filters.status !== ALL_STATUSES_FILTER_VALUE) {
       filtered = filtered.filter(app => app.status === filters.status);
     }
-    if (filters.programPhase) {
+    if (filters.programPhase && filters.programPhase !== ALL_PHASES_FILTER_VALUE) {
       filtered = filtered.filter(app => app.programPhase === filters.programPhase);
     }
-    if (filters.cohortId) {
+    if (filters.cohortId && filters.cohortId !== ALL_COHORTS_FILTER_VALUE) {
       filtered = filtered.filter(app => app.cohortId === filters.cohortId);
     }
 
@@ -242,7 +273,6 @@ export default function ViewApplicationsPage() {
         } else if (typeof aValue === 'number' && typeof bValue === 'number') {
           comparison = aValue - bValue;
         } else {
-          // Fallback for mixed types or other types
           const strA = String(aValue).toLowerCase();
           const strB = String(bValue).toLowerCase();
           comparison = strA.localeCompare(strB);
@@ -274,7 +304,7 @@ export default function ViewApplicationsPage() {
   };
 
   const handleSelectAllRows = () => {
-    if (selectedRowIds.size === displayedApplications.length) {
+    if (selectedRowIds.size === displayedApplications.length && displayedApplications.length > 0) {
       setSelectedRowIds(new Set());
     } else {
       setSelectedRowIds(new Set(displayedApplications.map(app => app.id!)));
@@ -297,10 +327,10 @@ export default function ViewApplicationsPage() {
       try {
         if (action === 'changeStatus' && targetValue) {
           await updateIdeaStatusAndPhase(idea.id!, idea.title, targetValue as IdeaStatus, userProfile, idea.programPhase);
-        } else if (action === 'assignCohort') { // targetValue can be cohortId or null (for unassign)
+        } else if (action === 'assignCohort') { 
           if (!userProfile.isSuperAdmin) {
              toast({ title: "Unauthorized", description: "Only Super Admins can assign ideas to cohorts.", variant: "destructive" });
-             errorCount++; // Count as error for this specific idea
+             errorCount++; 
              continue;
           }
           await assignIdeaToCohortFS(idea.id!, idea.title, targetValue === 'UNASSIGN' ? null : targetValue, userProfile);
@@ -314,8 +344,8 @@ export default function ViewApplicationsPage() {
       }
     }
     setIsBulkActionLoading(false);
-    fetchApplications(); // Refresh the list
-    setSelectedRowIds(new Set()); // Clear selection
+    fetchApplications(); 
+    setSelectedRowIds(new Set()); 
     toast({
       title: "Bulk Action Complete",
       description: `${successCount} application(s) processed successfully. ${errorCount > 0 ? `${errorCount} failed.` : ''}`
@@ -343,6 +373,13 @@ export default function ViewApplicationsPage() {
             return {
                 venue: 'Founders Studio, BBA Building, Parul University, Vadodara Campus',
                 guidelines: 'Details for the cohort program will be shared upon official assignment.',
+                startTime: 'N/A',
+                endTime: 'N/A',
+            };
+        case 'INCUBATED':
+             return {
+                venue: 'PIERC Office / Remote Coordination',
+                guidelines: 'Funding disbursement and milestone tracking will be managed through the portal and direct communication.',
                 startTime: 'N/A',
                 endTime: 'N/A',
             };
@@ -380,8 +417,17 @@ export default function ViewApplicationsPage() {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
 
-    if (newStatus === 'SELECTED' && actualNewPhase && (actualNewPhase === 'PHASE_1' || actualNewPhase === 'PHASE_2')) {
+    if (newStatus === 'SELECTED' && actualNewPhase && (actualNewPhase === 'PHASE_1' || actualNewPhase === 'PHASE_2' || actualNewPhase === 'INCUBATED')) {
         openPhaseDetailsDialog(idea, actualNewPhase);
+         if (actualNewPhase === 'INCUBATED') {
+            setSelectedApplication(idea); // ensure selectedApplication is set for funding form
+            setFundingForm({
+                totalFundingAllocated: idea.totalFundingAllocated || '',
+                sanction1Amount: idea.sanction1Amount || '',
+                sanction2Amount: idea.sanction2Amount || '',
+            });
+            //setIsFundingFormOpen(true); // This will be opened from the modal after phase selection
+        }
     } else if (newStatus === 'NOT_SELECTED') {
         setCurrentIdeaForRejection(idea);
         setRejectionRemarksInput(idea.rejectionRemarks || '');
@@ -425,6 +471,17 @@ export default function ViewApplicationsPage() {
         toast({ title: "Phase Details Saved", description: `${getProgramPhaseLabel(currentPhaseForDialog)} details saved.` });
         fetchApplications();
         setIsPhaseDetailsDialogVisible(false);
+
+        if (currentPhaseForDialog === 'INCUBATED') {
+            const updatedIdea = applications.find(app => app.id === currentIdeaForPhaseDetails.id);
+            if (updatedIdea) setSelectedApplication(updatedIdea); // Ensure selectedApplication is up-to-date
+            setFundingForm({
+                totalFundingAllocated: currentIdeaForPhaseDetails.totalFundingAllocated || '',
+                sanction1Amount: currentIdeaForPhaseDetails.sanction1Amount || '',
+                sanction2Amount: currentIdeaForPhaseDetails.sanction2Amount || '',
+            });
+            setIsFundingFormOpen(true);
+        }
         setCurrentIdeaForPhaseDetails(null);
         setCurrentPhaseForDialog(null);
     } catch (error) {
@@ -565,6 +622,77 @@ export default function ViewApplicationsPage() {
     }
   };
 
+  const handleSaveFundingDetails = async () => {
+    if (!selectedApplication || !selectedApplication.id || !userProfile || !userProfile.isSuperAdmin) {
+        toast({ title: "Error", description: "Context missing or unauthorized.", variant: "destructive" });
+        return;
+    }
+    const total = parseFloat(String(fundingForm.totalFundingAllocated));
+    const s1 = parseFloat(String(fundingForm.sanction1Amount));
+    const s2 = parseFloat(String(fundingForm.sanction2Amount));
+
+    if (isNaN(total) || isNaN(s1) || isNaN(s2) || total <= 0 || s1 <= 0 || s2 <= 0) {
+        toast({ title: "Invalid Amounts", description: "All funding amounts must be positive numbers.", variant: "destructive" });
+        return;
+    }
+    if (s1 + s2 !== total) {
+        toast({ title: "Amount Mismatch", description: "Sanction 1 and Sanction 2 amounts must sum up to the Total Funding Allocated.", variant: "destructive" });
+        return;
+    }
+    try {
+        await updateIdeaFundingDetailsFS(selectedApplication.id, selectedApplication.title, {total, sanction1Amount: s1, sanction2Amount: s2}, userProfile);
+        toast({ title: "Funding Details Saved", description: "Funding allocation has been updated."});
+        fetchApplications();
+        setIsFundingFormOpen(false);
+    } catch (error: any) {
+        toast({ title: "Save Error", description: error.message || "Could not save funding details.", variant: "destructive" });
+    }
+  };
+
+  const handleDisburseSanction = async (sanctionNumber: 1 | 2) => {
+    if (!selectedApplication || !selectedApplication.id || !userProfile || !userProfile.isSuperAdmin) return;
+    try {
+        await markSanctionAsDisbursedFS(selectedApplication.id, selectedApplication.title, sanctionNumber, userProfile);
+        toast({title: `Sanction ${sanctionNumber} Disbursed`, description: `Marked as disbursed successfully.`});
+        fetchApplications();
+    } catch (error: any) {
+        toast({ title: "Disbursement Error", description: error.message || `Could not mark Sanction ${sanctionNumber} as disbursed.`, variant: "destructive" });
+    }
+  };
+  
+  const openSanctionReviewForm = (sanction: 'SANCTION_1' | 'SANCTION_2') => {
+    if (!selectedApplication) return;
+    setSanctionToReview(sanction);
+    const currentStatus = sanction === 'SANCTION_1' ? selectedApplication.sanction1UtilizationStatus : selectedApplication.sanction2UtilizationStatus;
+    const currentRemarks = sanction === 'SANCTION_1' ? selectedApplication.sanction1UtilizationRemarks : selectedApplication.sanction2UtilizationRemarks;
+    setSanctionReviewForm({ status: currentStatus || 'PENDING', remarks: currentRemarks || ''});
+    setIsSanctionReviewFormOpen(true);
+  };
+
+  const handleSaveSanctionReview = async () => {
+    if (!selectedApplication || !selectedApplication.id || !userProfile || !userProfile.isSuperAdmin || !sanctionToReview) return;
+    if (sanctionReviewForm.status === 'REJECTED' && !sanctionReviewForm.remarks.trim()) {
+        toast({ title: "Remarks Required", description: "Please provide remarks if rejecting.", variant: "destructive" });
+        return;
+    }
+    try {
+        await reviewSanctionUtilizationFS(
+            selectedApplication.id,
+            selectedApplication.title,
+            sanctionToReview,
+            sanctionReviewForm.status,
+            sanctionReviewForm.remarks,
+            userProfile
+        );
+        toast({ title: `Sanction ${sanctionToReview === 'SANCTION_1' ? 1 : 2} Review Saved`, description: "Utilization review has been updated."});
+        fetchApplications();
+        setIsSanctionReviewFormOpen(false);
+        setSanctionToReview(null);
+    } catch (error: any) {
+        toast({ title: "Review Save Error", description: error.message || "Could not save sanction review.", variant: "destructive" });
+    }
+  };
+
 
   const getStatusBadgeVariant = (status: IdeaStatus) => {
     switch (status) {
@@ -640,6 +768,12 @@ export default function ViewApplicationsPage() {
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At',
+      // Funding Headers
+      'Total Funding Allocated', 'Sanction 1 Amount', 'Sanction 2 Amount',
+      'Sanction 1 Disbursed At', 'Sanction 2 Disbursed At',
+      'Beneficiary Name', 'Account No', 'Bank Name', 'IFSC Code',
+      'Sanction 1 Applied for S2?', 'S1 Utilization Status', 'S1 Utilization Remarks', 'S1 Reviewed By', 'S1 Reviewed At',
+      'S2 Utilization Status', 'S2 Utilization Remarks', 'S2 Reviewed By', 'S2 Reviewed At',
     ];
 
     const maxTeamMembers = Math.max(0, ...applications.map(app => app.structuredTeamMembers?.length || 0));
@@ -649,6 +783,16 @@ export default function ViewApplicationsPage() {
             `Member ${i} Institute`, `Member ${i} Department`, `Member ${i} Enrollment No.`
         );
     }
+    
+    const maxS1Expenses = Math.max(0, ...applications.map(app => app.sanction1Expenses?.length || 0));
+    for (let i = 1; i <= maxS1Expenses; i++) {
+        headers.push(`S1 Expense ${i} Desc`, `S1 Expense ${i} Amt`, `S1 Expense ${i} Proof`);
+    }
+    const maxS2Expenses = Math.max(0, ...applications.map(app => app.sanction2Expenses?.length || 0));
+     for (let i = 1; i <= maxS2Expenses; i++) {
+        headers.push(`S2 Expense ${i} Desc`, `S2 Expense ${i} Amt`, `S2 Expense ${i} Proof`);
+    }
+
 
     const adminMarkAdminUIDs: string[] = [];
     if (userProfile?.role === 'ADMIN_FACULTY' && applications.length > 0 && applications.some(app => app.phase2Marks && Object.keys(app.phase2Marks).length > 0)) {
@@ -675,13 +819,6 @@ export default function ViewApplicationsPage() {
     }
 
     const dataForSheet: any[][] = [];
-
-    // Add Title Row
-    const titleRow = Array(headers.length).fill(null);
-    titleRow[0] = { v: sheetTitle, s: { font: { bold: true, sz: 18 }, alignment: { horizontal: "center" } } };
-    dataForSheet.push(titleRow);
-
-    // Add Header Row
     dataForSheet.push(headers.map(header => ({ v: header, s: { font: { bold: true } } })));
 
     applications.forEach(app => {
@@ -698,6 +835,14 @@ export default function ViewApplicationsPage() {
         app.nextPhaseDate ? formatDateOnly(app.nextPhaseDate) : 'N/A',
         app.nextPhaseStartTime, app.nextPhaseEndTime, app.nextPhaseVenue, app.nextPhaseGuidelines,
         formatDateISO(app.submittedAt), formatDateISO(app.updatedAt),
+        // Funding Data
+        app.totalFundingAllocated ?? 'N/A', app.sanction1Amount ?? 'N/A', app.sanction2Amount ?? 'N/A',
+        app.sanction1DisbursedAt ? formatDateOnly(app.sanction1DisbursedAt) : 'N/A',
+        app.sanction2DisbursedAt ? formatDateOnly(app.sanction2DisbursedAt) : 'N/A',
+        app.beneficiaryName || 'N/A', app.beneficiaryAccountNo || 'N/A', app.beneficiaryBankName || 'N/A', app.beneficiaryIfscCode || 'N/A',
+        app.sanction1AppliedForNext ? 'Yes' : 'No',
+        app.sanction1UtilizationStatus || 'N/A', app.sanction1UtilizationRemarks || 'N/A', app.sanction1UtilizationReviewedBy || 'N/A', app.sanction1UtilizationReviewedAt ? formatDateOnly(app.sanction1UtilizationReviewedAt) : 'N/A',
+        app.sanction2UtilizationStatus || 'N/A', app.sanction2UtilizationRemarks || 'N/A', app.sanction2UtilizationReviewedBy || 'N/A', app.sanction2UtilizationReviewedAt ? formatDateOnly(app.sanction2UtilizationReviewedAt) : 'N/A',
       ];
 
       for (let i = 0; i < maxTeamMembers; i++) {
@@ -706,6 +851,15 @@ export default function ViewApplicationsPage() {
             member?.name || '', member?.email || '', member?.phone || '',
             member?.institute || '', member?.department || '', member?.enrollmentNumber || ''
         );
+      }
+      
+      for (let i = 0; i < maxS1Expenses; i++) {
+        const expense = app.sanction1Expenses?.[i];
+        rowValues.push(expense?.description || '', expense?.amount || '', expense?.proofUrl || '');
+      }
+      for (let i = 0; i < maxS2Expenses; i++) {
+        const expense = app.sanction2Expenses?.[i];
+        rowValues.push(expense?.description || '', expense?.amount || '', expense?.proofUrl || '');
       }
 
       if (userProfile?.role === 'ADMIN_FACULTY') {
@@ -717,64 +871,11 @@ export default function ViewApplicationsPage() {
     });
 
     const worksheet = XLSX.utils.aoa_to_sheet(dataForSheet);
-
-    // Merge Title Cell
-    worksheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-
-    // Apply Borders to all cells with data (from header row downwards)
-    const range = XLSX.utils.decode_range(worksheet['!ref']!);
-    const thinBorderStyle = { style: "thin", color: { auto: 1 } };
-    const cellBorder = {
-      top: thinBorderStyle,
-      bottom: thinBorderStyle,
-      left: thinBorderStyle,
-      right: thinBorderStyle
-    };
-
-    for (let R = 1; R <= range.e.r; ++R) { // Start from R=1 (Header Row)
-      for (let C = 0; C <= range.e.c; ++C) {
-        const cell_address = XLSX.utils.encode_cell({ c: C, r: R });
-        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' }; 
-        if (!worksheet[cell_address].s) worksheet[cell_address].s = {}; 
-        worksheet[cell_address].s!.border = cellBorder;
-        if (R === 1 && worksheet[cell_address].s!.font) { 
-             worksheet[cell_address].s!.font!.bold = true;
-        } else if (R === 1) {
-            worksheet[cell_address].s!.font = { bold: true };
-        }
-      }
-    }
-    for (let C = 0; C < headers.length; ++C) {
-        const cell_address_title = XLSX.utils.encode_cell({ c: C, r: 0 });
-         if (!worksheet[cell_address_title]) worksheet[cell_address_title] = { t: 's', v: (C === 0 ? sheetTitle : '') };
-         if (!worksheet[cell_address_title].s) worksheet[cell_address_title].s = {};
-         worksheet[cell_address_title].s!.border = cellBorder;
-         if (C === 0) { 
-            if(!worksheet[cell_address_title].s!.font) worksheet[cell_address_title].s!.font = {};
-            worksheet[cell_address_title].s!.font!.bold = true;
-            worksheet[cell_address_title].s!.font!.sz = 18; 
-            if(!worksheet[cell_address_title].s!.alignment) worksheet[cell_address_title].s!.alignment = {};
-            worksheet[cell_address_title].s!.alignment!.horizontal = "center";
-         }
-    }
-
-
-    const wscols = headers.map((_, index) => {
-        if (index < 2) return { wch: 30 }; 
-        if (index < 4) return { wch: 25 }; 
-        if (index < 10) return { wch: 20 }; 
-        return { wch: 15 }; 
-    });
-    worksheet['!cols'] = wscols;
-
-
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Applications");
-
     XLSX.writeFile(workbook, `pierc_applications_${new Date().toISOString().split('T')[0]}.xlsx`);
     toast({ title: "Export Successful", description: "Applications XLSX has been downloaded." });
   };
-
 
 
   if (authLoading || !initialLoadComplete || loadingApplications || loadingCohorts) {
@@ -876,9 +977,9 @@ export default function ViewApplicationsPage() {
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="text-xs px-2">Change Status to</DropdownMenuLabel>
-                    {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => ( // Exclude ARCHIVED_BY_ADMIN from direct status change
+                    {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => ( 
                         <AlertDialogButtonTrigger asChild key={`status-${status}`}>
-                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(status); /* Open an AlertDialog */ }}>
+                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(status); }}>
                                 {status.replace(/_/g, ' ')}
                             </DropdownMenuItem>
                         </AlertDialogButtonTrigger>
@@ -1036,7 +1137,7 @@ export default function ViewApplicationsPage() {
                                 {allCohorts.find(c => c.id === app.cohortId)?.name || 'Unknown Cohort'}
                             </Badge>
                         ) : (
-                            <span className="text-xs text-muted-foreground italic">N/A (Not in Cohort Phase)</span>
+                            <span className="text-xs text-muted-foreground italic">N/A</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
@@ -1094,7 +1195,7 @@ export default function ViewApplicationsPage() {
                             handleBulkAction('archive');
                         } else if (ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus)) {
                             handleBulkAction('changeStatus', bulkActionTarget);
-                        } else if (bulkActionTarget) { // Cohort ID or 'UNASSIGN'
+                        } else if (bulkActionTarget) { 
                             handleBulkAction('assignCohort', bulkActionTarget);
                         }
                         setBulkActionTarget(null);
@@ -1119,261 +1220,110 @@ export default function ViewApplicationsPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Idea Title</h4>
-                  <p>{selectedApplication.title}</p>
-                </div>
-                 <div>
-                  <h4 className="font-semibold text-muted-foreground">Status</h4>
-                  <Badge variant={getStatusBadgeVariant(selectedApplication.status)} className="capitalize text-sm">
-                      {selectedApplication.status.replace(/_/g, ' ').toLowerCase()}
-                  </Badge>
-                </div>
-                {selectedApplication.status === 'SELECTED' && (
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">Program Phase</h4>
-                        <p>{getProgramPhaseLabel(selectedApplication.programPhase)}</p>
-                    </div>
-                )}
-                {selectedApplication.programPhase === 'COHORT' && selectedApplication.cohortId && (
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">Assigned Cohort</h4>
-                        <p className="flex items-center gap-1">
-                            <GroupIcon className="h-4 w-4 text-primary" />
-                            {allCohorts.find(c => c.id === selectedApplication.cohortId)?.name || 'Unknown Cohort'}
-                        </p>
-                    </div>
-                )}
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Applicant Name</h4>
-                  <p>{selectedApplication.applicantDisplayName || 'N/A'}</p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Applicant Email</h4>
-                  <p>{selectedApplication.applicantEmail || 'N/A'}</p>
-                </div>
-                 <div>
-                  <h4 className="font-semibold text-muted-foreground">Applicant Category</h4>
-                  <p>{selectedApplication.applicantType?.replace(/_/g, ' ') || 'N/A'}</p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Development Stage</h4>
-                  <p>{selectedApplication.developmentStage.replace(/_/g, ' ') || 'N/A'}</p>
-                </div>
-                <div>
-                    <h4 className="font-semibold text-muted-foreground flex items-center"><UsersIconLucide className="h-4 w-4 mr-1.5"/> Team Members (Initial Description)</h4>
-                    <p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">
-                        {selectedApplication.teamMembers || 'N/A (No team members described initially or Solo innovator)'}
-                    </p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Submitted At</h4>
-                   <p>{formatDate(selectedApplication.submittedAt)}</p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Last Updated At</h4>
-                  <p>{formatDate(selectedApplication.updatedAt)}</p>
-                </div>
-              </div>
-              <div className="space-y-3 pt-2">
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Problem Definition</h4>
-                  <p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md">{selectedApplication.problem}</p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Proposed Solution</h4>
-                  <p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md">{selectedApplication.solution}</p>
-                </div>
-                <div>
-                  <h4 className="font-semibold text-muted-foreground">Uniqueness/Distinctiveness</h4>
-                  <p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md">{selectedApplication.uniqueness}</p>
-                </div>
-                 {selectedApplication.fileURL && (
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">Attachment (Pitch Deck)</h4>
-                        <a href={selectedApplication.fileURL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                            {selectedApplication.fileName || 'View Attachment'}
-                        </a>
-                    </div>
-                )}
-                {selectedApplication.studioLocation && (
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">Preferred Studio Location</h4>
-                        <p>{selectedApplication.studioLocation}</p>
-                    </div>
-                )}
-                {selectedApplication.status === 'NOT_SELECTED' && selectedApplication.rejectionRemarks && (
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4>
-                        <p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90">{selectedApplication.rejectionRemarks}</p>
-                        {selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByDisplayName || `UID ${selectedApplication.rejectedByUid.substring(0,5)}...`} on {formatDateOnly(selectedApplication.rejectedAt)}</p>}
-                    </div>
-                )}
-                 {selectedApplication.programPhase === 'PHASE_2' && selectedApplication.phase2PptUrl && (
-                    <div>
-                        <h4 className="font-semibold text-muted-foreground">Phase 2 Presentation</h4>
-                        <a href={selectedApplication.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                            {selectedApplication.phase2PptFileName || 'View Phase 2 Presentation'}
-                        </a>
-                         {selectedApplication.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-1">Uploaded on {formatDateOnly(selectedApplication.phase2PptUploadedAt)}</p>}
-                    </div>
-                 )}
-                 {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase && (selectedApplication.programPhase === 'PHASE_1' || selectedApplication.programPhase === 'PHASE_2') && selectedApplication.nextPhaseDate && (
-                    <Card className="mt-3 border-primary/30">
-                        <CardHeader className="pb-2 pt-3 px-4">
-                            <CardTitle className="text-base font-semibold text-primary flex items-center">
-                                <ChevronsRight className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(selectedApplication.programPhase)} Details
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="text-sm px-4 pb-3 space-y-1">
-                            <p><strong>Date:</strong> {formatDateOnly(selectedApplication.nextPhaseDate)}</p>
-                            <p><strong>Time:</strong> {selectedApplication.nextPhaseStartTime} - {selectedApplication.nextPhaseEndTime}</p>
-                            <p><strong>Venue:</strong> {selectedApplication.nextPhaseVenue}</p>
-                            <p className="font-semibold mt-2">Guidelines:</p>
-                            <p className="whitespace-pre-wrap text-xs bg-muted/20 p-2 rounded-md">{selectedApplication.nextPhaseGuidelines}</p>
-                        </CardContent>
-                    </Card>
-                 )}
-
-                {selectedApplication.structuredTeamMembers && selectedApplication.structuredTeamMembers.length > 0 && (
-                    <div className="pt-3">
-                        <h4 className="font-semibold text-muted-foreground flex items-center mb-2"><UsersIconLucide className="h-5 w-5 mr-2"/> Team Members (Detailed)</h4>
-                        <div className="space-y-3">
-                        {selectedApplication.structuredTeamMembers.map((member, index) => (
-                            <Card key={member.id || index} className="bg-muted/40 p-3 shadow-sm">
-                                <CardHeader className="p-0 pb-1">
-                                     <CardTitle className="text-sm font-medium">Member {index + 1}: {member.name}</CardTitle>
-                                </CardHeader>
-                                <CardContent className="p-0 text-xs text-foreground/80 space-y-0.5">
-                                    <p><strong>Email:</strong> {member.email}</p>
-                                    <p><strong>Phone:</strong> {member.phone}</p>
-                                    <p><strong>Institute:</strong> {member.institute}</p>
-                                    <p><strong>Department:</strong> {member.department}</p>
-                                    {member.enrollmentNumber && <p><strong>Enrollment No:</strong> {member.enrollmentNumber}</p>}
-                                </CardContent>
-                            </Card>
-                        ))}
-                        </div>
-                    </div>
-                )}
-
-              </div>
-
-                {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase === 'COHORT' && (
-                    <Card className="mt-4 pt-0">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-lg font-headline flex items-center">
-                                <Award className="h-5 w-5 mr-2 text-amber-500" /> Mentor Assignment
-                            </CardTitle>
-                            <CardDescription>Assign or view the mentor for this COHORT idea.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            {userProfile.isSuperAdmin ? (
-                                <div>
-                                    <Label htmlFor="mentorSelect">Assign Mentor</Label>
-                                    <Select
-                                        value={selectedApplication.mentor || UNASSIGN_MENTOR_TRIGGER_VALUE}
-                                        onValueChange={(value) => handleAssignMentor(selectedApplication.id!, selectedApplication.title, value === UNASSIGN_MENTOR_TRIGGER_VALUE ? null : value as MentorName)}
-                                        disabled={isAssigningMentor}
-                                    >
-                                        <SelectTrigger id="mentorSelect" className="w-full md:w-[250px]">
-                                            <SelectValue placeholder="Select a mentor" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value={UNASSIGN_MENTOR_TRIGGER_VALUE}>Unassign Mentor</SelectItem>
-                                            {AVAILABLE_MENTORS_DATA.map(mentor => (
-                                                <SelectItem key={mentor.name} value={mentor.name}>{mentor.name} ({mentor.email})</SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    {isAssigningMentor && <LoadingSpinner size={16} className="ml-2 inline-block" />}
-                                </div>
-                            ) : (
-                                <div>
-                                    <h4 className="font-semibold text-muted-foreground">Assigned Mentor</h4>
-                                    <p>{selectedApplication.mentor || 'Not yet assigned'}</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                )}
-
-
-              {selectedApplication.programPhase === 'PHASE_2' && (
-                <Card className="mt-4 pt-0">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-lg font-headline flex items-center">
-                        <Star className="h-5 w-5 mr-2 text-amber-500" /> Phase 2 Presentation Marks
-                    </CardTitle>
-                    <CardDescription>Marks submitted by administrators for this idea.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
-                      const displayName = markEntry.adminDisplayName || 'Admin';
-                      const isCurrentUserMark = adminUid === userProfile.uid;
-
-                      if (userProfile.isSuperAdmin && !isCurrentUserMark) {
-                        return (
-                            <div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md">
-                            <span className="flex items-center">
-                                <UserCheck className="h-4 w-4 mr-2 text-muted-foreground" />
-                                {displayName}
-                            </span>
-                            <Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge>
+                <Accordion type="multiple" defaultValue={['basic', 'team', 'funding']} className="w-full">
+                    <AccordionItem value="basic">
+                        <AccordionTrigger>Basic Idea & Applicant Info</AccordionTrigger>
+                        <AccordionContent className="space-y-3">
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Idea Title</h4><p>{selectedApplication.title}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Status</h4><Badge variant={getStatusBadgeVariant(selectedApplication.status)} className="capitalize text-sm">{selectedApplication.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
+                                {selectedApplication.status === 'SELECTED' && (<div><h4 className="font-semibold text-muted-foreground text-xs">Program Phase</h4><p>{getProgramPhaseLabel(selectedApplication.programPhase)}</p></div>)}
+                                {selectedApplication.programPhase === 'COHORT' && selectedApplication.cohortId && (<div><h4 className="font-semibold text-muted-foreground text-xs">Assigned Cohort</h4><p className="flex items-center gap-1"><GroupIcon className="h-4 w-4 text-primary" />{allCohorts.find(c => c.id === selectedApplication.cohortId)?.name || 'Unknown Cohort'}</p></div>)}
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Applicant Name</h4><p>{selectedApplication.applicantDisplayName || 'N/A'}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Applicant Email</h4><p>{selectedApplication.applicantEmail || 'N/A'}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Applicant Category</h4><p>{selectedApplication.applicantType?.replace(/_/g, ' ') || 'N/A'}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Development Stage</h4><p>{selectedApplication.developmentStage.replace(/_/g, ' ') || 'N/A'}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Submitted At</h4><p>{formatDate(selectedApplication.submittedAt)}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Last Updated At</h4><p>{formatDate(selectedApplication.updatedAt)}</p></div>
                             </div>
-                        );
-                      }
-                      return null;
-                    })}
-                    {(() => {
-                        const marksObject = selectedApplication.phase2Marks || {};
-                        const totalMarksCount = Object.keys(marksObject).length;
-                        const currentUserHasMarked = !!marksObject[userProfile.uid];
-
-                        if (userProfile.isSuperAdmin) {
-                            if (totalMarksCount === 0) {
-                                return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted by any admin yet.</p>;
-                            }
-                        } else {
-                            if (!currentUserHasMarked && totalMarksCount > 0) {
-                                return <p className="text-sm text-muted-foreground text-center py-2">Other marks may exist. Submit yours below.</p>;
-                            }
-                            if (totalMarksCount === 0) {
-                                 return <p className="text-sm text-muted-foreground text-center py-2">No marks submitted yet. Submit yours below.</p>;
-                            }
-                        }
-                        return null;
-                    })()}
-
-                    <div className="pt-3 space-y-2">
-                        <Label htmlFor="adminMarkInput" className="font-semibold">
-                           Your Mark (0-100):
-                        </Label>
-                        <div className="flex items-center gap-2">
-                        <Input
-                            id="adminMarkInput"
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={currentAdminMark}
-                            onChange={(e) => setCurrentAdminMark(e.target.value)}
-                            placeholder="Enter your mark"
-                            className="max-w-[150px]"
-                            disabled={isSavingMark}
-                        />
-                        <Button onClick={handleSaveMark} disabled={isSavingMark}>
-                            {isSavingMark ? <LoadingSpinner size={16} className="mr-2"/> : null}
-                            Save My Mark
-                        </Button>
-                        </div>
-                    </div>
-                  </CardContent>
-                   <CardFooter>
-                        <p className="text-xs text-muted-foreground">Leave the mark empty and save to clear your previously submitted mark.</p>
-                   </CardFooter>
-                </Card>
-              )}
+                            <div className="space-y-2 pt-2">
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Problem Definition</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.problem}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Proposed Solution</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.solution}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Uniqueness/Distinctiveness</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.uniqueness}</p></div>
+                                {selectedApplication.fileURL && (<div><h4 className="font-semibold text-muted-foreground text-xs">Attachment (Pitch Deck)</h4><a href={selectedApplication.fileURL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{selectedApplication.fileName || 'View Attachment'}</a></div>)}
+                                {selectedApplication.studioLocation && (<div><h4 className="font-semibold text-muted-foreground text-xs">Preferred Studio Location</h4><p>{selectedApplication.studioLocation}</p></div>)}
+                                {selectedApplication.status === 'NOT_SELECTED' && selectedApplication.rejectionRemarks && (<div><h4 className="font-semibold text-muted-foreground text-xs text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4><p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90 text-sm">{selectedApplication.rejectionRemarks}</p>{selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByDisplayName || `UID ${selectedApplication.rejectedByUid.substring(0,5)}...`} on {formatDateOnly(selectedApplication.rejectedAt)}</p>}</div>)}
+                                {selectedApplication.programPhase === 'PHASE_2' && selectedApplication.phase2PptUrl && (<div><h4 className="font-semibold text-muted-foreground text-xs">Phase 2 Presentation</h4><a href={selectedApplication.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{selectedApplication.phase2PptFileName || 'View Phase 2 Presentation'}</a>{selectedApplication.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-1">Uploaded on {formatDateOnly(selectedApplication.phase2PptUploadedAt)}</p>}</div>)}
+                                {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase && (selectedApplication.programPhase === 'PHASE_1' || selectedApplication.programPhase === 'PHASE_2' || selectedApplication.programPhase === 'INCUBATED') && selectedApplication.nextPhaseDate && (
+                                    <Card className="mt-2 border-primary/30 text-sm"><CardHeader className="pb-1 pt-2 px-3"><CardTitle className="text-sm font-semibold text-primary flex items-center"><ChevronsRight className="h-4 w-4 mr-1"/> Next Step: {getProgramPhaseLabel(selectedApplication.programPhase)} Details</CardTitle></CardHeader><CardContent className="px-3 pb-2 space-y-0.5"><p><strong>Date:</strong> {formatDateOnly(selectedApplication.nextPhaseDate)}</p><p><strong>Time:</strong> {selectedApplication.nextPhaseStartTime} - {selectedApplication.nextPhaseEndTime}</p><p><strong>Venue:</strong> {selectedApplication.nextPhaseVenue}</p><p className="font-medium mt-1">Guidelines:</p><p className="whitespace-pre-wrap text-xs bg-muted/20 p-1.5 rounded-md">{selectedApplication.nextPhaseGuidelines}</p></CardContent></Card>
+                                )}
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+                    <AccordionItem value="team">
+                        <AccordionTrigger>Team Information</AccordionTrigger>
+                        <AccordionContent className="space-y-2">
+                             <div><h4 className="font-semibold text-muted-foreground text-xs">Team Members (Initial Description)</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.teamMembers || 'N/A (No team members described initially or Solo innovator)'}</p></div>
+                             {selectedApplication.structuredTeamMembers && selectedApplication.structuredTeamMembers.length > 0 && (
+                                <div className="pt-1"><h4 className="font-semibold text-muted-foreground text-xs flex items-center mb-1"><UsersIconLucide className="h-4 w-4 mr-1.5"/> Team Members (Detailed)</h4><div className="space-y-2">
+                                {selectedApplication.structuredTeamMembers.map((member, index) => (
+                                    <Card key={member.id || index} className="bg-muted/40 p-2 shadow-sm text-xs"><CardHeader className="p-0 pb-0.5"><CardTitle className="text-xs font-medium">Member {index + 1}: {member.name}</CardTitle></CardHeader><CardContent className="p-0 text-foreground/80 space-y-0.5"><p><strong>Email:</strong> {member.email}</p><p><strong>Phone:</strong> {member.phone}</p><p><strong>Institute:</strong> {member.institute}</p><p><strong>Department:</strong> {member.department}</p>{member.enrollmentNumber && <p><strong>Enrollment No:</strong> {member.enrollmentNumber}</p>}</CardContent></Card>
+                                ))}</div></div>
+                            )}
+                        </AccordionContent>
+                    </AccordionItem>
+                    {selectedApplication.programPhase === 'COHORT' && (
+                        <AccordionItem value="mentor">
+                            <AccordionTrigger>Mentor Assignment</AccordionTrigger>
+                            <AccordionContent className="space-y-2">
+                                {userProfile.isSuperAdmin ? (
+                                    <div><Label htmlFor="mentorSelect">Assign Mentor</Label><Select value={selectedApplication.mentor || UNASSIGN_MENTOR_TRIGGER_VALUE} onValueChange={(value) => handleAssignMentor(selectedApplication.id!, selectedApplication.title, value === UNASSIGN_MENTOR_TRIGGER_VALUE ? null : value as MentorName)} disabled={isAssigningMentor}><SelectTrigger id="mentorSelect" className="w-full md:w-[250px]"><SelectValue placeholder="Select a mentor" /></SelectTrigger><SelectContent><SelectItem value={UNASSIGN_MENTOR_TRIGGER_VALUE}>Unassign Mentor</SelectItem>{AVAILABLE_MENTORS_DATA.map(mentor => (<SelectItem key={mentor.name} value={mentor.name}>{mentor.name} ({mentor.email})</SelectItem>))}</SelectContent></Select>{isAssigningMentor && <LoadingSpinner size={16} className="ml-2 inline-block" />}</div>
+                                ) : (<div><h4 className="font-semibold text-muted-foreground text-xs">Assigned Mentor</h4><p>{selectedApplication.mentor || 'Not yet assigned'}</p></div>)}
+                            </AccordionContent>
+                        </AccordionItem>
+                    )}
+                    {selectedApplication.programPhase === 'PHASE_2' && (
+                        <AccordionItem value="marks">
+                            <AccordionTrigger>Phase 2 Marks</AccordionTrigger>
+                            <AccordionContent className="space-y-3">
+                                {Object.entries(selectedApplication.phase2Marks || {}).map(([adminUid, markEntry]) => {
+                                  const displayName = markEntry.adminDisplayName || 'Admin'; const isCurrentUserMark = adminUid === userProfile.uid;
+                                  if (userProfile.isSuperAdmin && !isCurrentUserMark) { return (<div key={adminUid} className="flex justify-between items-center text-sm p-2 bg-muted/20 rounded-md"><span className="flex items-center"><UserCheck className="h-4 w-4 mr-2 text-muted-foreground" />{displayName}</span><Badge variant="secondary">{markEntry.mark !== null ? markEntry.mark : 'N/A'}</Badge></div>);} return null;
+                                })}
+                                {(() => {const marksObject = selectedApplication.phase2Marks || {}; const totalMarksCount = Object.keys(marksObject).length; const currentUserHasMarked = !!marksObject[userProfile.uid]; if (userProfile.isSuperAdmin) { if (totalMarksCount === 0) {return <p className="text-sm text-muted-foreground text-center py-1">No marks submitted by any admin yet.</p>;}} else { if (!currentUserHasMarked && totalMarksCount > 0) {return <p className="text-sm text-muted-foreground text-center py-1">Other marks may exist. Submit yours below.</p>;} if (totalMarksCount === 0) { return <p className="text-sm text-muted-foreground text-center py-1">No marks submitted yet. Submit yours below.</p>;}} return null; })()}
+                                <div className="pt-2 space-y-1"><Label htmlFor="adminMarkInput" className="font-semibold text-xs">Your Mark (0-100):</Label><div className="flex items-center gap-2"><Input id="adminMarkInput" type="number" min="0" max="100" value={currentAdminMark} onChange={(e) => setCurrentAdminMark(e.target.value)} placeholder="Enter mark" className="max-w-[120px] h-9 text-sm" disabled={isSavingMark} /><Button onClick={handleSaveMark} disabled={isSavingMark} size="sm">{isSavingMark ? <LoadingSpinner size={16} className="mr-1"/> : null}Save My Mark</Button></div></div>
+                                <p className="text-xs text-muted-foreground">Leave the mark empty and save to clear your previously submitted mark.</p>
+                            </AccordionContent>
+                        </AccordionItem>
+                    )}
+                     {selectedApplication.programPhase === 'INCUBATED' && userProfile.isSuperAdmin && (
+                        <AccordionItem value="fundingAdmin">
+                            <AccordionTrigger>Funding & Sanction Management (Admin)</AccordionTrigger>
+                            <AccordionContent className="space-y-4">
+                                <Button onClick={() => {
+                                    setFundingForm({ totalFundingAllocated: selectedApplication?.totalFundingAllocated || '', sanction1Amount: selectedApplication?.sanction1Amount || '', sanction2Amount: selectedApplication?.sanction2Amount || '' });
+                                    setIsFundingFormOpen(true);
+                                }} variant="outline" size="sm"><DollarSign className="mr-2 h-4 w-4" />Set/Update Funding Allocation</Button>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <Card>
+                                        <CardHeader className="pb-2 pt-3 px-3"><CardTitle className="text-sm font-semibold">Sanction 1</CardTitle></CardHeader>
+                                        <CardContent className="px-3 pb-3 space-y-2">
+                                            <p className="text-xs">Amount: {selectedApplication.sanction1Amount ? `₹${selectedApplication.sanction1Amount.toLocaleString()}` : 'Not Set'}</p>
+                                            {selectedApplication.sanction1DisbursedAt ? (<p className="text-xs text-green-600">Disbursed: {formatDateOnly(selectedApplication.sanction1DisbursedAt)}</p>) : (<Button size="sm" onClick={() => handleDisburseSanction(1)} disabled={!selectedApplication.sanction1Amount}>Mark Disbursed</Button>)}
+                                            <p className="text-xs">Student Applied for S2: {selectedApplication.sanction1AppliedForNext ? 'Yes' : 'No'}</p>
+                                            <p className="text-xs">Status: {selectedApplication.sanction1UtilizationStatus || 'N/A'}</p>
+                                            {selectedApplication.sanction1Expenses && selectedApplication.sanction1Expenses.length > 0 && <p className="text-xs font-medium mt-1">Expenses ({selectedApplication.sanction1Expenses.length}):</p>}
+                                            {selectedApplication.sanction1Expenses?.map(exp => (<div key={exp.id} className="text-xs border-t pt-1 mt-1"><p>{exp.description}: ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</p></div>))}
+                                            <Button size="sm" variant="outline" onClick={() => openSanctionReviewForm('SANCTION_1')} className="mt-2">Review S1 Utilization</Button>
+                                        </CardContent>
+                                    </Card>
+                                    <Card>
+                                        <CardHeader className="pb-2 pt-3 px-3"><CardTitle className="text-sm font-semibold">Sanction 2</CardTitle></CardHeader>
+                                        <CardContent className="px-3 pb-3 space-y-2">
+                                            <p className="text-xs">Amount: {selectedApplication.sanction2Amount ? `₹${selectedApplication.sanction2Amount.toLocaleString()}` : 'Not Set'}</p>
+                                            {selectedApplication.sanction2DisbursedAt ? (<p className="text-xs text-green-600">Disbursed: {formatDateOnly(selectedApplication.sanction2DisbursedAt)}</p>) : (<Button size="sm" onClick={() => handleDisburseSanction(2)} disabled={!selectedApplication.sanction2Amount || selectedApplication.sanction1UtilizationStatus !== 'APPROVED'}>Mark Disbursed</Button>)}
+                                            <p className="text-xs">Status: {selectedApplication.sanction2UtilizationStatus || 'N/A'}</p>
+                                            {selectedApplication.sanction2Expenses && selectedApplication.sanction2Expenses.length > 0 && <p className="text-xs font-medium mt-1">Expenses ({selectedApplication.sanction2Expenses.length}):</p>}
+                                            {selectedApplication.sanction2Expenses?.map(exp => (<div key={exp.id} className="text-xs border-t pt-1 mt-1"><p>{exp.description}: ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</p></div>))}
+                                            <Button size="sm" variant="outline" onClick={() => openSanctionReviewForm('SANCTION_2')} className="mt-2" disabled={selectedApplication.sanction1UtilizationStatus !== 'APPROVED' || !selectedApplication.sanction2DisbursedAt}>Review S2 Utilization</Button>
+                                        </CardContent>
+                                    </Card>
+                                </div>
+                            </AccordionContent>
+                        </AccordionItem>
+                     )}
+                </Accordion>
             </div>
              <div className="pt-4 flex justify-end">
                 <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>Close</Button>
@@ -1384,149 +1334,57 @@ export default function ViewApplicationsPage() {
 
       {isRejectionDialogVisible && currentIdeaForRejection && (
         <Dialog open={isRejectionDialogVisible} onOpenChange={(isOpen) => {
-            if(!isOpen) {
-                setIsRejectionDialogVisible(false);
-                setCurrentIdeaForRejection(null);
-                setRejectionRemarksInput('');
-                fetchApplications();
-            } else {
-                setIsRejectionDialogVisible(isOpen);
-            }
+            if(!isOpen) { setIsRejectionDialogVisible(false); setCurrentIdeaForRejection(null); setRejectionRemarksInput(''); fetchApplications(); } else { setIsRejectionDialogVisible(isOpen); }
         }}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle className="flex items-center"><MessageSquareWarning className="h-5 w-5 mr-2 text-destructive"/> Provide Rejection Remarks</DialogTitle>
-                    <DialogDescription>
-                        For idea: <span className="font-semibold">{currentIdeaForRejection.title}</span>.
-                        Please provide constructive feedback or reasons for not selecting this idea.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="py-4 space-y-2">
-                    <Label htmlFor="rejectionRemarks">Remarks/Guidance</Label>
-                    <Textarea
-                        id="rejectionRemarks"
-                        value={rejectionRemarksInput}
-                        onChange={(e) => setRejectionRemarksInput(e.target.value)}
-                        placeholder="Explain why the idea was not selected and suggest areas for improvement..."
-                        rows={5}
-                    />
-                </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => {
-                        setIsRejectionDialogVisible(false);
-                        setCurrentIdeaForRejection(null);
-                        setRejectionRemarksInput('');
-                        fetchApplications();
-                    }}>Cancel</Button>
-                    <Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button>
-                </DialogFooter>
-            </DialogContent>
+            <DialogContent><DialogHeader><DialogTitle className="flex items-center"><MessageSquareWarning className="h-5 w-5 mr-2 text-destructive"/> Provide Rejection Remarks</DialogTitle><DialogDescription>For idea: <span className="font-semibold">{currentIdeaForRejection.title}</span>. Please provide constructive feedback or reasons for not selecting this idea.</DialogDescription></DialogHeader><div className="py-4 space-y-2"><Label htmlFor="rejectionRemarks">Remarks/Guidance</Label><Textarea id="rejectionRemarks" value={rejectionRemarksInput} onChange={(e) => setRejectionRemarksInput(e.target.value)} placeholder="Explain why the idea was not selected and suggest areas for improvement..." rows={5} /></div><DialogFooter><Button variant="outline" onClick={() => { setIsRejectionDialogVisible(false); setCurrentIdeaForRejection(null); setRejectionRemarksInput(''); fetchApplications(); }}>Cancel</Button><Button onClick={handleSubmitRejection} className="bg-destructive hover:bg-destructive/90">Submit Rejection</Button></DialogFooter></DialogContent>
         </Dialog>
       )}
 
       {isPhaseDetailsDialogVisible && currentIdeaForPhaseDetails && currentPhaseForDialog && (
         <Dialog open={isPhaseDetailsDialogVisible} onOpenChange={(isOpen) => {
-            if (!isOpen) {
-                setIsPhaseDetailsDialogVisible(false);
-                setCurrentIdeaForPhaseDetails(null);
-                setCurrentPhaseForDialog(null);
-                fetchApplications();
-            } else {
-                setIsPhaseDetailsDialogVisible(isOpen);
-            }
+            if (!isOpen) { setIsPhaseDetailsDialogVisible(false); setCurrentIdeaForPhaseDetails(null); setCurrentPhaseForDialog(null); fetchApplications(); } else { setIsPhaseDetailsDialogVisible(isOpen); }
         }}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center">
-                        <CalendarIcon className="h-5 w-5 mr-2 text-primary"/> Set Meeting Details for {getProgramPhaseLabel(currentPhaseForDialog)}
-                    </DialogTitle>
-                    <DialogDescription>
-                        Provide date, time, venue, and guidelines for <span className="font-semibold">{currentIdeaForPhaseDetails.title}</span>.
-                    </DialogDescription>
-                </DialogHeader>
-                <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto pr-2">
-                    <div>
-                        <Label htmlFor="phaseDate">Date</Label>
-                        <Popover>
-                            <PopoverTrigger asChild>
-                                <Button
-                                    id="phaseDate"
-                                    variant={"outline"}
-                                    className={cn(
-                                        "w-full justify-start text-left font-normal",
-                                        !phaseDetailsForm.date && "text-muted-foreground"
-                                    )}
-                                >
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {phaseDetailsForm.date ? format(phaseDetailsForm.date, "PPP") : <span>Pick a date</span>}
-                                </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                                <Calendar
-                                    mode="single"
-                                    selected={phaseDetailsForm.date || undefined}
-                                    onSelect={(date) => setPhaseDetailsForm(prev => ({...prev, date: date || null}))}
-                                    initialFocus
-                                />
-                            </PopoverContent>
-                        </Popover>
-                    </div>
-                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <Label htmlFor="phaseStartTime">Start Time</Label>
-                            <Input
-                                id="phaseStartTime"
-                                type="time"
-                                value={phaseDetailsForm.startTime}
-                                onChange={(e) => setPhaseDetailsForm(prev => ({...prev, startTime: e.target.value}))}
-                            />
-                        </div>
-                        <div>
-                            <Label htmlFor="phaseEndTime">End Time</Label>
-                            <Input
-                                id="phaseEndTime"
-                                type="time"
-                                value={phaseDetailsForm.endTime}
-                                onChange={(e) => setPhaseDetailsForm(prev => ({...prev, endTime: e.target.value}))}
-                            />
-                        </div>
-                    </div>
-                    <div>
-                        <Label htmlFor="phaseVenue">Venue</Label>
-                        <Input
-                            id="phaseVenue"
-                            value={phaseDetailsForm.venue}
-                            onChange={(e) => setPhaseDetailsForm(prev => ({...prev, venue: e.target.value}))}
-                            placeholder="e.g., PIERC Office, BBA Building"
-                        />
-                    </div>
-                    <div>
-                        <Label htmlFor="phaseGuidelines">Guidelines</Label>
-                        <Textarea
-                            id="phaseGuidelines"
-                            value={phaseDetailsForm.guidelines}
-                            onChange={(e) => setPhaseDetailsForm(prev => ({...prev, guidelines: e.target.value}))}
-                            placeholder="Enter guidelines for this phase meeting..."
-                            rows={4}
-                        />
-                    </div>
+            <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center"><CalendarIcon className="h-5 w-5 mr-2 text-primary"/> Set Meeting Details for {getProgramPhaseLabel(currentPhaseForDialog)}</DialogTitle><DialogDescription>Provide date, time, venue, and guidelines for <span className="font-semibold">{currentIdeaForPhaseDetails.title}</span>.</DialogDescription></DialogHeader><div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto pr-2"><div><Label htmlFor="phaseDate">Date</Label><Popover><PopoverTrigger asChild><Button id="phaseDate" variant={"outline"} className={cn("w-full justify-start text-left font-normal",!phaseDetailsForm.date && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{phaseDetailsForm.date ? format(phaseDetailsForm.date, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={phaseDetailsForm.date || undefined} onSelect={(date) => setPhaseDetailsForm(prev => ({...prev, date: date || null}))} initialFocus /></PopoverContent></Popover></div><div className="grid grid-cols-2 gap-4"><div><Label htmlFor="phaseStartTime">Start Time</Label><Input id="phaseStartTime" type="time" value={phaseDetailsForm.startTime} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, startTime: e.target.value}))}/></div><div><Label htmlFor="phaseEndTime">End Time</Label><Input id="phaseEndTime" type="time" value={phaseDetailsForm.endTime} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, endTime: e.target.value}))}/></div></div><div><Label htmlFor="phaseVenue">Venue</Label><Input id="phaseVenue" value={phaseDetailsForm.venue} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, venue: e.target.value}))} placeholder="e.g., PIERC Office, BBA Building"/></div><div><Label htmlFor="phaseGuidelines">Guidelines</Label><Textarea id="phaseGuidelines" value={phaseDetailsForm.guidelines} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, guidelines: e.target.value}))} placeholder="Enter guidelines for this phase meeting..." rows={4}/></div></div><DialogFooter><Button variant="outline" onClick={() => { setIsPhaseDetailsDialogVisible(false); setCurrentIdeaForPhaseDetails(null); setCurrentPhaseForDialog(null); fetchApplications(); }}>Cancel</Button><Button onClick={handleSubmitPhaseDetails}>Save Details</Button></DialogFooter></DialogContent>
+        </Dialog>
+      )}
+      
+      {isFundingFormOpen && selectedApplication && userProfile?.isSuperAdmin && (
+        <Dialog open={isFundingFormOpen} onOpenChange={(isOpen) => { if(!isOpen) setIsFundingFormOpen(false); }}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader><DialogTitle className="flex items-center"><DollarSign className="mr-2 h-5 w-5"/>Set Funding Allocation for {selectedApplication.title}</DialogTitle></DialogHeader>
+                <div className="py-4 space-y-3">
+                    <div><Label htmlFor="totalFunding">Total Funding Allocated (INR)</Label><Input id="totalFunding" type="number" value={fundingForm.totalFundingAllocated} onChange={(e) => setFundingForm(prev => ({...prev, totalFundingAllocated: e.target.value}))} placeholder="e.g., 50000" /></div>
+                    <div><Label htmlFor="sanction1Amount">Sanction 1 Amount (INR)</Label><Input id="sanction1Amount" type="number" value={fundingForm.sanction1Amount} onChange={(e) => setFundingForm(prev => ({...prev, sanction1Amount: e.target.value}))} placeholder="e.g., 25000" /></div>
+                    <div><Label htmlFor="sanction2Amount">Sanction 2 Amount (INR)</Label><Input id="sanction2Amount" type="number" value={fundingForm.sanction2Amount} onChange={(e) => setFundingForm(prev => ({...prev, sanction2Amount: e.target.value}))} placeholder="e.g., 25000" /></div>
                 </div>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => {
-                        setIsPhaseDetailsDialogVisible(false);
-                        setCurrentIdeaForPhaseDetails(null);
-                        setCurrentPhaseForDialog(null);
-                        fetchApplications();
-                    }}>Cancel</Button>
-                    <Button onClick={handleSubmitPhaseDetails}>Save Details</Button>
-                </DialogFooter>
+                <DialogFooter><Button variant="outline" onClick={() => setIsFundingFormOpen(false)}>Cancel</Button><Button onClick={handleSaveFundingDetails}>Save Allocation</Button></DialogFooter>
             </DialogContent>
         </Dialog>
       )}
+
+      {isSanctionReviewFormOpen && selectedApplication && sanctionToReview && userProfile?.isSuperAdmin && (
+        <Dialog open={isSanctionReviewFormOpen} onOpenChange={(isOpen) => { if(!isOpen) setIsSanctionReviewFormOpen(false); }}>
+            <DialogContent className="sm:max-w-md">
+                <DialogHeader><DialogTitle className="flex items-center"><CheckSquare className="mr-2 h-5 w-5"/>Review Sanction {sanctionToReview === 'SANCTION_1' ? 1 : 2} Utilization</DialogTitle><DialogDescription>For idea: {selectedApplication.title}</DialogDescription></DialogHeader>
+                <div className="py-4 space-y-3">
+                    <div><Label htmlFor="sanctionStatus">Approval Status</Label>
+                        <Select value={sanctionReviewForm.status} onValueChange={(value) => setSanctionReviewForm(prev => ({...prev, status: value as SanctionApprovalStatus}))}>
+                            <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="PENDING">Pending</SelectItem>
+                                <SelectItem value="APPROVED">Approve</SelectItem>
+                                <SelectItem value="REJECTED">Reject</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div><Label htmlFor="sanctionRemarks">Admin Remarks</Label><Textarea id="sanctionRemarks" value={sanctionReviewForm.remarks} onChange={(e) => setSanctionReviewForm(prev => ({...prev, remarks: e.target.value}))} placeholder="Provide feedback or reasons..." rows={3} /></div>
+                </div>
+                <DialogFooter><Button variant="outline" onClick={() => setIsSanctionReviewFormOpen(false)}>Cancel</Button><Button onClick={handleSaveSanctionReview}>Save Review</Button></DialogFooter>
+            </DialogContent>
+        </Dialog>
+      )}
+
     </div>
   );
 }
-
-    
-
     
