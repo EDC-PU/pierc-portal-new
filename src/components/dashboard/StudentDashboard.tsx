@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon } from 'lucide-react'; // Added GroupIcon
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
   type IdeaSubmission,
-  type Cohort, // Added Cohort
-  getAllCohortsStream, // Added getAllCohortsStream
+  type Cohort,
+  getAllCohortsStream,
   updateIdeaPhase2PptDetails,
   addTeamMemberToIdea,
   removeTeamMemberFromIdea,
@@ -108,8 +108,8 @@ export default function StudentDashboard() {
   const router = useRouter();
   const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
   const [loadingIdeas, setLoadingIdeas] = useState(true);
-  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]); // Added state for cohorts
-  const [loadingCohorts, setLoadingCohorts] = useState(true); // Added loading state for cohorts
+  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]);
+  const [loadingCohorts, setLoadingCohorts] = useState(true);
   const [selectedPptFile, setSelectedPptFile] = useState<File | null>(null);
   const [uploadingPptIdeaId, setUploadingPptIdeaId] = useState<string | null>(null);
   const [isUploadingPpt, setIsUploadingPpt] = useState(false);
@@ -180,7 +180,7 @@ export default function StudentDashboard() {
 
 
   useEffect(() => {
-    if (user?.uid) { // Fetch cohorts if user is logged in, regardless of being idea owner or team member
+    if (user?.uid) {
       setLoadingCohorts(true);
       const unsubscribeCohorts = getAllCohortsStream((fetchedCohorts) => {
         setAllCohorts(fetchedCohorts);
@@ -443,6 +443,112 @@ export default function StudentDashboard() {
     setMemberToRemove(null);
   };
 
+  const renderIdeaDetails = (idea: IdeaSubmission, assignedCohort: Cohort | null) => {
+    return (
+    <div className="space-y-6 animate-slide-in-up">
+        <Card className="shadow-lg">
+        <CardHeader>
+            <CardTitle className="font-headline text-xl text-primary">{idea.title}</CardTitle>
+            <CardDescription>Project Details & Current Status</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+            <div>
+            <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
+            <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md shadow-sm">{idea.problem}</p>
+            </div>
+            <div>
+            <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
+            <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md shadow-sm">{idea.solution}</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div>
+                <Label className="text-sm font-semibold text-muted-foreground">Submission Status</Label>
+                <p><Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{idea.status.replace(/_/g, ' ').toLowerCase()}</Badge></p>
+            </div>
+            {idea.programPhase && (
+                <div>
+                <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
+                <p><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></p>
+                </div>
+            )}
+            </div>
+            {idea.programPhase === 'COHORT' && idea.mentor && (
+                <div className="pt-2">
+                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><Award className="h-4 w-4 mr-1.5 text-amber-500"/> Assigned Mentor</Label>
+                    <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{idea.mentor}</p>
+                </div>
+            )}
+            {idea.programPhase === 'COHORT' && assignedCohort && (
+                <div className="pt-2">
+                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><GroupIcon className="h-4 w-4 mr-1.5 text-primary"/> Assigned Cohort</Label>
+                    <p className="text-sm p-2 bg-primary/10 rounded-md shadow-sm border border-primary/30">{assignedCohort.name}</p>
+                </div>
+            )}
+            {idea.status === 'SELECTED' && idea.programPhase && (
+                <>
+                    {idea.programPhase === 'COHORT' && assignedCohort ? (
+                    <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                        <CardHeader className="pb-2 pt-4 px-4">
+                            <CardTitle className="text-lg font-semibold text-primary flex items-center">
+                                <GroupIcon className="h-5 w-5 mr-2"/> Incubation Cohort Details
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                                Your idea is part of the "{assignedCohort.name}" cohort.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
+                            <p><strong className="text-primary/90">Cohort Name:</strong> {assignedCohort.name}</p>
+                            <p><strong className="text-primary/90">Start Date:</strong> {formatDate(assignedCohort.startDate)}</p>
+                            <p><strong className="text-primary/90">End Date:</strong> {formatDate(assignedCohort.endDate)}</p>
+                        </CardContent>
+                    </Card>
+                    ) : (idea.programPhase === 'PHASE_1' || idea.programPhase === 'PHASE_2') && idea.nextPhaseDate ? (
+                    <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                        <CardHeader className="pb-2 pt-4 px-4">
+                            <CardTitle className="text-lg font-semibold text-primary flex items-center">
+                                <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
+                            </CardTitle>
+                            <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                                <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
+                                <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
+                            </div>
+                            <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {idea.nextPhaseVenue}</p>
+                            {idea.nextPhaseGuidelines && (
+                                <div className="pt-1">
+                                    <p className="font-medium text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
+                                    <p className="text-xs whitespace-pre-wrap bg-background/30 p-2 mt-1 rounded-md border border-border">{idea.nextPhaseGuidelines}</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+                    ) : null}
+                </>
+            )}
+            {idea.programPhase === 'PHASE_2' && idea.phase2PptUrl && (
+                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                    <CardHeader className="pb-2 pt-4 px-4">
+                        <CardTitle className="text-base font-semibold text-primary flex items-center">
+                        <Download className="h-4 w-4 mr-2"/> Phase 2 Presentation (Submitted by Team)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm px-4 pb-3">
+                        <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
+                            {idea.phase2PptFileName || 'View Presentation'}
+                        </a>
+                        {idea.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-0.5">Uploaded on {formatDate(idea.phase2PptUploadedAt)}</p>}
+                    </CardContent>
+                </Card>
+            )}
+        </CardContent>
+        </Card>
+    </div>
+    );
+  }
+
+
   if (loadingIdeas || loadingCohorts) {
      return (
       <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]">
@@ -468,81 +574,7 @@ export default function StudentDashboard() {
           </CardHeader>
         </Card>
 
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl text-primary">{isTeamMemberForIdea.title}</CardTitle>
-            <CardDescription>Project Details & Current Status</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
-              <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md shadow-sm">{isTeamMemberForIdea.problem}</p>
-            </div>
-            <div>
-              <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
-              <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md shadow-sm">{isTeamMemberForIdea.solution}</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-              <div>
-                <Label className="text-sm font-semibold text-muted-foreground">Submission Status</Label>
-                <p><Badge variant={getStatusBadgeVariant(isTeamMemberForIdea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{isTeamMemberForIdea.status.replace(/_/g, ' ').toLowerCase()}</Badge></p>
-              </div>
-              {isTeamMemberForIdea.programPhase && (
-                <div>
-                  <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
-                  <p><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(isTeamMemberForIdea.programPhase)}</Badge></p>
-                </div>
-              )}
-            </div>
-             {isTeamMemberForIdea.programPhase === 'COHORT' && isTeamMemberForIdea.mentor && (
-                <div className="pt-2">
-                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><Award className="h-4 w-4 mr-1.5 text-amber-500"/> Assigned Mentor</Label>
-                    <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{isTeamMemberForIdea.mentor}</p>
-                </div>
-            )}
-            {isTeamMemberForIdea.programPhase === 'COHORT' && assignedCohort && (
-                <div className="pt-2">
-                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><GroupIcon className="h-4 w-4 mr-1.5 text-primary"/> Assigned Cohort</Label>
-                    <p className="text-sm p-2 bg-primary/10 rounded-md shadow-sm border border-primary/30">{assignedCohort.name}</p>
-                </div>
-            )}
-             {isTeamMemberForIdea.status === 'SELECTED' && isTeamMemberForIdea.programPhase && isTeamMemberForIdea.nextPhaseDate && (
-                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                    <CardHeader className="pb-2 pt-4 px-4">
-                        <CardTitle className="text-lg font-semibold text-primary flex items-center">
-                            <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(isTeamMemberForIdea.programPhase)} Meeting
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
-                        <p><strong>Date:</strong> {formatDateWithTime(isTeamMemberForIdea.nextPhaseDate)}</p>
-                        <p><strong>Time:</strong> {isTeamMemberForIdea.nextPhaseStartTime} - {isTeamMemberForIdea.nextPhaseEndTime}</p>
-                        <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {isTeamMemberForIdea.nextPhaseVenue}</p>
-                         {isTeamMemberForIdea.nextPhaseGuidelines && (
-                            <div className="pt-1">
-                                <p className="font-medium text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
-                                <p className="text-xs whitespace-pre-wrap bg-background/30 p-2 mt-1 rounded-md border border-border">{isTeamMemberForIdea.nextPhaseGuidelines}</p>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            )}
-             {isTeamMemberForIdea.programPhase === 'PHASE_2' && isTeamMemberForIdea.phase2PptUrl && (
-                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                    <CardHeader className="pb-2 pt-4 px-4">
-                        <CardTitle className="text-base font-semibold text-primary flex items-center">
-                        <Download className="h-4 w-4 mr-2"/> Phase 2 Presentation (Submitted by Team)
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm px-4 pb-3">
-                        <a href={isTeamMemberForIdea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
-                            {isTeamMemberForIdea.phase2PptFileName || 'View Presentation'}
-                        </a>
-                        {isTeamMemberForIdea.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-0.5">Uploaded on {formatDate(isTeamMemberForIdea.phase2PptUploadedAt)}</p>}
-                    </CardContent>
-                </Card>
-            )}
-          </CardContent>
-        </Card>
+        {renderIdeaDetails(isTeamMemberForIdea, assignedCohort)}
 
         {teamLeaderProfileForMember && (
           <Card className="shadow-lg">
@@ -705,29 +737,51 @@ export default function StudentDashboard() {
                               </CardContent>
                           </Card>
                       )}
-                      {idea.status === 'SELECTED' && idea.programPhase && idea.nextPhaseDate && (
-                          <Card className="mt-3 border-primary/30 bg-primary/5">
-                              <CardHeader className="pb-2 pt-3 px-4">
-                                  <CardTitle className="text-base font-semibold text-primary flex items-center">
-                                    <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
-                                  </CardTitle>
-                                  <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
-                              </CardHeader>
-                              <CardContent className="text-sm px-4 pb-3 space-y-2 text-foreground/90">
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                                      <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
-                                      <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
-                                  </div>
-                                  <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {idea.nextPhaseVenue}</p>
-                                  {idea.nextPhaseGuidelines && (
-                                      <div className="mt-2">
-                                          <p className="font-semibold text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
-                                          <p className="whitespace-pre-wrap text-xs bg-background/50 p-2 rounded-md mt-1 border border-border">{idea.nextPhaseGuidelines}</p>
-                                      </div>
-                                  )}
-                              </CardContent>
-                          </Card>
-                      )}
+
+                        {idea.status === 'SELECTED' && idea.programPhase && (
+                            <>
+                                {idea.programPhase === 'COHORT' && assignedCohort ? (
+                                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                                    <CardHeader className="pb-2 pt-4 px-4">
+                                        <CardTitle className="text-lg font-semibold text-primary flex items-center">
+                                            <GroupIcon className="h-5 w-5 mr-2"/> Incubation Cohort Details
+                                        </CardTitle>
+                                        <CardDescription className="text-xs">
+                                            Your idea is part of the "{assignedCohort.name}" cohort.
+                                        </CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
+                                        <p><strong className="text-primary/90">Cohort Name:</strong> {assignedCohort.name}</p>
+                                        <p><strong className="text-primary/90">Start Date:</strong> {formatDate(assignedCohort.startDate)}</p>
+                                        <p><strong className="text-primary/90">End Date:</strong> {formatDate(assignedCohort.endDate)}</p>
+                                    </CardContent>
+                                </Card>
+                                ) : (idea.programPhase === 'PHASE_1' || idea.programPhase === 'PHASE_2') && idea.nextPhaseDate ? (
+                                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                                    <CardHeader className="pb-2 pt-4 px-4">
+                                        <CardTitle className="text-lg font-semibold text-primary flex items-center">
+                                            <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
+                                        </CardTitle>
+                                        <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
+                                    </CardHeader>
+                                    <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                                            <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
+                                            <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
+                                        </div>
+                                        <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {idea.nextPhaseVenue}</p>
+                                        {idea.nextPhaseGuidelines && (
+                                            <div className="pt-1">
+                                                <p className="font-medium text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
+                                                <p className="text-xs whitespace-pre-wrap bg-background/30 p-2 mt-1 rounded-md border border-border">{idea.nextPhaseGuidelines}</p>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                                ) : null}
+                            </>
+                        )}
+
                       {idea.programPhase === 'PHASE_2' && (
                           <Card className="mt-3 border-primary/30">
                               <CardHeader className="pb-2 pt-3 px-4">
@@ -772,9 +826,9 @@ export default function StudentDashboard() {
                       )}
                       {idea.problem && idea.solution && idea.uniqueness && (
                         <div className="mt-3 pt-3 border-t border-border/50">
-                            <Button 
-                                variant="outline" 
-                                size="sm" 
+                            <Button
+                                variant="outline"
+                                size="sm"
                                 onClick={() => handleGenerateOutline(idea)}
                                 disabled={isGeneratingOutline && generatingOutlineIdeaId === idea.id}
                             >
