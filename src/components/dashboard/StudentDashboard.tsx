@@ -493,7 +493,7 @@ export default function StudentDashboard() {
                                 <GroupIcon className="h-5 w-5 mr-2"/> Incubation Cohort Details
                             </CardTitle>
                             <CardDescription className="text-xs">
-                                Your idea is part of the "{assignedCohort.name}" cohort.
+                                Your idea is selected to be a part of "{assignedCohort.name}".
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">

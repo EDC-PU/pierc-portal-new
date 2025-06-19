@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions, auth } from './config'; // functions aliased to avoid conflict, auth added
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, AVAILABLE_MENTORS } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -581,6 +581,88 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
 
   return ideaSubmissions;
 };
+
+export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<IdeaSubmission[]> => {
+  const ideasCol = collection(db, 'ideas');
+  // Ensure mentorName is one of the valid MentorName types before querying.
+  // This is implicitly handled by the type system if the function caller respects the type.
+  const ideasQuery = query(
+    ideasCol,
+    where('mentor', '==', mentorName),
+    orderBy('updatedAt', 'desc') // Or 'submittedAt', depending on desired order
+  );
+  const ideasSnapshot = await getDocs(ideasQuery);
+
+  if (ideasSnapshot.empty) {
+    return [];
+  }
+
+  // Similar to getAllIdeaSubmissionsWithDetails, fetch applicant profiles if needed for display names
+  const applicantIds = new Set<string>();
+  ideasSnapshot.docs.forEach(doc => {
+    const ideaData = doc.data() as Omit<IdeaSubmission, 'id'>;
+    if (ideaData.userId) {
+      applicantIds.add(ideaData.userId);
+    }
+  });
+
+  const profilesMap = new Map<string, UserProfile | null>();
+  if (applicantIds.size > 0) {
+    const profilePromises = Array.from(applicantIds).map(id => getUserProfile(id).catch(e => {
+      console.error(`Failed to fetch profile for ${id}:`, e);
+      return null;
+    }));
+    const profiles = await Promise.all(profilePromises);
+    profiles.forEach((profile, index) => {
+      if (profile) {
+        profilesMap.set(Array.from(applicantIds)[index], profile);
+      }
+    });
+  }
+
+  const ideaSubmissions: IdeaSubmission[] = [];
+  ideasSnapshot.docs.forEach(ideaDoc => {
+    const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
+    const userProfile = ideaData.userId ? profilesMap.get(ideaData.userId) : null;
+
+    const applicantDisplayName = userProfile ? (userProfile.displayName || userProfile.fullName || 'Unknown User') : ideaData.applicantDisplayName || 'N/A';
+    const applicantEmail = userProfile ? (userProfile.email || 'No Email') : ideaData.applicantEmail || 'N/A';
+
+    const submittedAt = (ideaData.submittedAt as any) instanceof Timestamp ? (ideaData.submittedAt as Timestamp) : Timestamp.now();
+    const updatedAt = (ideaData.updatedAt as any) instanceof Timestamp ? (ideaData.updatedAt as Timestamp) : Timestamp.now();
+    const nextPhaseDate = (ideaData.nextPhaseDate as any) instanceof Timestamp ? (ideaData.nextPhaseDate as Timestamp) : null;
+
+    ideaSubmissions.push({
+      id: ideaDoc.id,
+      ...ideaData,
+      programPhase: ideaData.programPhase || null,
+      cohortId: ideaData.cohortId || null,
+      phase2Marks: ideaData.phase2Marks || {},
+      submittedAt,
+      updatedAt,
+      applicantDisplayName,
+      applicantEmail,
+      teamMembers: ideaData.teamMembers || '',
+      structuredTeamMembers: ideaData.structuredTeamMembers || [],
+      teamMemberEmails: ideaData.teamMemberEmails || [],
+      rejectionRemarks: ideaData.rejectionRemarks,
+      rejectedByUid: ideaData.rejectedByUid,
+      rejectedAt: ideaData.rejectedAt,
+      phase2PptUrl: ideaData.phase2PptUrl,
+      phase2PptFileName: ideaData.phase2PptFileName,
+      phase2PptUploadedAt: ideaData.phase2PptUploadedAt,
+      nextPhaseDate: nextPhaseDate,
+      nextPhaseStartTime: ideaData.nextPhaseStartTime,
+      nextPhaseEndTime: ideaData.nextPhaseEndTime,
+      nextPhaseVenue: ideaData.nextPhaseVenue,
+      nextPhaseGuidelines: ideaData.nextPhaseGuidelines,
+      mentor: ideaData.mentor,
+    } as IdeaSubmission);
+  });
+
+  return ideaSubmissions;
+};
+
 
 export const updateIdeaStatusAndPhase = async (
   ideaId: string,
