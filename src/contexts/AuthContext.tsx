@@ -242,7 +242,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
     }
     toast({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} Error`, description: message, variant: "destructive" });
-    setLoading(false);
+    // setLoading(false); // Removed: setLoading will be handled by the calling function's finally block
     // Do not re-throw the error here to prevent unhandled promise rejections higher up
     // throw error; 
   };
@@ -254,6 +254,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await signInWithPopup(auth, provider);
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -263,6 +265,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await createUserWithEmailAndPassword(auth, email, password);
     } catch (error: any) {
       handleAuthError(error, "sign-up");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -272,6 +276,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await firebaseSignInWithEmailPassword(auth, email, password);
     } catch (error: any) {
       handleAuthError(error, "sign-in");
+    } finally {
+      setLoading(false);
     }
   };
 
