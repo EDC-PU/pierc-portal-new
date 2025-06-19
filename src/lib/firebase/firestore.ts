@@ -1097,6 +1097,36 @@ export const createCohortFS = async (cohortData: Omit<Cohort, 'id' | 'createdAt'
   return createdCohort;
 };
 
+export const updateCohortFS = async (cohortId: string, dataToUpdate: Omit<Cohort, 'id' | 'createdAt' | 'createdByUid' | 'creatorDisplayName' | 'ideaIds' | 'updatedAt' | 'schedule'>, adminProfile: UserProfile): Promise<void> => {
+  const cohortRef = doc(db, 'cohorts', cohortId);
+  const oldCohortSnap = await getDoc(cohortRef);
+  if (!oldCohortSnap.exists()) {
+    throw new Error("Cohort not found for update.");
+  }
+  const oldCohortData = oldCohortSnap.data();
+
+  const updatePayload = {
+    ...dataToUpdate,
+    updatedAt: serverTimestamp() as Timestamp,
+  };
+
+  await updateDoc(cohortRef, updatePayload);
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_COHORT_UPDATED',
+    { type: 'COHORT', id: cohortId, displayName: dataToUpdate.name },
+    {
+      oldName: oldCohortData.name, newName: dataToUpdate.name,
+      oldStartDate: oldCohortData.startDate, newStartDate: dataToUpdate.startDate,
+      oldEndDate: oldCohortData.endDate, newEndDate: dataToUpdate.endDate,
+      oldBatchSize: oldCohortData.batchSize, newBatchSize: dataToUpdate.batchSize,
+    }
+  );
+};
+
+
 export const updateCohortScheduleFS = async (cohortId: string, newSchedule: CohortScheduleEntry[], adminProfile: UserProfile): Promise<void> => {
   const cohortRef = doc(db, 'cohorts', cohortId);
   const cohortSnap = await getDoc(cohortRef);

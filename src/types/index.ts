@@ -179,7 +179,7 @@ export type ActivityLogAction =
   | 'IDEA_TEAM_MEMBER_ADDED'
   | 'IDEA_TEAM_MEMBER_UPDATED'
   | 'IDEA_TEAM_MEMBER_REMOVED'
-  | 'USER_GENERATED_PITCH_DECK_OUTLINE' // New action
+  | 'USER_GENERATED_PITCH_DECK_OUTLINE'
   // Admin - User Management
   | 'ADMIN_USER_ROLE_UPDATED'
   // Admin - Idea Management
@@ -194,8 +194,8 @@ export type ActivityLogAction =
   | 'ADMIN_ANNOUNCEMENT_DELETED'
   // Admin - Cohorts
   | 'ADMIN_COHORT_CREATED'
-  | 'ADMIN_COHORT_UPDATED' // General update
-  | 'ADMIN_COHORT_SCHEDULE_UPDATED' // Specific for schedule
+  | 'ADMIN_COHORT_UPDATED' 
+  | 'ADMIN_COHORT_SCHEDULE_UPDATED' 
   | 'ADMIN_COHORT_DELETED'
   // Admin - System Settings
   | 'ADMIN_SYSTEM_SETTINGS_UPDATED';

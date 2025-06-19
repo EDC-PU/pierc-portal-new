@@ -5,15 +5,15 @@ import { useEffect, useState } from 'react';
 import type { Cohort, UserProfile, CohortScheduleEntry, IdeaSubmission } from '@/types'; // Added IdeaSubmission
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { CreateCohortForm, type CreateCohortFormData } from '@/components/admin/CreateCohortForm';
+import { CreateCohortForm, type CohortFormInternalData } from '@/components/admin/CreateCohortForm'; // Updated import type
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog'; // Added DialogTrigger
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { createCohortFS, getAllCohortsStream, updateCohortScheduleFS, getIdeaById } from '@/lib/firebase/firestore'; // Added getIdeaById
+import { createCohortFS, getAllCohortsStream, updateCohortScheduleFS, getIdeaById, updateCohortFS } from '@/lib/firebase/firestore'; // Added updateCohortFS & getIdeaById
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format, isValid } from 'date-fns';
@@ -72,7 +72,7 @@ export default function ManageCohortsPage() {
   const [detailedCohorts, setDetailedCohorts] = useState<DetailedCohort[]>([]); // Cohorts augmented with idea details
   const [loadingCohorts, setLoadingCohorts] = useState(true);
   const [loadingIdeaDetails, setLoadingIdeaDetails] = useState(false);
-  const [isCreateFormOpen, setIsCreateFormOpen] = useState(false);
+  const [isCohortFormOpen, setIsCohortFormOpen] = useState(false); // Renamed from isCreateFormOpen
   const [editingCohort, setEditingCohort] = useState<Cohort | null>(null);
 
   const [selectedCohortForSchedule, setSelectedCohortForSchedule] = useState<Cohort | null>(null);
@@ -169,26 +169,37 @@ export default function ManageCohortsPage() {
   }, [selectedCohortForSchedule, resetScheduleForm]);
 
 
-  const handleCreateFormSubmitSuccess = () => {
-    setIsCreateFormOpen(false);
-    setEditingCohort(null);
+  const handleCohortFormSubmitSuccess = () => {
+    setIsCohortFormOpen(false);
+    setEditingCohort(null); // Reset editing state
     toast({ title: "Success", description: editingCohort ? "Cohort updated successfully." : "Cohort created successfully." });
   };
 
-  const handleSaveCohort = async (data: CreateCohortFormData) => {
+  // This function is now called by CreateCohortForm with CohortFormInternalData
+  const handleSaveCohort = async (data: CohortFormInternalData) => {
     if (!userProfile) {
         toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
         throw new Error("Admin profile not found");
     }
+    
+    // Convert Date objects to Timestamps before saving
+    const dataToSaveWithTimestamps = {
+      name: data.name,
+      startDate: Timestamp.fromDate(data.startDate),
+      endDate: Timestamp.fromDate(data.endDate),
+      batchSize: data.batchSize,
+    };
+
     try {
         if (editingCohort && editingCohort.id) {
-            toast({title: "Update Not Implemented", description: "Cohort update functionality is coming soon.", variant: "default"});
+            await updateCohortFS(editingCohort.id, dataToSaveWithTimestamps, userProfile);
         } else {
-            await createCohortFS(data, userProfile);
+            await createCohortFS(dataToSaveWithTimestamps, userProfile);
         }
+        handleCohortFormSubmitSuccess(); // Call success handler here after successful save
     } catch (error: any) {
         toast({ title: "Save Error", description: error.message || "Could not save cohort.", variant: "destructive"});
-        throw error;
+        throw error; // Re-throw to be handled by the form if needed, or caught by its own try-catch
     }
   };
   
@@ -213,7 +224,12 @@ export default function ManageCohortsPage() {
 
   const openNewCreateForm = () => {
     setEditingCohort(null);
-    setIsCreateFormOpen(true);
+    setIsCohortFormOpen(true);
+  };
+
+  const openEditForm = (cohort: Cohort) => {
+    setEditingCohort(cohort);
+    setIsCohortFormOpen(true);
   };
 
   const openScheduleDialog = (cohort: DetailedCohort) => {
@@ -318,10 +334,10 @@ export default function ManageCohortsPage() {
             <p className="text-muted-foreground">Create, view, and manage incubation cohorts and their schedules.</p>
           </div>
         </div>
-        <Dialog open={isCreateFormOpen} onOpenChange={(isOpen) => {
-            setIsCreateFormOpen(isOpen);
+        <Dialog open={isCohortFormOpen} onOpenChange={(isOpen) => {
+            setIsCohortFormOpen(isOpen);
             if (!isOpen) {
-                setEditingCohort(null);
+                setEditingCohort(null); // Reset editing state when dialog closes
             }
         }}>
           <DialogTrigger asChild>
@@ -335,12 +351,11 @@ export default function ManageCohortsPage() {
                 {editingCohort ? 'Edit Cohort' : 'Create New Cohort'}
               </DialogTitle>
             </DialogHeader>
-            {isCreateFormOpen && userProfile && ( 
+            {isCohortFormOpen && userProfile && ( 
                  <CreateCohortForm
-                    currentUserProfile={userProfile} 
                     initialData={editingCohort}
-                    onSubmitSuccess={handleCreateFormSubmitSuccess}
-                    onSave={handleSaveCohort}
+                    onSubmitSuccess={handleCohortFormSubmitSuccess} // This will be called by onSave after success
+                    onSave={handleSaveCohort} // Pass the combined save handler
                 />
             )}
           </DialogContent>
@@ -387,6 +402,9 @@ export default function ManageCohortsPage() {
                         {formatDateForDisplay(cohort.endDate)}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEditForm(cohort)} title="Edit Cohort">
+                          <Edit3 className="h-4 w-4" />
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => openScheduleDialog(cohort)}>
                           <CalendarRange className="mr-1 h-3.5 w-3.5" /> Manage Schedule
                         </Button>

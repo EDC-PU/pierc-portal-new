@@ -7,16 +7,16 @@ import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardFooter, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardFooter } from '@/components/ui/card'; // Removed CardHeader, CardTitle, CardDescription
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
-import type { Cohort, UserProfile } from '@/types';
+import type { Cohort } from '@/types'; // Removed UserProfile as it's not directly used here
 import { CalendarIcon } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { format, addDays, isBefore } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { Timestamp } from 'firebase/firestore';
+// Removed Timestamp as it's handled by the parent now
 
 
 const cohortFormSchema = z.object({
@@ -29,24 +29,18 @@ const cohortFormSchema = z.object({
   path: ["endDate"],
 });
 
-export type CreateCohortFormData = Omit<z.infer<typeof cohortFormSchema>, 'startDate' | 'endDate'> & {
-  startDate: Timestamp;
-  endDate: Timestamp;
-};
-
-// This is the type the form will handle internally before converting dates to Timestamps
-type CohortFormInternalData = z.infer<typeof cohortFormSchema>;
-
+// This type represents the data structure the form will handle and pass to onSave
+export type CohortFormInternalData = z.infer<typeof cohortFormSchema>;
 
 interface CreateCohortFormProps {
-  currentUserProfile: UserProfile; // To associate creator with the cohort
+  // currentUserProfile is no longer needed here, as the parent (ManageCohortsPage) handles it
   initialData?: Cohort | null;
   onSubmitSuccess: () => void;
-  onSave: (data: CreateCohortFormData) => Promise<void>;
+  onSave: (data: CohortFormInternalData) => Promise<void>; // Changed data type to CohortFormInternalData
 }
 
-export function CreateCohortForm({ currentUserProfile, initialData, onSubmitSuccess, onSave }: CreateCohortFormProps) {
-  const { toast } = useToast();
+export function CreateCohortForm({ initialData, onSubmitSuccess, onSave }: CreateCohortFormProps) {
+  const { toast } = useToast(); // Kept for potential form-specific errors, though most are handled by parent
   const { control, handleSubmit, watch, formState: { errors, isSubmitting }, setValue } = useForm<CohortFormInternalData>({
     resolver: zodResolver(cohortFormSchema),
     defaultValues: {
@@ -60,30 +54,18 @@ export function CreateCohortForm({ currentUserProfile, initialData, onSubmitSucc
   const watchedStartDate = watch("startDate");
 
   const processSubmit = async (formData: CohortFormInternalData) => {
-    if (!currentUserProfile) {
-        toast({ title: "Error", description: "User not authenticated.", variant: "destructive"});
-        return;
-    }
-    
-    const dataToSave: CreateCohortFormData = {
-        name: formData.name,
-        startDate: Timestamp.fromDate(formData.startDate),
-        endDate: Timestamp.fromDate(formData.endDate),
-        batchSize: formData.batchSize,
-    };
-
     try {
-      await onSave(dataToSave);
-      onSubmitSuccess(); 
+      await onSave(formData); // Directly pass formData of type CohortFormInternalData
+      // onSubmitSuccess(); // onSubmitSuccess is called by the parent page after Firestore operation
     } catch (error) {
       console.error("Failed to save cohort from form:", error);
-      toast({ title: "Save Error", description: (error as Error).message || "Could not save cohort.", variant: "destructive"});
+      // Parent page (ManageCohortsPage) will toast this error.
+      // toast({ title: "Save Error", description: (error as Error).message || "Could not save cohort.", variant: "destructive"});
     }
   };
 
   return (
     <Card className="w-full shadow-none border-none">
-      {/* Removed CardHeader as Dialog provides title */}
       <form onSubmit={handleSubmit(processSubmit)}>
         <CardContent className="space-y-6 pt-4">
           <div>
@@ -144,7 +126,7 @@ export function CreateCohortForm({ currentUserProfile, initialData, onSubmitSucc
           </div>
           
           <div>
-            <Label htmlFor="batchSize">Batch Size (Max Teams)</Label>
+            <Label htmlFor="batchSize">Max Teams</Label>
             <Controller 
                 name="batchSize" 
                 control={control} 
