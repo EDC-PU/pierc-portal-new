@@ -9,7 +9,7 @@ import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2, FileText, BarC
 import { useAuth } from '@/contexts/AuthContext';
 import { getTotalUsersCount, getTotalIdeasCount, getPendingIdeasCount, getIdeasAssignedToMentor } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, MentorName } from '@/types';
-import { AVAILABLE_MENTOR_NAMES, AVAILABLE_MENTORS_DATA } from '@/types'; // Updated to use AVAILABLE_MENTOR_NAMES and AVAILABLE_MENTORS_DATA
+import { AVAILABLE_MENTORS_DATA } from '@/types';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -17,8 +17,8 @@ import { format } from 'date-fns';
 
 interface DashboardStats {
   totalUsers: number | null;
-  activeProjects: number | null; 
-  pendingProjects: number | null; 
+  activeProjects: number | null;
+  pendingProjects: number | null;
 }
 
 const getProgramPhaseLabel = (phase: IdeaSubmission['programPhase']): string => {
@@ -69,7 +69,7 @@ export default function AdminDashboard() {
         ]);
         setStats({
           totalUsers: usersCount,
-          activeProjects: ideasCount, 
+          activeProjects: ideasCount,
           pendingProjects: pendingIdeas,
         });
       } catch (error) {
@@ -79,7 +79,7 @@ export default function AdminDashboard() {
           description: "Could not load dashboard statistics.",
           variant: "destructive",
         });
-        setStats({ totalUsers: 0, activeProjects: 0, pendingProjects: 0 }); 
+        setStats({ totalUsers: 0, activeProjects: 0, pendingProjects: 0 });
       } finally {
         setLoadingStats(false);
       }
@@ -88,23 +88,27 @@ export default function AdminDashboard() {
     if (userProfile?.role === 'ADMIN_FACULTY') {
       fetchStats();
 
-      const userProfileName = userProfile.displayName || userProfile.fullName;
-      // Check if the admin's profile name matches any name in AVAILABLE_MENTORS_DATA
-      const matchedMentor = AVAILABLE_MENTORS_DATA.find(mentor => mentor.name === userProfileName);
-      
-      if (matchedMentor) {
-        const mentorName = matchedMentor.name as MentorName; // Cast to MentorName
-        setCurrentMentorName(mentorName);
-        setLoadingMentorIdeas(true);
-        getIdeasAssignedToMentor(mentorName)
-          .then(ideas => {
-            setAssignedMentorIdeas(ideas);
-          })
-          .catch(err => {
-            console.error("Error fetching assigned mentor ideas:", err);
-            toast({ title: "Error", description: "Could not load your assigned ideas.", variant: "destructive" });
-          })
-          .finally(() => setLoadingMentorIdeas(false));
+      if (userProfile.email) {
+        const adminEmail = userProfile.email.toLowerCase();
+        const matchedMentor = AVAILABLE_MENTORS_DATA.find(mentor => mentor.email.toLowerCase() === adminEmail);
+
+        if (matchedMentor) {
+          const mentorName = matchedMentor.name as MentorName; // Get the canonical name
+          setCurrentMentorName(mentorName); // Display the canonical name
+          setLoadingMentorIdeas(true);
+          getIdeasAssignedToMentor(mentorName) // Query ideas using the canonical name
+            .then(ideas => {
+              setAssignedMentorIdeas(ideas);
+            })
+            .catch(err => {
+              console.error("Error fetching assigned mentor ideas:", err);
+              toast({ title: "Error", description: "Could not load your assigned ideas.", variant: "destructive" });
+            })
+            .finally(() => setLoadingMentorIdeas(false));
+        } else {
+          setCurrentMentorName(null);
+          setAssignedMentorIdeas([]);
+        }
       } else {
         setCurrentMentorName(null);
         setAssignedMentorIdeas([]);
@@ -165,7 +169,7 @@ export default function AdminDashboard() {
             <Megaphone className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">Manage</div> 
+            <div className="text-2xl font-bold">Manage</div>
              <Button variant="link" size="sm" className="p-0 h-auto text-xs" onClick={() => router.push('/dashboard/admin/manage-announcements')}>Access</Button>
           </CardContent>
         </Card>
