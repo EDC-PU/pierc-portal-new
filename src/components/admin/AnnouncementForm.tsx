@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -13,29 +13,36 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
-import type { Announcement as AnnouncementType, UserProfile } from '@/types';
+import type { Announcement as AnnouncementType, UserProfile, Cohort } from '@/types';
 import { improveAnnouncementLanguage } from '@/ai/flows/improve-announcement-language';
 import { Wand2 } from 'lucide-react';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'; // Added for target audience
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getAllCohortsStream } from '@/lib/firebase/firestore';
 
-const announcementSchema = z.object({
+const announcementSchemaBase = z.object({
   title: z.string().min(5, 'Title must be at least 5 characters').max(100),
   content: z.string().min(10, 'Content must be at least 10 characters').max(5000),
   isUrgent: z.boolean().default(false),
   targetAudience: z.enum(['ALL', 'SPECIFIC_COHORT']).default('ALL'),
-  // cohortId: z.string().optional(), // Add cohort selection later if 'SPECIFIC_COHORT'
-  // attachment handling to be added later
+  cohortId: z.string().optional().nullable(),
 });
 
-// This type represents the data structure expected by onSave (excluding fields managed by onSave itself like UIDs or timestamps)
+const announcementSchema = announcementSchemaBase.superRefine((data, ctx) => {
+  if (data.targetAudience === 'SPECIFIC_COHORT' && !data.cohortId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Cohort selection is required when targeting a specific cohort.',
+      path: ['cohortId'],
+    });
+  }
+});
+
 export type AnnouncementFormSubmitData = z.infer<typeof announcementSchema>;
 
-// This type includes fields that are part of the Announcement but not directly from the form's schema (e.g. createdByUid)
-// It represents the full structure for creating/updating an announcement in Firestore via the onSave prop.
 export type AnnouncementSaveData = AnnouncementFormSubmitData & {
     createdByUid: string;
     creatorDisplayName: string | null;
-    // attachmentURL and attachmentName would be added here when implemented
 };
 
 
@@ -43,12 +50,14 @@ interface AnnouncementFormProps {
   currentUserProfile: UserProfile | null;
   initialData?: AnnouncementType | null;
   onSubmitSuccess: () => void;
-  // onSave expects the full data needed to create/update, including creator info
   onSave: (data: AnnouncementSaveData) => Promise<void>;
 }
 
 export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSuccess, onSave }: AnnouncementFormProps) {
   const { toast } = useToast();
+  const [cohorts, setCohorts] = useState<Cohort[]>([]);
+  const [loadingCohorts, setLoadingCohorts] = useState(false);
+
   const { control, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<AnnouncementFormSubmitData>({
     resolver: zodResolver(announcementSchema),
     defaultValues: {
@@ -56,6 +65,7 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
       content: initialData?.content || '',
       isUrgent: initialData?.isUrgent || false,
       targetAudience: initialData?.targetAudience || 'ALL',
+      cohortId: initialData?.cohortId || null,
     },
   });
 
@@ -63,6 +73,23 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
   const [aiImprovedContent, setAiImprovedContent] = useState<string | null>(null);
 
   const currentContent = watch('content');
+  const currentTargetAudience = watch('targetAudience');
+
+  useEffect(() => {
+    setLoadingCohorts(true);
+    const unsubscribe = getAllCohortsStream((fetchedCohorts) => {
+      setCohorts(fetchedCohorts);
+      setLoadingCohorts(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (currentTargetAudience === 'ALL') {
+      setValue('cohortId', null); // Clear cohortId if audience is ALL
+    }
+  }, [currentTargetAudience, setValue]);
+
 
   const handleImproveLanguage = async () => {
     if (!currentContent) {
@@ -97,6 +124,7 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
     
     const announcementDataToSave: AnnouncementSaveData = {
         ...formData,
+        cohortId: formData.targetAudience === 'SPECIFIC_COHORT' ? formData.cohortId : null,
         createdByUid: currentUserProfile.uid,
         creatorDisplayName: currentUserProfile.displayName || currentUserProfile.fullName || 'Admin',
     };
@@ -105,7 +133,6 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
       await onSave(announcementDataToSave);
       onSubmitSuccess(); 
     } catch (error) {
-      // Error should be toasted by the onSave implementation or here if it throws
       console.error("Failed to save announcement from form:", error);
        toast({ title: "Save Error", description: (error as Error).message || "Could not save announcement.", variant: "destructive"});
     }
@@ -162,8 +189,11 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
               control={control}
               render={({ field }) => (
                 <RadioGroup
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
+                  onValueChange={(value) => {
+                    field.onChange(value);
+                    if (value === 'ALL') setValue('cohortId', null);
+                  }}
+                  value={field.value}
                   className="flex space-x-4"
                 >
                   <div className="flex items-center space-x-2">
@@ -171,14 +201,53 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
                     <Label htmlFor="audience-all">All Users</Label>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="SPECIFIC_COHORT" id="audience-cohort" disabled /> 
-                    <Label htmlFor="audience-cohort" className="text-muted-foreground">Specific Cohort (Coming Soon)</Label>
+                    <RadioGroupItem value="SPECIFIC_COHORT" id="audience-cohort" /> 
+                    <Label htmlFor="audience-cohort">Specific Cohort</Label>
                   </div>
                 </RadioGroup>
               )}
             />
             {errors.targetAudience && <p className="text-sm text-destructive mt-1">{errors.targetAudience.message}</p>}
           </div>
+
+          {currentTargetAudience === 'SPECIFIC_COHORT' && (
+            <div className="space-y-2">
+              <Label htmlFor="cohortId">Select Cohort</Label>
+              {loadingCohorts ? (
+                <div className="flex items-center">
+                  <LoadingSpinner size={16} className="mr-2" />
+                  <span className="text-sm text-muted-foreground">Loading cohorts...</span>
+                </div>
+              ) : cohorts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No cohorts available. Please create a cohort first.</p>
+              ) : (
+                <Controller
+                  name="cohortId"
+                  control={control}
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={field.onChange}
+                      value={field.value || undefined} // Ensure undefined for placeholder
+                      disabled={loadingCohorts || cohorts.length === 0}
+                    >
+                      <SelectTrigger id="cohortId" className="w-full md:w-[300px]">
+                        <SelectValue placeholder="Select a cohort" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {cohorts.map(cohort => (
+                          <SelectItem key={cohort.id!} value={cohort.id!}>
+                            {cohort.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              )}
+              {errors.cohortId && <p className="text-sm text-destructive mt-1">{errors.cohortId.message}</p>}
+            </div>
+          )}
+
 
           <div className="flex items-center space-x-2 pt-2">
             <Controller
@@ -200,7 +269,7 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
            {errors.isUrgent && <p className="text-sm text-destructive mt-1">{errors.isUrgent.message}</p>}
         </CardContent>
         <CardFooter>
-          <Button type="submit" className="w-full" disabled={isSubmitting || isAiLoading}>
+          <Button type="submit" className="w-full" disabled={isSubmitting || isAiLoading || (currentTargetAudience === 'SPECIFIC_COHORT' && loadingCohorts)}>
             {isSubmitting ? <LoadingSpinner className="mr-2" /> : null}
             {initialData ? 'Save Changes' : 'Publish Announcement'}
           </Button>
@@ -209,3 +278,4 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
     </Card>
   );
 }
+

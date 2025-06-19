@@ -15,24 +15,10 @@ export const AVAILABLE_MENTORS_DATA = [
   { name: 'Sonal Sudani', email: 'sonal.sudani23321@paruluniversity.ac.in' },
   { name: 'Pancham Baraiya', email: 'panchamkumar.baraiya28771@paruluniversity.ac.in' },
   { name: 'Juned Shaikh', email: 'juned.shaikh32161@paruluniversity.ac.in' },
-  // Add other mentors from the original AVAILABLE_MENTORS list if they are not in the email list,
-  // or provide their emails to complete the data structure.
-  // For now, I'll only include those with emails provided in the request.
-  // Assuming 'Anup Chaudhari', 'Vishal SIngh', 'Tushar Thakur', 'Paritosh Sharma'
-  // are also mentors but their emails weren't specified for this mapping.
-  // If they should also be assignable, they need to be in this structure.
-  // For simplicity, let's stick to the provided list for now for AVAILABLE_MENTORS_DATA.
 ] as const;
 
-// Derive MentorName from the 'name' property of objects in AVAILABLE_MENTORS_DATA
 export type MentorName = typeof AVAILABLE_MENTORS_DATA[number]['name'];
-
-// This array will contain just the names for easier use in dropdowns or when only names are needed.
 export const AVAILABLE_MENTOR_NAMES: MentorName[] = AVAILABLE_MENTORS_DATA.map(m => m.name);
-
-// The original AVAILABLE_MENTORS array (now AVAILABLE_MENTOR_NAMES) is still useful for type consistency
-// if other parts of the code rely on an array of strings.
-// For clarity, I'm keeping the old export name for now if other files use it directly.
 export const AVAILABLE_MENTORS = AVAILABLE_MENTOR_NAMES;
 
 
@@ -162,7 +148,7 @@ export interface Announcement {
   content: string;
   isUrgent: boolean;
   targetAudience: 'ALL' | 'SPECIFIC_COHORT';
-  cohortId?: string;
+  cohortId?: string | null; // Can be null if targetAudience is ALL
   attachmentURL?: string;
   attachmentName?: string;
   createdByUid: string;

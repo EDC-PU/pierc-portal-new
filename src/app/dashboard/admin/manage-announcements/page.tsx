@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { Announcement, UserProfile } from '@/types';
+import type { Announcement, UserProfile, Cohort } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { AnnouncementForm, type AnnouncementSaveData } from '@/components/admin/AnnouncementForm';
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { createAnnouncement, getAllAnnouncementsForAdminStream, updateAnnouncement, deleteAnnouncement } from '@/lib/firebase/firestore';
+import { createAnnouncement, getAllAnnouncementsForAdminStream, updateAnnouncement, deleteAnnouncement, getAllCohortsStream } from '@/lib/firebase/firestore';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -34,7 +34,9 @@ export default function ManageAnnouncementsPage() {
   const { toast } = useToast();
 
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loadingAnnouncements, setLoadingAnnouncements] = useState(true);
+  const [loadingCohorts, setLoadingCohorts] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<Announcement | null>(null);
 
@@ -48,11 +50,20 @@ export default function ManageAnnouncementsPage() {
   useEffect(() => {
     if (userProfile?.role === 'ADMIN_FACULTY') {
       setLoadingAnnouncements(true);
-      const unsubscribe = getAllAnnouncementsForAdminStream((fetchedAnnouncements) => {
+      const unsubscribeAnnouncements = getAllAnnouncementsForAdminStream((fetchedAnnouncements) => {
         setAnnouncements(fetchedAnnouncements);
         setLoadingAnnouncements(false);
       });
-      return () => unsubscribe();
+
+      setLoadingCohorts(true);
+      const unsubscribeCohorts = getAllCohortsStream((fetchedCohorts) => {
+        setCohorts(fetchedCohorts);
+        setLoadingCohorts(false);
+      });
+      return () => {
+        unsubscribeAnnouncements();
+        unsubscribeCohorts();
+      };
     }
   }, [userProfile]);
 
@@ -69,9 +80,7 @@ export default function ManageAnnouncementsPage() {
     }
     try {
         if (editingAnnouncement && editingAnnouncement.id) {
-            const { ...updateData } = dataWithCreatorInfo;
-            // Remove creator info as it should not be updated after creation
-            const { createdByUid, creatorDisplayName, ...actualUpdateData } = updateData;
+            const { createdByUid, creatorDisplayName, ...actualUpdateData } = dataWithCreatorInfo;
             await updateAnnouncement(editingAnnouncement.id, actualUpdateData, userProfile);
         } else {
             await createAnnouncement(dataWithCreatorInfo, userProfile);
@@ -105,7 +114,13 @@ export default function ManageAnnouncementsPage() {
     setIsFormOpen(true);
   };
 
-  if (authLoading || loadingAnnouncements) {
+  const getCohortNameById = (cohortId: string | null | undefined): string => {
+    if (!cohortId) return 'N/A';
+    const cohort = cohorts.find(c => c.id === cohortId);
+    return cohort ? cohort.name : `ID: ${cohortId.substring(0,6)}...`;
+  };
+
+  if (authLoading || loadingAnnouncements || loadingCohorts) {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
   if (userProfile?.role !== 'ADMIN_FACULTY') {
@@ -189,7 +204,9 @@ export default function ManageAnnouncementsPage() {
                         )}
                       </TableCell>
                        <TableCell className="hidden lg:table-cell text-sm">
-                        {ann.targetAudience === 'SPECIFIC_COHORT' ? `Cohort: ${ann.cohortId || 'N/A'}` : 'All Users'}
+                        {ann.targetAudience === 'SPECIFIC_COHORT' && ann.cohortId 
+                          ? `Cohort: ${getCohortNameById(ann.cohortId)}` 
+                          : 'All Users'}
                       </TableCell>
                        <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                         {ann.creatorDisplayName || 'N/A'}
