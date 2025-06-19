@@ -883,6 +883,9 @@ export const submitOrUpdatePhase2Mark = async (
 
 
 export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
+  // FIRESTORE_INDEX_REQUIRED: This query needs a composite index on
+  // Collection: 'ideas', Fields: 'userId' (Ascending), 'updatedAt' (Descending).
+  // Create it here: https://console.firebase.google.com/v1/r/project/pierc-portal/firestore/indexes?create_composite=Ckpwcm9qZWN0cy9waWVyYy1wb3J0YWwvZGF0YWJhc2VzLyhkZWZhdWx0KS9jb2xsZWN0aW9uR3JvdXBzL2lkZWFzL2luZGV4ZXMvXxABGgoKBnVzZXJJZBABGg0KCXVwZGF0ZWRBdBACGgwKCF9fbmFtZV9fEAI
   const ideasCol = collection(db, 'ideas');
   const q = query(ideasCol, where('userId', '==', userId), orderBy('updatedAt', 'desc')); // Order by updatedAt to get the most recent first
   const querySnapshot = await getDocs(q);
