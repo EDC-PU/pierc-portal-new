@@ -18,6 +18,8 @@ import { ALL_ACTIVITY_LOG_ACTIONS } from '@/types';
 import { format } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
 
+const ALL_ACTIONS_FILTER_VALUE = "_ALL_ACTIONS_";
+
 interface ActivityLogFilters {
   actorName: string;
   actionType: ActivityLogAction | '';
@@ -53,21 +55,25 @@ export default function ActivityLogsPage() {
       setLoadingLogs(true);
       const unsubscribe = getActivityLogsStream(
         {
-          actorName: filters.actorName.trim() || undefined, // Pass undefined if empty
-          actionType: filters.actionType || undefined,    // Pass undefined if empty
+          actorName: filters.actorName.trim() || undefined, 
+          actionType: filters.actionType || undefined,    
         },
         (fetchedLogs) => {
           setLogs(fetchedLogs);
           setLoadingLogs(false);
         },
-        100 // Limit to latest 100 logs for now
+        100 
       );
       return () => unsubscribe();
     }
   }, [userProfile, filters]);
 
   const handleFilterChange = (filterName: keyof ActivityLogFilters, value: string) => {
-    setFilters(prev => ({ ...prev, [filterName]: value }));
+    if (filterName === 'actionType' && value === ALL_ACTIONS_FILTER_VALUE) {
+      setFilters(prev => ({ ...prev, actionType: '' }));
+    } else {
+      setFilters(prev => ({ ...prev, [filterName]: value }));
+    }
   };
 
   const clearFilters = () => {
@@ -127,14 +133,14 @@ export default function ActivityLogsPage() {
             <div className="space-y-1">
               <label htmlFor="actionTypeFilter" className="text-sm font-medium">Action Type</label>
               <Select
-                value={filters.actionType}
+                value={filters.actionType || ALL_ACTIONS_FILTER_VALUE}
                 onValueChange={(value) => handleFilterChange('actionType', value as ActivityLogAction | '')}
               >
                 <SelectTrigger id="actionTypeFilter" className="h-9">
                   <SelectValue placeholder="All Action Types" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Action Types</SelectItem>
+                  <SelectItem value={ALL_ACTIONS_FILTER_VALUE} className="text-xs">All Action Types</SelectItem>
                   {ALL_ACTIVITY_LOG_ACTIONS.map(action => (
                     <SelectItem key={action} value={action} className="text-xs">
                       {action.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, l => l.toUpperCase())}
