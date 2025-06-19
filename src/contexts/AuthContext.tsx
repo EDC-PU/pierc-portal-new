@@ -35,6 +35,7 @@ interface AuthContextType {
   initialLoadComplete: boolean;
   isTeamMemberForIdea: IdeaSubmission | null;
   teamLeaderProfileForMember: UserProfile | null;
+  preFilledTeamMemberDataFromLeader: TeamMember | null; // New state
 
   signInWithGoogle: () => Promise<void>;
   signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
@@ -54,6 +55,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [isTeamMemberForIdea, setIsTeamMemberForIdea] = useState<IdeaSubmission | null>(null);
   const [teamLeaderProfileForMember, setTeamLeaderProfileForMember] = useState<UserProfile | null>(null);
+  const [preFilledTeamMemberDataFromLeader, setPreFilledTeamMemberDataFromLeader] = useState<TeamMember | null>(null); // New state initialized
 
   const router = useRouter();
   const { toast } = useToast();
@@ -73,6 +75,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         let profile = await getUserProfile(firebaseUser.uid);
         let ideaMembership: IdeaSubmission | null = null;
         let leaderProfile: UserProfile | null = null;
+        let memberDataFromLeader: TeamMember | null = null;
+
 
         if (profile) {
           if (firebaseUser.email === 'pranavrathi07@gmail.com') {
@@ -86,22 +90,37 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (ideaMembership && ideaMembership.userId) {
                leaderProfile = await getUserProfile(ideaMembership.userId);
             }
+            // If profile exists and they are team member only, try to find their prefill data too
+            if (ideaMembership && ideaMembership.structuredTeamMembers && firebaseUser.email) {
+                memberDataFromLeader = ideaMembership.structuredTeamMembers.find(
+                    (m) => m.email.toLowerCase() === firebaseUser.email!.toLowerCase()
+                ) || null;
+            }
           }
-        } else {
+        } else { // No profile exists yet
           setUserProfile(null);
           if (firebaseUser.email) {
             ideaMembership = await getIdeaWhereUserIsTeamMember(firebaseUser.email);
-            if (ideaMembership && ideaMembership.userId) {
-              leaderProfile = await getUserProfile(ideaMembership.userId);
+            if (ideaMembership) {
+                if (ideaMembership.userId) {
+                    leaderProfile = await getUserProfile(ideaMembership.userId);
+                }
+                // If no profile and they are part of an idea, this is where we find their pre-fill data
+                if (ideaMembership.structuredTeamMembers) {
+                    memberDataFromLeader = ideaMembership.structuredTeamMembers.find(
+                        (m) => m.email.toLowerCase() === firebaseUser.email!.toLowerCase()
+                    ) || null;
+                }
             }
           }
         }
 
         setIsTeamMemberForIdea(ideaMembership);
         setTeamLeaderProfileForMember(leaderProfile);
+        setPreFilledTeamMemberDataFromLeader(memberDataFromLeader); // Set pre-fill data
 
         if (profile) {
-          if (isNewAuthUser && profile.role !== 'ADMIN_FACULTY') { // Avoid double logging for admins who might have complex setup flows
+          if (isNewAuthUser && profile.role !== 'ADMIN_FACULTY') {
              logUserActivity(firebaseUser.uid, profile.displayName || profile.fullName, 'USER_SIGNED_IN', undefined, { ipAddress: 'N/A', userAgent: 'N/A' });
           }
           if (router && (window.location.pathname === '/login' || (window.location.pathname === '/profile-setup' && profile.startupTitle && !profile.isTeamMemberOnly && profile.startupTitle !== 'Administrative Account'))) {
@@ -118,6 +137,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUserProfile(null);
         setIsTeamMemberForIdea(null);
         setTeamLeaderProfileForMember(null);
+        setPreFilledTeamMemberDataFromLeader(null); // Clear pre-fill data on logout
+
 
         if (!firebaseUser && router && !['/login', '/'].includes(window.location.pathname) && !window.location.pathname.startsWith('/_next')) {
            router.push('/login');
@@ -130,7 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // router removed
+  }, []);
 
   const handleAuthError = (error: any, action: string) => {
     console.error(`Error during ${action}:`, error);
@@ -222,7 +243,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return Promise.reject(new Error("No user logged in."));
     }
     setLoading(true);
-    const wasProfileExisting = !!userProfile; 
+    const wasProfileExisting = !!userProfile;
     let ideaCreationSuccessfulOrNotApplicable = true;
 
     let actualRole = roleFromForm;
@@ -231,7 +252,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       actualRole = 'ADMIN_FACULTY';
     }
 
-    const settingUpAsTeamMember = isTeamMemberForIdea !== null && !wasProfileExisting; 
+    const settingUpAsTeamMember = isTeamMemberForIdea !== null && !wasProfileExisting;
 
     const profileDataForCreation: Partial<UserProfile> = {
       role: actualRole,
@@ -269,7 +290,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
       const createdOrUpdatedProfile = await createUserProfileFS(user.uid, profileDataForCreation);
-      setUserProfile(createdOrUpdatedProfile); 
+      setUserProfile(createdOrUpdatedProfile);
 
       const logAction: ActivityLogAction = wasProfileExisting ? 'USER_PROFILE_UPDATED' : 'USER_PROFILE_CREATED';
       await logUserActivity(
@@ -331,9 +352,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (settingUpAsTeamMember && createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
         await updateTeamMemberDetailsInIdeaAfterProfileSetup(
           createdOrUpdatedProfile.associatedIdeaId,
-          isTeamMemberForIdea.title, 
-          user, 
-          { 
+          isTeamMemberForIdea.title,
+          user,
+          {
             fullName: createdOrUpdatedProfile.fullName,
             contactNumber: createdOrUpdatedProfile.contactNumber,
             enrollmentNumber: createdOrUpdatedProfile.enrollmentNumber,
@@ -417,6 +438,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       initialLoadComplete,
       isTeamMemberForIdea,
       teamLeaderProfileForMember,
+      preFilledTeamMemberDataFromLeader, // Provide new state
       signInWithGoogle,
       signUpWithEmailPassword,
       signInWithEmailPassword,
@@ -436,4 +458,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

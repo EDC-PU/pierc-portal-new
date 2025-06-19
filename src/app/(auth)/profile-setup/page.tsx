@@ -71,16 +71,7 @@ const profileSetupSchemaBase = z.object({
 
 // Refined schema using superRefine for complex conditional logic
 const profileSetupSchema = profileSetupSchemaBase.superRefine((data, ctx) => {
-  // Determine if the current form context is for an "idea owner"
-  // This means:
-  // 1. The user is not setting up as a pre-identified team member (from AuthContext's isTeamMemberForIdea)
-  // 2. The user is not the super admin (who has a fixed 'ADMIN_FACULTY' role)
-  // 3. If a role is selected (or pre-filled), it's not 'ADMIN_FACULTY' or 'EXTERNAL_USER' (unless EXTERNAL_USER is allowed to submit ideas, which they are here)
-  // For simplicity in refinement, let's focus on *when idea fields become mandatory*.
-  // This happens if `role` is 'STUDENT' OR if `role` is 'EXTERNAL_USER' and they are not in team member context.
-  // And critically, not the super admin setting up their placeholder.
-
-  const isSuperAdminContext = data.role === 'ADMIN_FACULTY' && data.startupTitle === 'Administrative Account'; // A heuristic for super admin initial setup
+  const isSuperAdminContext = data.role === 'ADMIN_FACULTY' && data.startupTitle === 'Administrative Account'; 
   const isIdeaOwnerContext = !isSuperAdminContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
 
 
@@ -92,7 +83,6 @@ const profileSetupSchema = profileSetupSchemaBase.superRefine((data, ctx) => {
     if (!data.uniqueness || data.uniqueness.trim().length < 10) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Uniqueness description is required (min 10 chars).', path: ['uniqueness'] });
     if (!data.currentStage) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Current stage is required.', path: ['currentStage'] });
 
-    // Parul Student specific requirements for idea owners
     if (data.applicantCategory === 'PARUL_STUDENT') {
       if (!data.enrollmentNumber || data.enrollmentNumber.trim() === '') {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Enrollment number is required for Parul Students submitting an idea.', path: ['enrollmentNumber'] });
@@ -109,7 +99,17 @@ type ProfileSetupFormData = z.infer<typeof profileSetupSchemaBase>;
 
 export default function ProfileSetupPage() {
   const authContext = useAuth();
-  const { user, userProfile, loading: authLoading, initialLoadComplete, setRoleAndCompleteProfile, isTeamMemberForIdea, teamLeaderProfileForMember, deleteCurrentUserAccount } = authContext;
+  const { 
+    user, 
+    userProfile, 
+    loading: authLoading, 
+    initialLoadComplete, 
+    setRoleAndCompleteProfile, 
+    isTeamMemberForIdea, 
+    teamLeaderProfileForMember,
+    preFilledTeamMemberDataFromLeader, // Consume new data from context
+    deleteCurrentUserAccount 
+  } = authContext;
   const router = useRouter();
   const { toast } = useToast();
 
@@ -117,7 +117,6 @@ export default function ProfileSetupPage() {
   const [isEditing, setIsEditing] = useState(false);
 
   const isSuperAdminEmail = useMemo(() => user?.email === 'pranavrathi07@gmail.com', [user?.email]);
-  // This context means a user has logged in, no profile exists, AND they've been identified as a team member for an idea.
   const isNewTeamMemberSetupContext = useMemo(() => !!(!userProfile && isTeamMemberForIdea), [userProfile, isTeamMemberForIdea]);
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user?.email]);
 
@@ -127,7 +126,7 @@ export default function ProfileSetupPage() {
     defaultValues: {
       fullName: '',
       contactNumber: '',
-      role: null, // Will be determined based on context
+      role: null,
       enrollmentNumber: '',
       college: '',
       instituteName: '',
@@ -144,12 +143,11 @@ export default function ProfileSetupPage() {
   const selectedRole = watch('role');
   const selectedApplicantCategory = watch('applicantCategory');
 
-  // Determine the effective role for form logic and submission
   const determinedRole: Role = useMemo(() => {
     if (isSuperAdminEmail) return 'ADMIN_FACULTY';
-    if (userProfile?.role) return userProfile.role; // Editing existing profile
-    if (isNewTeamMemberSetupContext) return isParulEmail ? 'STUDENT' : 'EXTERNAL_USER'; // New team member
-    return selectedRole || null; // Role selected in form for new idea owners
+    if (userProfile?.role) return userProfile.role;
+    if (isNewTeamMemberSetupContext) return isParulEmail ? 'STUDENT' : 'EXTERNAL_USER';
+    return selectedRole || null;
   }, [isSuperAdminEmail, userProfile?.role, isNewTeamMemberSetupContext, isParulEmail, selectedRole]);
 
 
@@ -170,13 +168,13 @@ export default function ProfileSetupPage() {
         teamMembers: '',
       };
 
-      if (userProfile) { // Editing existing profile
+      if (userProfile) { 
         setIsEditing(true);
         defaultVals = {
           ...defaultVals,
           fullName: userProfile.fullName || user.displayName || '',
           contactNumber: userProfile.contactNumber || '',
-          role: userProfile.role, // Pre-fill role from existing profile
+          role: userProfile.role,
           enrollmentNumber: userProfile.enrollmentNumber || '',
           college: userProfile.college || '',
           instituteName: userProfile.instituteName || '',
@@ -188,7 +186,7 @@ export default function ProfileSetupPage() {
           currentStage: userProfile.currentStage || undefined,
           teamMembers: userProfile.teamMembers || '',
         };
-      } else { // New profile setup
+      } else { 
         setIsEditing(false);
         if (isSuperAdminEmail) {
           defaultVals.role = 'ADMIN_FACULTY';
@@ -197,34 +195,35 @@ export default function ProfileSetupPage() {
           defaultVals.solutionDescription = 'Provides administrative functions and support.';
           defaultVals.uniqueness = 'Unique administrative role for system management.';
           defaultVals.currentStage = 'STARTUP_STAGE';
-          defaultVals.applicantCategory = 'PARUL_STAFF'; // Or appropriate default for admin
+          defaultVals.applicantCategory = 'PARUL_STAFF';
         } else if (isNewTeamMemberSetupContext) {
           defaultVals.role = isParulEmail ? 'STUDENT' : 'EXTERNAL_USER';
-          // Team members don't fill idea details here
-          defaultVals.startupTitle = ''; // These will be nullified in AuthContext
-          // ... (other idea fields similarly handled in AuthContext)
+          // Pre-fill name and contact from leader's input if available
+          if (preFilledTeamMemberDataFromLeader) {
+            defaultVals.fullName = preFilledTeamMemberDataFromLeader.name || user.displayName || '';
+            defaultVals.contactNumber = preFilledTeamMemberDataFromLeader.phone || '';
+          }
+          defaultVals.startupTitle = '';
         } else {
-          // New idea owner - role will be selected via RadioGroup
-          // defaultVals.role will be set by the RadioGroup later
+          // New idea owner
         }
       }
       reset(defaultVals);
-      // Explicitly set role if determined, as reset might not pick up dynamic default for 'role' immediately
       if (defaultVals.role && !selectedRole) {
         setValue('role', defaultVals.role);
       }
 
       setPageLoading(false);
     }
-  }, [authLoading, initialLoadComplete, user, userProfile, router, reset, setValue, isSuperAdminEmail, isNewTeamMemberSetupContext, isParulEmail]);
+  }, [authLoading, initialLoadComplete, user, userProfile, router, reset, setValue, isSuperAdminEmail, isNewTeamMemberSetupContext, isParulEmail, preFilledTeamMemberDataFromLeader]);
 
 
   const processSubmit: SubmitHandler<ProfileSetupFormData> = async (data) => {
     if (!user) return;
 
-    let roleToSubmit: Role = determinedRole; // Use the derived role
+    let roleToSubmit: Role = determinedRole;
 
-    if (!roleToSubmit && !isSuperAdminEmail && !isNewTeamMemberSetupContext) { // New idea owner must have selected a role
+    if (!roleToSubmit && !isSuperAdminEmail && !isNewTeamMemberSetupContext) {
       toast({ title: "Role Selection Required", description: "Please select your role (Student/Innovator or External User).", variant: "destructive" });
       return;
     }
@@ -233,10 +232,9 @@ export default function ProfileSetupPage() {
     const formDataForContext: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt' | 'isTeamMemberOnly' | 'associatedIdeaId' | 'associatedTeamLeaderUid'> = {
       fullName: data.fullName,
       contactNumber: data.contactNumber,
-      enrollmentNumber: data.enrollmentNumber || null, // Ensure null if empty
+      enrollmentNumber: data.enrollmentNumber || null,
       college: data.college || null,
       instituteName: data.instituteName || null,
-      // Idea specific fields - AuthContext will handle nullifying these for team members
       applicantCategory: data.applicantCategory,
       startupTitle: data.startupTitle,
       problemDefinition: data.problemDefinition,
@@ -248,28 +246,24 @@ export default function ProfileSetupPage() {
 
     try {
       await setRoleAndCompleteProfile(roleToSubmit!, formDataForContext);
-      // Navigation is handled by setRoleAndCompleteProfile upon success
     } catch (error) {
       console.error("Profile setup submission error:", error);
-      // Toast for error is handled by setRoleAndCompleteProfile
     }
   };
 
   const handleDeleteOwnAccount = async () => {
     try {
         await deleteCurrentUserAccount();
-        // Navigation is handled by AuthContext after successful deletion
     } catch (error) {
-        // Error toast is handled by deleteCurrentUserAccount
+        // Error toast handled by AuthContext
     }
   };
 
-  // Determine which sections of the form to show
   const showRoleSelection = !isEditing && !isSuperAdminEmail && !isNewTeamMemberSetupContext;
 
   const showIdeaDetailsSection =
-    (isEditing && userProfile && !userProfile.isTeamMemberOnly && userProfile.role !== 'ADMIN_FACULTY') || // Editing idea owner
-    (!isEditing && !isNewTeamMemberSetupContext && determinedRole && determinedRole !== 'ADMIN_FACULTY');   // New idea owner (STUDENT or EXTERNAL_USER)
+    (isEditing && userProfile && !userProfile.isTeamMemberOnly && userProfile.role !== 'ADMIN_FACULTY') ||
+    (!isEditing && !isNewTeamMemberSetupContext && determinedRole && determinedRole !== 'ADMIN_FACULTY');
 
   const showAdminPlaceholderIdeaFields = isSuperAdminEmail && determinedRole === 'ADMIN_FACULTY' && !isEditing;
 
@@ -284,7 +278,6 @@ export default function ProfileSetupPage() {
   }
 
   if (!user) {
-    // This case should ideally be caught by the useEffect redirecting to /login
     return <p className="text-center py-10">User not found. Redirecting...</p>;
   }
 
@@ -298,7 +291,7 @@ export default function ProfileSetupPage() {
 
   return (
     <div className="flex flex-col flex-1 items-center justify-start animate-fade-in">
-      <Card className="w-full max-w-2xl shadow-2xl my-6"> {/* Added my-6 for spacing */}
+      <Card className="w-full max-w-2xl shadow-2xl my-6">
         <CardHeader>
           <div className="flex items-center mb-2">
             <UserCircle className="h-10 w-10 text-primary mr-3" />
@@ -365,8 +358,7 @@ export default function ProfileSetupPage() {
               </section>
             )}
 
-            {/* Academic & Institutional Information Section */}
-            { (determinedRole !== 'ADMIN_FACULTY' || isEditing) && ( // Show for non-admins, or admins editing
+            { (determinedRole !== 'ADMIN_FACULTY' || isEditing) && (
               <section className="space-y-4 pt-4">
                 <h3 className="font-semibold text-lg text-primary border-t pt-4">Academic & Institutional Information</h3>
                 {(isParulEmail || selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection) && (
@@ -472,7 +464,7 @@ export default function ProfileSetupPage() {
                             {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
                         </div>
                     </>
-                ) : ( // Admin placeholder fields
+                ) : ( 
                     <>
                         <div><Label>Applicant Category</Label><Input value="Parul Staff (Admin)" disabled /></div>
                         <div><Label>Startup Title</Label><Input value="Administrative Account" disabled /></div>
