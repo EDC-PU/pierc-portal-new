@@ -69,13 +69,14 @@ const profileSetupSchemaBase = z.object({
   teamMembers: z.string().max(500).optional(), // Original free-text team members
 });
 
-// Refined schema using superRefine for complex conditional logic
-const profileSetupSchema = profileSetupSchemaBase.superRefine((data, ctx) => {
-  const isSuperAdminContext = data.role === 'ADMIN_FACULTY' && data.startupTitle === 'Administrative Account'; 
-  const isIdeaOwnerContext = !isSuperAdminContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
+// Refined schema using superRefine for complex conditional logic for IDEA OWNERS
+const profileSetupSchemaForIdeaOwners = profileSetupSchemaBase.superRefine((data, ctx) => {
+  const isSuperAdminContext = data.role === 'ADMIN_FACULTY' && data.startupTitle === 'Administrative Account';
+  // This validation applies if NOT a super admin context AND the user is taking on a role that typically owns an idea.
+  const isIdeaOwnerValidationContext = !isSuperAdminContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
 
 
-  if (isIdeaOwnerContext) {
+  if (isIdeaOwnerValidationContext) {
     if (!data.applicantCategory) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Applicant category is required.', path: ['applicantCategory'] });
     if (!data.startupTitle || data.startupTitle.trim().length < 5) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Startup title must be at least 5 characters.', path: ['startupTitle'] });
     if (!data.problemDefinition || data.problemDefinition.trim().length < 10) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Problem definition is required (min 10 chars).', path: ['problemDefinition'] });
@@ -99,16 +100,16 @@ type ProfileSetupFormData = z.infer<typeof profileSetupSchemaBase>;
 
 export default function ProfileSetupPage() {
   const authContext = useAuth();
-  const { 
-    user, 
-    userProfile, 
-    loading: authLoading, 
-    initialLoadComplete, 
-    setRoleAndCompleteProfile, 
-    isTeamMemberForIdea, 
+  const {
+    user,
+    userProfile,
+    loading: authLoading,
+    initialLoadComplete,
+    setRoleAndCompleteProfile,
+    isTeamMemberForIdea,
     teamLeaderProfileForMember,
-    preFilledTeamMemberDataFromLeader, // Consume new data from context
-    deleteCurrentUserAccount 
+    preFilledTeamMemberDataFromLeader,
+    deleteCurrentUserAccount
   } = authContext;
   const router = useRouter();
   const { toast } = useToast();
@@ -120,9 +121,12 @@ export default function ProfileSetupPage() {
   const isNewTeamMemberSetupContext = useMemo(() => !!(!userProfile && isTeamMemberForIdea), [userProfile, isTeamMemberForIdea]);
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user?.email]);
 
+  const activeSchema = useMemo(() => {
+    return isNewTeamMemberSetupContext ? profileSetupSchemaBase : profileSetupSchemaForIdeaOwners;
+  }, [isNewTeamMemberSetupContext]);
 
   const { control, handleSubmit, watch, reset, formState: { errors, isSubmitting }, setValue } = useForm<ProfileSetupFormData>({
-    resolver: zodResolver(profileSetupSchema),
+    resolver: zodResolver(activeSchema),
     defaultValues: {
       fullName: '',
       contactNumber: '',
@@ -166,9 +170,16 @@ export default function ProfileSetupPage() {
         college: '',
         instituteName: '',
         teamMembers: '',
+        // Ensure idea fields are undefined by default for all, unless editing existing or superadmin
+        applicantCategory: undefined,
+        startupTitle: undefined,
+        problemDefinition: undefined,
+        solutionDescription: undefined,
+        uniqueness: undefined,
+        currentStage: undefined,
       };
 
-      if (userProfile) { 
+      if (userProfile) {
         setIsEditing(true);
         defaultVals = {
           ...defaultVals,
@@ -186,7 +197,7 @@ export default function ProfileSetupPage() {
           currentStage: userProfile.currentStage || undefined,
           teamMembers: userProfile.teamMembers || '',
         };
-      } else { 
+      } else {
         setIsEditing(false);
         if (isSuperAdminEmail) {
           defaultVals.role = 'ADMIN_FACULTY';
@@ -198,14 +209,21 @@ export default function ProfileSetupPage() {
           defaultVals.applicantCategory = 'PARUL_STAFF';
         } else if (isNewTeamMemberSetupContext) {
           defaultVals.role = isParulEmail ? 'STUDENT' : 'EXTERNAL_USER';
-          // Pre-fill name and contact from leader's input if available
           if (preFilledTeamMemberDataFromLeader) {
             defaultVals.fullName = preFilledTeamMemberDataFromLeader.name || user.displayName || '';
             defaultVals.contactNumber = preFilledTeamMemberDataFromLeader.phone || '';
           }
-          defaultVals.startupTitle = '';
+          // Ensure idea fields are explicitly undefined for new team members
+          defaultVals.startupTitle = undefined;
+          defaultVals.problemDefinition = undefined;
+          defaultVals.solutionDescription = undefined;
+          defaultVals.uniqueness = undefined;
+          defaultVals.applicantCategory = undefined;
+          defaultVals.currentStage = undefined;
+          defaultVals.teamMembers = undefined;
         } else {
-          // New idea owner
+          // New idea owner - idea fields remain undefined here, will be filled by user
+          // and validated by profileSetupSchemaForIdeaOwners
         }
       }
       reset(defaultVals);
@@ -228,13 +246,14 @@ export default function ProfileSetupPage() {
       return;
     }
 
-
     const formDataForContext: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt' | 'isTeamMemberOnly' | 'associatedIdeaId' | 'associatedTeamLeaderUid'> = {
       fullName: data.fullName,
       contactNumber: data.contactNumber,
       enrollmentNumber: data.enrollmentNumber || null,
       college: data.college || null,
       instituteName: data.instituteName || null,
+      // These will be undefined if isNewTeamMemberSetupContext due to schema and default values,
+      // or filled if user is an idea owner. AuthContext handles nullifying them for team members.
       applicantCategory: data.applicantCategory,
       startupTitle: data.startupTitle,
       problemDefinition: data.problemDefinition,
