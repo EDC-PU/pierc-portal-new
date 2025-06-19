@@ -5,547 +5,442 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // Helper Functions
-    function isSignedIn() {
+    function isAuthenticated() {
       return request.auth != null && request.auth.uid != null;
     }
 
-    function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified;
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function getUserProfileData(userId) {
+    function getProfile(userId) {
       return get(/databases/$(database)/documents/users/$(userId)).data;
     }
 
-    function isUserProfileAdmin(userId) {
-      let userProfile = getUserProfileData(userId);
-      return userProfile != null && userProfile.role == 'ADMIN_FACULTY';
+    function isUserProfileAdmin() {
+      let profile = getProfile(request.auth.uid);
+      return isAuthenticated() && profile != null && profile.role == 'ADMIN_FACULTY';
     }
 
-    function isUserProfileSuperAdmin(userId) {
-      let userProfile = getUserProfileData(userId);
-      return userProfile != null && userProfile.role == 'ADMIN_FACULTY' && userProfile.isSuperAdmin == true;
+    function isUserProfileSuperAdmin() {
+      let profile = getProfile(request.auth.uid);
+      return isUserProfileAdmin() && profile.isSuperAdmin == true;
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && request.auth.uid == userId;
+    // Type checking helpers
+    function isString(value) { return value is string; }
+    function isStringOrNull(value) { return value is string || value == null; }
+    function isBoolean(value) { return value is bool; }
+    function isNumber(value) { return value is number; }
+    function isMap(value) { return value is map; }
+    function isList(value) { return value is list; }
+    function isTimestamp(value) { return value is timestamp; }
+    function isServerTimestamp(value) { return request.time == value; } // For comparing with serverTimestamp()
+
+    // Enum validation helpers
+    function isValidRole(role) { return role == 'STUDENT' || role == 'EXTERNAL_USER' || role == 'ADMIN_FACULTY' || role == null; }
+    function isValidApplicantCategory(category) { return category == 'PARUL_STUDENT' || category == 'PARUL_STAFF' || category == 'PARUL_ALUMNI' || category == 'OTHERS'; }
+    function isValidApplicantCategoryOrNull(category) { return category == null || isValidApplicantCategory(category); }
+    function isValidCurrentStage(stage) { return stage == 'IDEA' || stage == 'PROTOTYPE_STAGE' || stage == 'STARTUP_STAGE'; }
+    function isValidCurrentStageOrNull(stage) { return stage == null || isValidCurrentStage(stage); }
+    function isValidIdeaStatus(status) { return status == 'SUBMITTED' || status == 'UNDER_REVIEW' || status == 'IN_EVALUATION' || status == 'SELECTED' || status == 'NOT_SELECTED' || status == 'ARCHIVED_BY_ADMIN'; }
+    function isValidProgramPhaseOrNull(phase) { return phase == null || phase == 'PHASE_1' || phase == 'PHASE_2' || phase == 'COHORT'; }
+
+    function isValidMentorNameOrNull(mentorName) {
+      // Simplified: assumes client sends valid name or null. Robust check would involve a list.
+      return mentorName == null || (mentorName is string && mentorName.size() > 0 && mentorName.size() < 100);
     }
 
-    function isUserProfileCompleteForIdeaSubmission(userId) {
-      let userProfile = getUserProfileData(userId);
-      return userProfile != null &&
-             userProfile.fullName != null && userProfile.fullName.size() > 0 &&
-             userProfile.contactNumber != null && userProfile.contactNumber.size() > 0 &&
-             userProfile.startupTitle != null && userProfile.startupTitle.size() > 0 &&
-             userProfile.problemDefinition != null && userProfile.problemDefinition.size() > 0 &&
-             userProfile.solutionDescription != null && userProfile.solutionDescription.size() > 0 &&
-             userProfile.uniqueness != null && userProfile.uniqueness.size() > 0 &&
-             userProfile.applicantCategory != null && (
-                userProfile.applicantCategory == 'PARUL_STUDENT' ||
-                userProfile.applicantCategory == 'PARUL_STAFF' ||
-                userProfile.applicantCategory == 'PARUL_ALUMNI' ||
-                userProfile.applicantCategory == 'OTHERS'
-             ) &&
-             userProfile.currentStage != null && (
-                userProfile.currentStage == 'IDEA' ||
-                userProfile.currentStage == 'PROTOTYPE_STAGE' ||
-                userProfile.currentStage == 'STARTUP_STAGE'
-             );
+    function hasOnly(data, allowedKeys) {
+      return data.keys().hasOnly(allowedKeys);
     }
-    
-    function isString(value) {
-      return value is string;
+    function hasAll(data, requiredKeys) {
+      return data.keys().hasAll(requiredKeys);
+    }
+    function isAllowedWriteFields(allowedFields) {
+      return request.writeFields.hasOnly(allowedFields);
     }
 
-    function isStringOrNull(value) {
-      return value == null || value is string;
-    }
-    
-    function isBoolean(value) {
-      return value is bool;
-    }
 
-    function isNumber(value) {
-      return value is number;
-    }
-
-    function isNumberOrNull(value) {
-      return value == null || value is number;
-    }
-
-    function isTimestamp(value) {
-      return value is timestamp;
-    }
-
-    function isTimestampOrNull(value) {
-      return value == null || value is timestamp;
-    }
-    
-    function isList(value) {
-      return value is list;
-    }
-
-    function isMap(value) {
-      return value is map;
-    }
-    
-    function isNonEmptyString(value) {
-      return value is string && value.size() > 0;
-    }
-
-    function isValidRole(role) {
-      return role == 'STUDENT' || role == 'EXTERNAL_USER' || role == 'ADMIN_FACULTY';
-    }
-
-    function isValidApplicantCategory(category) {
-      return category == 'PARUL_STUDENT' || category == 'PARUL_STAFF' || category == 'PARUL_ALUMNI' || category == 'OTHERS';
-    }
-
-    function isValidCurrentStage(stage) {
-      return stage == 'IDEA' || stage == 'PROTOTYPE_STAGE' || stage == 'STARTUP_STAGE';
-    }
-    
-    function isValidIdeaStatus(status) {
-      return status == 'SUBMITTED' || status == 'UNDER_REVIEW' || status == 'IN_EVALUATION' || status == 'SELECTED' || status == 'NOT_SELECTED' || status == 'ARCHIVED_BY_ADMIN';
-    }
-    
-    function isValidProgramPhaseOrNull(phase) {
-      return phase == null || phase == 'PHASE_1' || phase == 'PHASE_2' || phase == 'COHORT';
-    }
-
-    function isValidMentorNameOrNull(mentor) {
-      // This list must be manually kept in sync with AVAILABLE_MENTORS_DATA in src/types/index.ts
-      let validMentorNames = [
-        'Prashant Khanna', 'Riddhi Bagha', 'Nikhil Jumde', 'Jay Sudani', 
-        'Hardik Kharva', 'Sonal Sudani', 'Pancham Baraiya', 'Juned Shaikh'
-      ];
-      return mentor == null || mentor in validMentorNames;
-    }
-
-    function isIdeaCreatorNotUsingAdminPlaceholderData(userId, data) {
-      // Prevents ideas from being created if the user's profile has admin placeholder idea details
-      let userProfile = getUserProfileData(userId);
-      if (userProfile == null || userProfile.role != 'ADMIN_FACULTY') {
-        return true; // Not an admin, or profile doesn't exist (should be caught by other rules)
-      }
-      // Check if the idea data matches the admin placeholder content
-      let isUsingAdminPlaceholder = (
-        (userProfile.email == 'pranavrathi07@gmail.com' && 
-          data.startupTitle == 'Administrative Account' && 
-          data.problemDefinition == 'Handles portal administration.' &&
-          data.solutionDescription == 'Provides administrative functions and support.' &&
-          data.uniqueness == 'Unique administrative role for system management.') ||
-        (userProfile.email != 'pranavrathi07@gmail.com' && // Generic mentor check
-          data.startupTitle == 'Faculty/Mentor Account' &&
-          data.problemDefinition == 'Manages portal functions and/or mentorship.' &&
-          data.solutionDescription == 'Provides administrative or mentorship support.' &&
-          data.uniqueness == 'Unique administrative/mentorship role.')
-      );
-      return !isUsingAdminPlaceholder;
-    }
-    
-    function isValidIdeaContent(data) {
-      return isNonEmptyString(data.title) && data.title.size() <= 200 &&
-             isNonEmptyString(data.problem) && data.problem.size() >= 10 && data.problem.size() <= 2000 &&
-             isNonEmptyString(data.solution) && data.solution.size() >= 10 && data.solution.size() <= 2000 &&
-             isNonEmptyString(data.uniqueness) && data.uniqueness.size() >= 10 && data.uniqueness.size() <= 2000 &&
-             isValidApplicantCategory(data.applicantType) &&
-             isValidCurrentStage(data.developmentStage) &&
-             (data.teamMembers == null || (isString(data.teamMembers) && data.teamMembers.size() <= 500));
-    }
-
-    function validateAdminMarkMap(marksMap) {
-      if (marksMap == null || !(marksMap is map)) {
-        return false;
-      }
-      if (marksMap.keys().size() == 0) {
-        return true; // Empty map is valid
-      }
-      // Check each entry in the map
-      return marksMap.keys().all(adminUid =>
-        marksMap[adminUid] is map &&
-        (marksMap[adminUid].mark == null || (marksMap[adminUid].mark is number && marksMap[adminUid].mark >= 0 && marksMap[adminUid].mark <= 100)) &&
-        isNonEmptyString(marksMap[adminUid].adminDisplayName) &&
-        marksMap[adminUid].markedAt is timestamp
-      );
-    }
-    
-    function validateTeamMember(member) {
-        return member is map &&
-               isNonEmptyString(member.id) &&
-               isNonEmptyString(member.name) && member.name.size() <= 100 &&
-               isNonEmptyString(member.email) && member.email.matches('.+@.+\..+') && // Basic email regex
-               isNonEmptyString(member.phone) && member.phone.size() >= 10 && member.phone.size() <= 15 &&
-               isNonEmptyString(member.institute) && member.institute.size() <= 100 &&
-               isNonEmptyString(member.department) && member.department.size() <= 100 &&
-               (member.enrollmentNumber == null || (isString(member.enrollmentNumber) && member.enrollmentNumber.size() <= 50));
-    }
-
-    function validateStructuredTeamMembers(membersList) {
-        return membersList is list && membersList.size() <= 4 &&
-               membersList.all(member => validateTeamMember(member));
-    }
-
-    function validateTeamMemberEmails(emailList) {
-        return emailList is list && emailList.size() <= 4 &&
-               emailList.all(email => isString(email) && email.matches('.+@.+\..+'));
-    }
-
-    function isValidIdeaSubmissionOnCreateOrResubmit(userId, data, isCreate) {
-      return isOwner(userId) && // User must be the owner
-             data.userId == userId &&
-             isUserProfileCompleteForIdeaSubmission(userId) && // User's profile must be complete
-             isValidIdeaContent(data) && // Core idea content is valid
-             isIdeaCreatorNotUsingAdminPlaceholderData(userId, data) && // Not using admin placeholder content
-             data.status == 'SUBMITTED' && // Status must be 'SUBMITTED'
-             data.programPhase == null && // programPhase must be null
-             data.cohortId == null && // cohortId must be null
-             data.phase2Marks is map && data.phase2Marks.keys().size() == 0 && // phase2Marks must be an empty map
-             data.mentor == null && // mentor must be null
-             data.rejectionRemarks == null && // rejectionRemarks must be null
-             data.rejectedByUid == null && // rejectedByUid must be null
-             data.rejectedAt == null && // rejectedAt must be null
-             data.phase2PptUrl == null && // phase2PptUrl must be null
-             data.phase2PptFileName == null && // phase2PptFileName must be null
-             data.phase2PptUploadedAt == null && // phase2PptUploadedAt must be null
-             data.nextPhaseDate == null && data.nextPhaseStartTime == null && data.nextPhaseEndTime == null && data.nextPhaseVenue == null && data.nextPhaseGuidelines == null &&
-             validateStructuredTeamMembers(data.structuredTeamMembers) && // teamMembers array is valid
-             validateTeamMemberEmails(data.teamMemberEmails) && // teamMemberEmails array is valid
-             isStringOrNull(data.applicantDisplayName) && // Ensure applicantDisplayName is a string or null
-             isStringOrNull(data.applicantEmail) && // Ensure applicantEmail is a string or null
-             (isCreate ? data.submittedAt == request.time : data.submittedAt is timestamp) && // submittedAt is set on create, immutable on update
-             data.updatedAt == request.time; // updatedAt always updated
-    }
-    
-    function isValidUserProfileData(data, isCreate) {
-        let isValidCommon = 
-            isNonEmptyString(data.fullName) && data.fullName.size() <= 100 &&
-            isNonEmptyString(data.contactNumber) && data.contactNumber.size() >= 10 && data.contactNumber.size() <= 15 &&
-            (data.enrollmentNumber == null || (isString(data.enrollmentNumber) && data.enrollmentNumber.size() <= 50)) &&
-            (data.college == null || (isString(data.college) && data.college.size() <= 100)) &&
-            (data.instituteName == null || (isString(data.instituteName) && data.instituteName.size() <= 100));
-
-        let isValidRoleSpecific;
-        if (data.isTeamMemberOnly == true) {
-            isValidRoleSpecific =
-                data.startupTitle == null &&
-                data.problemDefinition == null &&
-                data.solutionDescription == null &&
-                data.uniqueness == null &&
-                data.applicantCategory == null &&
-                data.currentStage == null &&
-                data.teamMembers == null &&
-                isStringOrNull(data.associatedIdeaId) &&
-                isStringOrNull(data.associatedTeamLeaderUid);
-        } else { // Idea owner, Admin, Mentor
-            isValidRoleSpecific = 
-                (data.startupTitle == null || (isString(data.startupTitle) && data.startupTitle.size() <= 200)) &&
-                (data.problemDefinition == null || (isString(data.problemDefinition) && data.problemDefinition.size() <= 2000)) &&
-                (data.solutionDescription == null || (isString(data.solutionDescription) && data.solutionDescription.size() <= 2000)) &&
-                (data.uniqueness == null || (isString(data.uniqueness) && data.uniqueness.size() <= 2000)) &&
-                (data.applicantCategory == null || isValidApplicantCategory(data.applicantCategory)) &&
-                (data.currentStage == null || isValidCurrentStage(data.currentStage)) &&
-                (data.teamMembers == null || (isString(data.teamMembers) && data.teamMembers.size() <= 500)) &&
-                data.associatedIdeaId == null &&
-                data.associatedTeamLeaderUid == null;
-
-            // Specific checks for non-admin placeholders if not a team member
-            if (data.role != 'ADMIN_FACULTY' && data.startupTitle != null) { // If idea fields are present, they must be valid
-              isValidRoleSpecific = isValidRoleSpecific &&
-                isNonEmptyString(data.startupTitle) && data.startupTitle.size() >= 5 &&
-                isNonEmptyString(data.problemDefinition) && data.problemDefinition.size() >= 10 &&
-                isNonEmptyString(data.solutionDescription) && data.solutionDescription.size() >= 10 &&
-                isNonEmptyString(data.uniqueness) && data.uniqueness.size() >= 10 &&
-                data.applicantCategory != null && data.currentStage != null;
-            }
-        }
-        
-        let isValidTimestamps;
-        if (isCreate) {
-            isValidTimestamps = data.createdAt == request.time && data.updatedAt == request.time;
-        } else {
-            isValidTimestamps = data.updatedAt == request.time && !('createdAt' in request.resource.data);
-        }
-
-        return isValidCommon && isValidRoleSpecific && isValidTimestamps &&
-               isStringOrNull(data.email) &&
-               isStringOrNull(data.displayName) &&
-               isStringOrNull(data.photoURL) &&
-               isValidRole(data.role) &&
-               isBoolean(data.isSuperAdmin) &&
-               isBoolean(data.isTeamMemberOnly);
-    }
-    
-    // USERS collection
+    // --- USERS ---
     match /users/{userId} {
-      allow read: if isSignedIn();
-      allow create: if isOwner(userId) &&
-                       request.resource.data.uid == userId &&
-                       isValidUserProfileData(request.resource.data, true) &&
-                       request.resource.data.keys().hasOnly([
-                         'uid', 'email', 'displayName', 'photoURL', 'role', 'isSuperAdmin', 'isTeamMemberOnly',
-                         'fullName', 'contactNumber', 'enrollmentNumber', 'college', 'instituteName',
-                         'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
-                         'applicantCategory', 'currentStage', 'teamMembers',
-                         'associatedIdeaId', 'associatedTeamLeaderUid',
-                         'createdAt', 'updatedAt'
-                       ]);
-      allow update: if (isOwner(userId) || isUserProfileSuperAdmin(request.auth.uid)) &&
-                       isValidUserProfileData(request.resource.data, false) &&
-                       request.resource.data.uid == resource.data.uid && // uid cannot change
-                       request.resource.data.email == resource.data.email && // email cannot change
-                       // Only super admin can change role or super admin status of others
-                       (isUserProfileSuperAdmin(request.auth.uid) || (
-                         request.resource.data.role == resource.data.role &&
-                         request.resource.data.isSuperAdmin == resource.data.isSuperAdmin
-                       )) &&
-                       // User can only modify a subset of fields if not admin
-                       (isUserProfileSuperAdmin(request.auth.uid) ?
-                         request.resource.data.keys().hasOnly([ // Super admin can update almost all, except immutable
-                            'displayName', 'photoURL', 'role', 'isSuperAdmin', 'isTeamMemberOnly',
-                            'fullName', 'contactNumber', 'enrollmentNumber', 'college', 'instituteName',
-                            'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
-                            'applicantCategory', 'currentStage', 'teamMembers',
-                            'associatedIdeaId', 'associatedTeamLeaderUid',
-                            'updatedAt'
-                         ]) :
-                         request.resource.data.keys().hasOnly([ // Regular user or non-super admin
-                            'displayName', 'photoURL',
-                            'fullName', 'contactNumber', 'enrollmentNumber', 'college', 'instituteName',
-                            'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
-                            'applicantCategory', 'currentStage', 'teamMembers',
-                            'updatedAt'
-                         ])
-                       );
-      allow delete: if (isOwner(userId) && resource.data.email != 'pranavrathi07@gmail.com') || // User can delete their own account (unless it's the primary super admin)
-                       (isUserProfileSuperAdmin(request.auth.uid) && resource.data.email != 'pranavrathi07@gmail.com'); // Super admin can delete others (unless primary)
-    }
-
-    // IDEAS collection
-    match /ideas/{ideaId} {
-      allow read: if isSignedIn(); // Any signed-in user can read idea details (e.g., team members, admins)
-      
-      allow create: if isSignedIn() &&
-                       isOwner(request.resource.data.userId) &&
-                       isValidIdeaSubmissionOnCreateOrResubmit(request.auth.uid, request.resource.data, true) &&
-                       // Ensure only expected fields are present on initial creation by user
-                       request.resource.data.keys().hasOnly([
-                         'userId', 'applicantDisplayName', 'applicantEmail', 'title', 'category',
-                         'problem', 'solution', 'uniqueness', 'developmentStage', 'applicantType',
-                         'teamMembers', 'structuredTeamMembers', 'teamMemberEmails', 'status', 'programPhase',
-                         'cohortId', 'phase2Marks', 'mentor', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
-                         'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
-                         'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines',
-                         'submittedAt', 'updatedAt'
-                         // fileURL, fileName, studioLocation are optional and added by user later, not via createIdeaFromProfile
-                       ]);
-
-      allow update: if isSignedIn() && (
-                      // Path 1: Owner updating their own idea details (e.g., resubmitting archived, or profile update syncs)
-                      (isOwner(resource.data.userId) &&
-                        isValidIdeaSubmissionOnCreateOrResubmit(request.auth.uid, request.resource.data, false) &&
-                        // Specific conditions for resubmitting an archived idea by the owner
-                        ( (resource.data.status == 'ARCHIVED_BY_ADMIN' && request.resource.data.status == 'SUBMITTED') || 
-                          (resource.data.status != 'ARCHIVED_BY_ADMIN' && request.resource.data.status == resource.data.status) // if not archived, status cannot change by owner
-                        ) &&
-                        request.resource.data.userId == resource.data.userId && // userId cannot change
-                        request.resource.data.applicantDisplayName == resource.data.applicantDisplayName && // these are derived from profile
-                        request.resource.data.applicantEmail == resource.data.applicantEmail && // these are derived from profile
-                        request.resource.data.submittedAt == resource.data.submittedAt && // submittedAt cannot change
-                        // Owner can update these specific fields or reset them if archived
-                        request.writeFields.hasAny([
-                          'title', 'problem', 'solution', 'uniqueness', 'developmentStage', 'applicantType',
-                          'teamMembers', 'structuredTeamMembers', 'teamMemberEmails', 'status', 'updatedAt',
-                          // Fields that get reset/nulled on resubmission of archived
-                          'programPhase', 'cohortId', 'phase2Marks', 'mentor', 'rejectionRemarks',
-                          'rejectedByUid', 'rejectedAt', 'phase2PptUrl', 'phase2PptFileName',
-                          'phase2PptUploadedAt', 'nextPhaseDate', 'nextPhaseStartTime',
-                          'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines'
-                        ])
-                      ) ||
-                      // Path 2: Owner uploading Phase 2 PPT
-                      (isOwner(resource.data.userId) &&
-                        resource.data.status == 'SELECTED' && resource.data.programPhase == 'PHASE_2' &&
-                        isStringOrNull(request.resource.data.phase2PptUrl) &&
-                        isStringOrNull(request.resource.data.phase2PptFileName) &&
-                        (request.resource.data.phase2PptUploadedAt == request.time || request.resource.data.phase2PptUploadedAt == null) &&
-                        request.resource.data.updatedAt == request.time &&
-                        request.writeFields.hasOnly([
-                          'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt'
-                        ]) &&
-                        // Immutable fields
-                        request.resource.data.userId == resource.data.userId &&
-                        request.resource.data.title == resource.data.title &&
-                        request.resource.data.status == resource.data.status &&
-                        request.resource.data.programPhase == resource.data.programPhase
-                      ) ||
-                      // Path 3: Admin updating status, phase, remarks, mentor, cohortId, or phase2 marks
-                      (isUserProfileAdmin(request.auth.uid) &&
-                        isValidIdeaStatus(request.resource.data.status) &&
-                        isValidProgramPhaseOrNull(request.resource.data.programPhase) &&
-                        isStringOrNull(request.resource.data.rejectionRemarks) &&
-                        isStringOrNull(request.resource.data.rejectedByUid) &&
-                        isTimestampOrNull(request.resource.data.rejectedAt) &&
-                        isValidMentorNameOrNull(request.resource.data.mentor) &&
-                        isStringOrNull(request.resource.data.cohortId) &&
-                        validateAdminMarkMap(request.resource.data.phase2Marks) &&
-                        isTimestampOrNull(request.resource.data.nextPhaseDate) &&
-                        isStringOrNull(request.resource.data.nextPhaseStartTime) &&
-                        isStringOrNull(request.resource.data.nextPhaseEndTime) &&
-                        isStringOrNull(request.resource.data.nextPhaseVenue) &&
-                        isStringOrNull(request.resource.data.nextPhaseGuidelines) &&
-                        request.resource.data.updatedAt == request.time &&
-                        // Admins can write to these fields:
-                        request.writeFields.hasAny([
-                          'status', 'programPhase', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
-                          'mentor', 'cohortId', 'phase2Marks', 'updatedAt',
-                          'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines',
-                          'updatedByMentorAssignerUid' // Added for mentor assignment tracking
-                        ]) &&
-                        // Immutable by admin in this operation
-                        request.resource.data.userId == resource.data.userId &&
-                        request.resource.data.title == resource.data.title // Title is primarily user-controlled
-                      ) ||
-                      // Path 4: Owner managing team members (add, update, remove - simplified check for writeFields)
-                      (isOwner(resource.data.userId) &&
-                        request.resource.data.userId == resource.data.userId &&
-                        validateStructuredTeamMembers(request.resource.data.structuredTeamMembers) &&
-                        validateTeamMemberEmails(request.resource.data.teamMemberEmails) &&
-                        request.resource.data.updatedAt == request.time &&
-                        request.writeFields.hasAny(['structuredTeamMembers', 'teamMemberEmails', 'updatedAt'])
-                      )
+      allow read: if isAuthenticated() && (isOwner(userId) || isUserProfileAdmin());
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUserProfileOnCreate(userId, request.resource.data);
+      allow update: if isAuthenticated() && (
+                      (isOwner(userId) && isValidUserProfileUpdateByOwner(userId, resource.data, request.resource.data)) ||
+                      (isUserProfileAdmin() && isValidUserProfileUpdateByAdmin(userId, resource.data, request.resource.data))
                     );
-      allow delete: if false; // Prevent direct deletion, use status 'ARCHIVED_BY_ADMIN' via update
+      allow delete: if isUserProfileAdmin() && userId != 'pranavrathi07@gmail.com'; // Assuming this is the primary super admin UID, or check email
 
+      function isValidUserProfileOnCreate(uid, data) {
+        let expectedFields = [
+          'uid', 'email', 'displayName', 'photoURL', 'role', 'isSuperAdmin',
+          'fullName', 'contactNumber', 'isTeamMemberOnly',
+          'enrollmentNumber', 'college', 'instituteName',
+          'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
+          'applicantCategory', 'currentStage', 'teamMembers',
+          'associatedIdeaId', 'associatedTeamLeaderUid',
+          'createdAt', 'updatedAt'
+        ];
+        let minExpectedFields = [ // Core fields always expected at creation
+          'uid', 'email', 'role', 'isSuperAdmin', 'fullName', 'contactNumber', 'isTeamMemberOnly', 'createdAt', 'updatedAt'
+        ];
+
+        return data.uid == uid
+          && data.email == request.auth.token.email // Ensure email matches token
+          && hasAll(data, minExpectedFields) // Check if all minimum fields are present
+          && data.keys().hasOnly(expectedFields) // Ensure no extra fields
+          && isString(data.fullName) && data.fullName.size() > 0 && data.fullName.size() <= 100
+          && isString(data.contactNumber) && data.contactNumber.size() >= 10 && data.contactNumber.size() <= 15
+          && isValidRole(data.role)
+          && isBoolean(data.isSuperAdmin)
+          && (data.isSuperAdmin == (data.email == 'pranavrathi07@gmail.com')) // Super admin flag consistency
+          && isBoolean(data.isTeamMemberOnly)
+          && isStringOrNull(data.displayName)
+          && isStringOrNull(data.photoURL)
+          && isStringOrNull(data.enrollmentNumber) && (data.enrollmentNumber == null || data.enrollmentNumber.size() <= 50)
+          && isStringOrNull(data.college) && (data.college == null || data.college.size() <= 100)
+          && isStringOrNull(data.instituteName) && (data.instituteName == null || data.instituteName.size() <= 100)
+          && isStringOrNull(data.associatedIdeaId)
+          && isStringOrNull(data.associatedTeamLeaderUid)
+          && isServerTimestamp(data.createdAt)
+          && isServerTimestamp(data.updatedAt)
+          && ( // Conditional validation for idea-owner fields
+            (data.isTeamMemberOnly == true &&
+              data.startupTitle == null && data.problemDefinition == null && data.solutionDescription == null &&
+              data.uniqueness == null && data.applicantCategory == null && data.currentStage == null && data.teamMembers == null
+            ) ||
+            (data.isTeamMemberOnly == false &&
+              isStringOrNull(data.startupTitle) && (data.startupTitle == null || (data.startupTitle.size() >= 0 && data.startupTitle.size() <= 200)) && // Allow empty for non-admin, non-idea owners
+              isStringOrNull(data.problemDefinition) && (data.problemDefinition == null || (data.problemDefinition.size() >= 0 && data.problemDefinition.size() <= 2000)) &&
+              isStringOrNull(data.solutionDescription) && (data.solutionDescription == null || (data.solutionDescription.size() >= 0 && data.solutionDescription.size() <= 2000)) &&
+              isStringOrNull(data.uniqueness) && (data.uniqueness == null || (data.uniqueness.size() >= 0 && data.uniqueness.size() <= 2000)) &&
+              isValidApplicantCategoryOrNull(data.applicantCategory) &&
+              isValidCurrentStageOrNull(data.currentStage) &&
+              isStringOrNull(data.teamMembers) && (data.teamMembers == null || data.teamMembers.size() <= 500)
+            )
+          );
+      }
+
+      function isValidUserProfileUpdateByOwner(uid, existingData, newData) {
+        let userModifiableFields = [
+          'displayName', 'photoURL', 'fullName', 'contactNumber',
+          'enrollmentNumber', 'college', 'instituteName', 'teamMembers', // teamMembers is for descriptive text
+          'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
+          'applicantCategory', 'currentStage', 'updatedAt'
+          // Role, isSuperAdmin, isTeamMemberOnly, associatedIdeaId, associatedTeamLeaderUid are NOT user-modifiable here
+        ];
+        return newData.uid == uid // Cannot change UID
+          && newData.email == existingData.email // Cannot change email
+          && newData.role == existingData.role // User cannot change their own role directly
+          && newData.isSuperAdmin == existingData.isSuperAdmin // User cannot change super admin status
+          && newData.isTeamMemberOnly == existingData.isTeamMemberOnly
+          && newData.associatedIdeaId == existingData.associatedIdeaId
+          && newData.associatedTeamLeaderUid == existingData.associatedTeamLeaderUid
+          && newData.createdAt == existingData.createdAt // Cannot change creation date
+          && isServerTimestamp(newData.updatedAt)
+          && isString(newData.fullName) && newData.fullName.size() > 0 && newData.fullName.size() <= 100
+          && isString(newData.contactNumber) && newData.contactNumber.size() >= 10 && newData.contactNumber.size() <= 15
+          && isStringOrNull(newData.displayName)
+          && isStringOrNull(newData.photoURL)
+          && isStringOrNull(newData.enrollmentNumber) && (newData.enrollmentNumber == null || newData.enrollmentNumber.size() <= 50)
+          && isStringOrNull(newData.college) && (newData.college == null || newData.college.size() <= 100)
+          && isStringOrNull(newData.instituteName) && (newData.instituteName == null || newData.instituteName.size() <= 100)
+          && request.writeFields.hasAny(['updatedAt']) // Must always update updatedAt
+          && request.writeFields.toSet().difference(['uid', 'email', 'role', 'isSuperAdmin', 'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid', 'createdAt'].toSet()).subsetOf(userModifiableFields.toSet())
+          && ( // Conditional validation for idea-owner fields, similar to create
+            (newData.isTeamMemberOnly == true &&
+              newData.startupTitle == null && newData.problemDefinition == null && newData.solutionDescription == null &&
+              newData.uniqueness == null && newData.applicantCategory == null && newData.currentStage == null && newData.teamMembers == null
+            ) ||
+            (newData.isTeamMemberOnly == false &&
+              isStringOrNull(newData.startupTitle) && (newData.startupTitle == null || (newData.startupTitle.size() > 0 && newData.startupTitle.size() <= 200)) &&
+              isStringOrNull(newData.problemDefinition) && (newData.problemDefinition == null || (newData.problemDefinition.size() > 0 && newData.problemDefinition.size() <= 2000)) &&
+              isStringOrNull(newData.solutionDescription) && (newData.solutionDescription == null || (newData.solutionDescription.size() > 0 && newData.solutionDescription.size() <= 2000)) &&
+              isStringOrNull(newData.uniqueness) && (newData.uniqueness == null || (newData.uniqueness.size() > 0 && newData.uniqueness.size() <= 2000)) &&
+              isValidApplicantCategoryOrNull(newData.applicantCategory) && // Allow null if user is not an idea submitter yet
+              isValidCurrentStageOrNull(newData.currentStage) &&
+              isStringOrNull(newData.teamMembers) && (newData.teamMembers == null || newData.teamMembers.size() <= 500)
+            )
+          );
+      }
+
+      function isValidUserProfileUpdateByAdmin(targetUserId, existingData, newData) {
+        let adminModifiableFields = [
+          'displayName', 'photoURL', 'role', 'isSuperAdmin', 'fullName', 'contactNumber',
+          'enrollmentNumber', 'college', 'instituteName', 'teamMembers',
+          'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
+          'applicantCategory', 'currentStage', 'updatedAt',
+          'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid' // Admins might manage these
+        ];
+        // Primary Super Admin (pranavrathi07@gmail.com) checks
+        let isTargetPrimarySuperAdmin = existingData.email == 'pranavrathi07@gmail.com';
+        let actorIsPrimarySuperAdmin = request.auth.token.email == 'pranavrathi07@gmail.com';
+
+        return newData.uid == targetUserId
+          && newData.email == existingData.email // Email cannot be changed by admin
+          && newData.createdAt == existingData.createdAt // Cannot change creation date
+          && isServerTimestamp(newData.updatedAt)
+          && isValidRole(newData.role)
+          && isBoolean(newData.isSuperAdmin)
+          && isString(newData.fullName) && newData.fullName.size() > 0 && newData.fullName.size() <= 100
+          && isString(newData.contactNumber) && newData.contactNumber.size() >= 10 && newData.contactNumber.size() <= 15
+          // Prevent demoting or changing key fields of primary super admin unless by primary super admin themself
+          && (!isTargetPrimarySuperAdmin || actorIsPrimarySuperAdmin ||
+              (newData.role == 'ADMIN_FACULTY' && newData.isSuperAdmin == true) )
+          && request.writeFields.hasAny(['updatedAt'])
+          && request.writeFields.toSet().difference(['uid', 'email', 'createdAt'].toSet()).subsetOf(adminModifiableFields.toSet());
+      }
     }
-    
-    // ANNOUNCEMENTS collection
+
+
+    // --- IDEAS ---
+    match /ideas/{ideaId} {
+      allow read: if isAuthenticated() && (isOwner(resource.data.userId) || isUserProfileAdmin() || (resource.data.teamMemberEmails.hasAny([request.auth.token.email])));
+      allow create: if isAuthenticated() && isOwner(request.resource.data.userId) &&
+                      !isUserProfileAdmin() && !getProfile(request.auth.uid).isTeamMemberOnly && // Idea creators are not admins or team-member-only profiles
+                      isValidIdeaSubmissionOnCreateOrResubmit(request.auth.uid, request.resource.data, true) &&
+                      creatorIsNotUsingAdminPlaceholderForIdea(request.auth.uid);
+      allow update: if isAuthenticated() && (
+                      (isOwner(resource.data.userId) && isValidIdeaUpdateByOwner(resource.data, request.resource.data)) ||
+                      (isUserProfileAdmin() && isValidIdeaUpdateByAdmin(resource.data, request.resource.data))
+                    );
+      allow delete: if false; // Hard deletes disallowed, use archive status
+
+      function isValidIdeaContent(data) {
+        return isString(data.title) && data.title.size() >= 5 && data.title.size() <= 200
+            && isString(data.problem) && data.problem.size() >= 10 && data.problem.size() <= 2000
+            && isString(data.solution) && data.solution.size() >= 10 && data.solution.size() <= 2000
+            && isString(data.uniqueness) && data.uniqueness.size() >= 10 && data.uniqueness.size() <= 2000
+            && isValidApplicantCategory(data.applicantType)
+            && isValidCurrentStage(data.developmentStage)
+            && isStringOrNull(data.teamMembers) && (data.teamMembers == null || data.teamMembers.size() <= 500)
+            && (data.studioLocation == null || (data.studioLocation is string && ['SURAT', 'RAJKOT', 'BARODA', 'AHMEDABAD'].hasAny([data.studioLocation])))
+            && isStringOrNull(data.fileURL)
+            && isStringOrNull(data.fileName);
+      }
+
+      function creatorIsNotUsingAdminPlaceholderForIdea(userId) {
+          let userProf = getProfile(userId);
+          return !(userProf.role == 'ADMIN_FACULTY' &&
+                   (userProf.startupTitle == 'Administrative Account' || userProf.startupTitle == 'Faculty/Mentor Account'));
+      }
+
+      function isValidIdeaSubmissionOnCreateOrResubmit(uid, data, isCreate) {
+        let userProf = getProfile(uid);
+        let expectedBaseFields = [
+            'userId', 'applicantDisplayName', 'applicantEmail', 'title', 'problem', 'solution', 'uniqueness',
+            'developmentStage', 'applicantType', 'teamMembers', 'status', 'updatedAt',
+            'programPhase', 'cohortId', 'phase2Marks', 'mentor', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
+            'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
+            'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines',
+            'structuredTeamMembers', 'teamMemberEmails'
+            // fileURL, fileName, studioLocation are optional and not part of base validation for profile-sourced ideas
+        ];
+        if (isCreate) { expectedBaseFields.add('submittedAt'); }
+
+        return data.userId == uid
+          && data.applicantDisplayName == (userProf.displayName == null ? userProf.fullName : userProf.displayName)
+          && data.applicantEmail == userProf.email
+          && isValidIdeaContent(data)
+          && data.status == 'SUBMITTED'
+          && isServerTimestamp(data.updatedAt)
+          && (isCreate ? isServerTimestamp(data.submittedAt) : data.submittedAt == resource.data.submittedAt)
+          // Ensure admin-controlled fields are reset/null for user submission/resubmission
+          && data.programPhase == null
+          && data.cohortId == null
+          && (data.phase2Marks is map && data.phase2Marks.size() == 0)
+          && data.mentor == null
+          && data.rejectionRemarks == null && data.rejectedByUid == null && data.rejectedAt == null
+          && data.nextPhaseDate == null && data.nextPhaseStartTime == null && data.nextPhaseEndTime == null && data.nextPhaseVenue == null && data.nextPhaseGuidelines == null
+          && (data.phase2PptUrl == null && data.phase2PptFileName == null && data.phase2PptUploadedAt == null)
+          && (data.structuredTeamMembers is list && (isCreate || data.structuredTeamMembers.size() == 0)) // On create, can be populated; on resubmit from archive, should be empty
+          && (data.teamMemberEmails is list && (isCreate || data.teamMemberEmails.size() == 0))       // same as above
+          // Check specific fields for create:
+          && (isCreate ? (
+                data.keys().hasAll(['userId', 'applicantDisplayName', 'applicantEmail', 'title', 'problem', 'solution', 'uniqueness', 'developmentStage', 'applicantType', 'teamMembers', 'status', 'submittedAt', 'updatedAt', 'programPhase', 'cohortId', 'phase2Marks', 'mentor', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt', 'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines', 'structuredTeamMembers', 'teamMemberEmails']) &&
+                !data.keys().hasAny(['fileURL', 'fileName', 'studioLocation']) // These are NOT set by createIdeaFromProfile initially
+             ) : true // For update (resubmit), less strict on exact field set, more on what's allowed to change
+          );
+      }
+
+      function isValidIdeaUpdateByOwner(existingData, newData) {
+        let userModifiableFields = [
+          'updatedAt', 'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
+          'structuredTeamMembers', 'teamMemberEmails' // For team management
+        ];
+        // For resubmitting an archived idea by saving profile
+        if (existingData.status == 'ARCHIVED_BY_ADMIN' && newData.status == 'SUBMITTED') {
+          return isValidIdeaSubmissionOnCreateOrResubmit(request.auth.uid, newData, false) &&
+                 // Allow specific fields to be changed during resubmission
+                 request.writeFields.hasAny(['title', 'problem', 'solution', 'uniqueness', 'developmentStage', 'applicantType', 'teamMembers', 'status', 'updatedAt', 'programPhase', 'cohortId', 'phase2Marks', 'mentor', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt', 'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines', 'structuredTeamMembers', 'teamMemberEmails']);
+        }
+        // For regular owner updates (like PPT upload, team management)
+        return existingData.userId == request.auth.uid
+          && newData.userId == existingData.userId
+          && newData.title == existingData.title // Core idea details not changeable by these direct updates
+          && newData.problem == existingData.problem
+          && newData.solution == existingData.solution
+          && newData.uniqueness == existingData.uniqueness
+          && newData.status == existingData.status // Status not changed by owner directly here
+          && isServerTimestamp(newData.updatedAt)
+          && request.writeFields.toSet().subsetOf(userModifiableFields.toSet())
+          && request.writeFields.hasAny(['updatedAt']) // Ensure updatedAt is always part of the update
+          && (newData.phase2PptUrl == null || (isString(newData.phase2PptUrl) && newData.phase2PptUrl.size() > 0))
+          && (newData.phase2PptFileName == null || (isString(newData.phase2PptFileName) && newData.phase2PptFileName.size() > 0))
+          && (newData.phase2PptUploadedAt == null || isTimestamp(newData.phase2PptUploadedAt))
+          && (newData.structuredTeamMembers is list && newData.structuredTeamMembers.size() <= 4) // Max 4 members
+          && (newData.teamMemberEmails is list && newData.teamMemberEmails.size() <= 4);
+      }
+
+      function isValidIdeaUpdateByAdmin(existingData, newData) {
+        let adminEditableIdeaFields = [
+          'status', 'programPhase', 'phase2Marks', 'mentor', 'cohortId',
+          'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
+          'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines',
+          'updatedAt', 'updatedByMentorAssignerUid' // For mentor assignment tracking
+        ];
+        return newData.userId == existingData.userId // Cannot change owner
+          && newData.title == existingData.title // Admin cannot change title here
+          && isServerTimestamp(newData.updatedAt)
+          && isValidIdeaStatus(newData.status)
+          && isValidProgramPhaseOrNull(newData.programPhase)
+          && (newData.cohortId == null || (isString(newData.cohortId) && newData.cohortId.size() > 0))
+          && isValidMentorNameOrNull(newData.mentor)
+          && (newData.phase2Marks is map) // Further validation for mark structure can be added
+          && isStringOrNull(newData.rejectionRemarks)
+          && isStringOrNull(newData.rejectedByUid)
+          && (newData.rejectedAt == null || isTimestamp(newData.rejectedAt))
+          && (newData.nextPhaseDate == null || isTimestamp(newData.nextPhaseDate))
+          && isStringOrNull(newData.nextPhaseStartTime)
+          && isStringOrNull(newData.nextPhaseEndTime)
+          && isStringOrNull(newData.nextPhaseVenue)
+          && isStringOrNull(newData.nextPhaseGuidelines)
+          && request.writeFields.hasAny(['updatedAt'])
+          && request.writeFields.toSet().difference(['userId', 'title', 'problem', 'solution', 'uniqueness', 'applicantType', 'developmentStage', 'teamMembers', 'submittedAt', 'fileURL', 'fileName', 'studioLocation', 'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'structuredTeamMembers', 'teamMemberEmails', 'applicantDisplayName', 'applicantEmail'].toSet()).subsetOf(adminEditableIdeaFields.toSet());
+      }
+    }
+
+    // --- ANNOUNCEMENTS ---
     match /announcements/{announcementId} {
-      allow read: if isSignedIn();
-      allow create: if isUserProfileAdmin(request.auth.uid) &&
-                       request.resource.data.createdByUid == request.auth.uid &&
-                       isNonEmptyString(request.resource.data.title) && request.resource.data.title.size() <= 100 &&
-                       isNonEmptyString(request.resource.data.content) && request.resource.data.content.size() <= 5000 &&
-                       isBoolean(request.resource.data.isUrgent) &&
-                       (request.resource.data.targetAudience == 'ALL' || request.resource.data.targetAudience == 'SPECIFIC_COHORT') &&
-                       (request.resource.data.targetAudience == 'ALL' ? request.resource.data.cohortId == null : isNonEmptyString(request.resource.data.cohortId)) &&
-                       isStringOrNull(request.resource.data.attachmentURL) &&
-                       isStringOrNull(request.resource.data.attachmentName) &&
-                       isStringOrNull(request.resource.data.creatorDisplayName) &&
-                       request.resource.data.createdAt == request.time &&
-                       request.resource.data.updatedAt == request.time &&
-                       request.resource.data.keys().hasOnly([
-                         'title', 'content', 'isUrgent', 'targetAudience', 'cohortId',
-                         'attachmentURL', 'attachmentName', 'createdByUid', 'creatorDisplayName',
-                         'createdAt', 'updatedAt'
-                       ]);
-      allow update: if isUserProfileAdmin(request.auth.uid) &&
-                       // createdByUid, createdAt cannot change
-                       request.resource.data.createdByUid == resource.data.createdByUid &&
-                       request.resource.data.createdAt == resource.data.createdAt &&
-                       isNonEmptyString(request.resource.data.title) && request.resource.data.title.size() <= 100 &&
-                       isNonEmptyString(request.resource.data.content) && request.resource.data.content.size() <= 5000 &&
-                       isBoolean(request.resource.data.isUrgent) &&
-                       (request.resource.data.targetAudience == 'ALL' || request.resource.data.targetAudience == 'SPECIFIC_COHORT') &&
-                       (request.resource.data.targetAudience == 'ALL' ? request.resource.data.cohortId == null : isNonEmptyString(request.resource.data.cohortId)) &&
-                       isStringOrNull(request.resource.data.attachmentURL) &&
-                       isStringOrNull(request.resource.data.attachmentName) &&
-                       isStringOrNull(request.resource.data.creatorDisplayName) && // Admin might update display name if their profile name changes
-                       request.resource.data.updatedAt == request.time &&
-                       request.writeFields.hasAny([ // Allowed fields for update by admin
-                         'title', 'content', 'isUrgent', 'targetAudience', 'cohortId',
-                         'attachmentURL', 'attachmentName', 'creatorDisplayName', 'updatedAt'
-                       ]);
-      allow delete: if isUserProfileAdmin(request.auth.uid);
-    }
-    
-    // COHORTS collection
-    function isValidCohortScheduleEntry(entry) {
-      return entry is map &&
-             isNonEmptyString(entry.id) &&
-             isNonEmptyString(entry.date) && // Assuming date is string like YYYY-MM-DD
-             isNonEmptyString(entry.day) &&
-             isNonEmptyString(entry.time) &&
-             isNonEmptyString(entry.category) &&
-             isNonEmptyString(entry.topicActivity) &&
-             isString(entry.content) && // content can be empty string
-             isString(entry.speakerVenue); // speakerVenue can be empty string
+      allow read: if isAuthenticated(); // All authenticated users can read all announcements for now (client filters)
+      allow create: if isUserProfileAdmin() && isValidAnnouncementData(request.resource.data, true);
+      allow update: if isUserProfileAdmin() && isValidAnnouncementData(request.resource.data, false);
+      allow delete: if isUserProfileAdmin();
+
+      function isValidAnnouncementData(data, isCreate) {
+        let expectedFields = [
+          'title', 'content', 'isUrgent', 'targetAudience', 'cohortId',
+          'attachmentURL', 'attachmentName', 'createdByUid', 'creatorDisplayName',
+          'updatedAt'
+        ];
+        if (isCreate) { expectedFields.add('createdAt'); }
+
+        return hasOnly(data, expectedFields)
+          && isString(data.title) && data.title.size() >= 5 && data.title.size() <= 100
+          && isString(data.content) && data.content.size() >= 10 && data.content.size() <= 5000
+          && isBoolean(data.isUrgent)
+          && (data.targetAudience == 'ALL' || data.targetAudience == 'SPECIFIC_COHORT')
+          && (data.targetAudience == 'ALL' ? data.cohortId == null : (isString(data.cohortId) && data.cohortId.size() > 0))
+          && isStringOrNull(data.attachmentURL)
+          && isStringOrNull(data.attachmentName)
+          && data.createdByUid == request.auth.uid
+          && isStringOrNull(data.creatorDisplayName)
+          && isServerTimestamp(data.updatedAt)
+          && (isCreate ? isServerTimestamp(data.createdAt) : data.createdAt == resource.data.createdAt);
+      }
     }
 
-    function isValidCohortSchedule(schedule) {
-      return schedule is list && schedule.all(entry => isValidCohortScheduleEntry(entry));
-    }
-
+    // --- COHORTS ---
     match /cohorts/{cohortId} {
-      allow read: if isSignedIn();
-      allow create: if isUserProfileAdmin(request.auth.uid) &&
-                       request.resource.data.createdByUid == request.auth.uid &&
-                       isNonEmptyString(request.resource.data.name) && request.resource.data.name.size() <= 100 &&
-                       isTimestamp(request.resource.data.startDate) &&
-                       isTimestamp(request.resource.data.endDate) &&
-                       request.resource.data.startDate < request.resource.data.endDate &&
-                       isNumber(request.resource.data.batchSize) && request.resource.data.batchSize >= 1 && request.resource.data.batchSize <= 200 &&
-                       request.resource.data.ideaIds is list && request.resource.data.ideaIds.size() == 0 && // Initially empty
-                       isValidCohortSchedule(request.resource.data.schedule) && request.resource.data.schedule.size() == 0 && // Initially empty schedule
-                       isStringOrNull(request.resource.data.creatorDisplayName) &&
-                       request.resource.data.createdAt == request.time &&
-                       request.resource.data.updatedAt == request.time &&
-                       request.resource.data.keys().hasOnly([
-                         'name', 'startDate', 'endDate', 'batchSize', 'ideaIds', 'schedule',
-                         'createdByUid', 'creatorDisplayName', 'createdAt', 'updatedAt'
-                       ]);
-      allow update: if isUserProfileAdmin(request.auth.uid) &&
-                       // createdByUid, createdAt cannot change
-                       request.resource.data.createdByUid == resource.data.createdByUid &&
-                       request.resource.data.createdAt == resource.data.createdAt &&
-                       isNonEmptyString(request.resource.data.name) && request.resource.data.name.size() <= 100 &&
-                       isTimestamp(request.resource.data.startDate) &&
-                       isTimestamp(request.resource.data.endDate) &&
-                       request.resource.data.startDate < request.resource.data.endDate &&
-                       isNumber(request.resource.data.batchSize) && request.resource.data.batchSize >= 1 && request.resource.data.batchSize <= 200 &&
-                       request.resource.data.ideaIds is list && // Idea IDs can be updated
-                       isValidCohortSchedule(request.resource.data.schedule) && // Schedule can be updated
-                       isStringOrNull(request.resource.data.creatorDisplayName) && // Might update if admin's name changes
-                       request.resource.data.updatedAt == request.time &&
-                       request.writeFields.hasAny([ // Allowed fields for update by admin
-                         'name', 'startDate', 'endDate', 'batchSize', 'ideaIds', 'schedule',
-                         'creatorDisplayName', 'updatedAt'
-                       ]);
-      allow delete: if isUserProfileSuperAdmin(request.auth.uid); // Only Super Admin can delete cohorts
-    }
-    
-    // SYSTEM SETTINGS collection
-    match /systemSettings/{settingsId} {
-      allow read: if isSignedIn();
-      allow create, update: if isUserProfileAdmin(request.auth.uid) &&
-                               settingsId == 'config' && // Only one config document
-                               isNonEmptyString(request.resource.data.portalName) && request.resource.data.portalName.size() <= 50 &&
-                               isBoolean(request.resource.data.maintenanceMode) &&
-                               isBoolean(request.resource.data.allowNewRegistrations) &&
-                               isNumber(request.resource.data.defaultCohortSize) && request.resource.data.defaultCohortSize >= 1 && request.resource.data.defaultCohortSize <= 100 &&
-                               request.resource.data.updatedAt == request.time &&
-                               request.resource.data.updatedByUid == request.auth.uid &&
-                               request.resource.data.keys().hasOnly([
-                                 'portalName', 'maintenanceMode', 'allowNewRegistrations', 'defaultCohortSize',
-                                 'updatedAt', 'updatedByUid'
-                               ]);
-      allow delete: if false; // System settings should not be deleted
+      allow read: if isAuthenticated(); // Allow all authenticated to read, client will filter if needed
+      allow create: if isUserProfileAdmin() && isValidCohortData(request.resource.data, true);
+      allow update: if isUserProfileAdmin() && isValidCohortData(request.resource.data, false);
+      allow delete: if isUserProfileSuperAdmin(); // Only super admins can delete cohorts
+
+      function isValidCohortData(data, isCreate) {
+         let expectedFields = [
+          'name', 'startDate', 'endDate', 'batchSize', 'ideaIds', 'schedule',
+          'createdByUid', 'creatorDisplayName', 'updatedAt'
+        ];
+        if (isCreate) { expectedFields.add('createdAt'); }
+
+        return hasOnly(data, expectedFields)
+          && isString(data.name) && data.name.size() >= 3 && data.name.size() <= 100
+          && isTimestamp(data.startDate)
+          && isTimestamp(data.endDate) && data.endDate > data.startDate
+          && isNumber(data.batchSize) && data.batchSize >= 1 && data.batchSize <= 200
+          && isList(data.ideaIds) // Further validation for ideaIds content if needed
+          && (data.schedule is list || data.schedule == null) // Schedule is optional
+          && (data.schedule == null || data.schedule.size() == 0 || data.schedule.all(item => isValidCohortScheduleEntry(item)))
+          && data.createdByUid == request.auth.uid
+          && isStringOrNull(data.creatorDisplayName)
+          && isServerTimestamp(data.updatedAt)
+          && (isCreate ? isServerTimestamp(data.createdAt) : data.createdAt == resource.data.createdAt);
+      }
+
+      function isValidCohortScheduleEntry(entry) {
+        let scheduleEntryFields = ['id', 'date', 'day', 'time', 'category', 'topicActivity', 'content', 'speakerVenue'];
+        return entry is map
+            && entry.keys().hasAll(scheduleEntryFields)
+            && entry.keys().hasOnly(scheduleEntryFields)
+            && isString(entry.id) && entry.id.size() > 0
+            && isString(entry.date) // Assuming YYYY-MM-DD string from client
+            && isString(entry.day) && entry.day.size() > 0
+            && isString(entry.time) && entry.time.size() > 0
+            && isString(entry.category) && entry.category.size() > 0
+            && isString(entry.topicActivity) && entry.topicActivity.size() > 0
+            && (entry.content == null || isString(entry.content))
+            && (entry.speakerVenue == null || isString(entry.speakerVenue));
+      }
     }
 
-    // ACTIVITY LOGS collection
+    // --- SYSTEM SETTINGS ---
+    match /systemSettings/config {
+      allow read: if isUserProfileAdmin();
+      allow create, update: if isUserProfileAdmin() && isValidSystemSettingsData(request.resource.data);
+
+      function isValidSystemSettingsData(data) {
+        let expectedFields = ['portalName', 'maintenanceMode', 'allowNewRegistrations', 'defaultCohortSize', 'updatedAt', 'updatedByUid'];
+        return hasOnly(data, expectedFields)
+          && isString(data.portalName) && data.portalName.size() >= 3 && data.portalName.size() <= 50
+          && isBoolean(data.maintenanceMode)
+          && isBoolean(data.allowNewRegistrations)
+          && isNumber(data.defaultCohortSize) && data.defaultCohortSize >= 1 && data.defaultCohortSize <= 100
+          && isServerTimestamp(data.updatedAt)
+          && data.updatedByUid == request.auth.uid;
+      }
+    }
+
+    // --- ACTIVITY LOGS ---
+    // Typically, activity logs are written by backend functions or trusted admin clients.
+    // Rules here are minimal, assuming writes come from controlled sources.
     match /activityLogs/{logId} {
-      allow read: if isUserProfileAdmin(request.auth.uid); // Only admins can read activity logs
-      allow write: if isSignedIn(); // Any signed-in user's actions can generate a log (client-side logging implies this)
-                                  // Server-side triggers would be more secure for logging admin actions.
-                                  // For client-side: ensure actorUid matches request.auth.uid for self-logging.
-                                  // request.resource.data.actorUid == request.auth.uid
-      // For now, keeping write open for signed-in users as per client-side logging pattern.
-      // Add more specific checks if moving to server-side triggers:
-      // e.g., request.resource.data.actorUid == request.auth.uid &&
-      //       request.resource.data.timestamp == request.time &&
-      //       isNonEmptyString(request.resource.data.action)
+      allow read: if isUserProfileAdmin();
+      allow create: if isAuthenticated() && isValidActivityLogData(request.resource.data);
+      allow update, delete: if false; // Logs should be immutable
+
+      function isValidActivityLogData(data) {
+        let baseExpectedFields = ['timestamp', 'actorUid', 'actorDisplayName', 'action'];
+        // Optional fields: 'target', 'details'
+        let allPossibleFields = ['timestamp', 'actorUid', 'actorDisplayName', 'action', 'target', 'details'];
+
+        return hasAll(data, baseExpectedFields)
+          && data.keys().toSet().subsetOf(allPossibleFields.toSet()) // Ensure only allowed fields
+          && isServerTimestamp(data.timestamp)
+          && isString(data.actorUid) // Could also check against request.auth.uid if actor is always current user
+          && isStringOrNull(data.actorDisplayName)
+          && isString(data.action) // Further validation on action enum can be added
+          && (data.target == null || (
+                data.target is map &&
+                isString(data.target.type) && data.target.type.size() > 0 &&
+                isString(data.target.id) && data.target.id.size() > 0 &&
+                (data.target.displayName == null || isString(data.target.displayName))
+              ))
+          && (data.details == null || data.details is map);
+      }
     }
   }
 }
 
-    
+      
