@@ -463,12 +463,12 @@ export default function StudentDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             <div>
                 <Label className="text-sm font-semibold text-muted-foreground">Submission Status</Label>
-                <p><Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{idea.status.replace(/_/g, ' ').toLowerCase()}</Badge></p>
+                <div><Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{idea.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
             </div>
             {idea.programPhase && (
                 <div>
                 <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
-                <p><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></p>
+                <div><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></div>
                 </div>
             )}
             </div>
