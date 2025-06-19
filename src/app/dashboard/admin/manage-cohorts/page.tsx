@@ -18,7 +18,8 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format, isValid } from 'date-fns';
 import { PlusCircle, Users, CalendarRange, Edit3, Trash2, FileText, Download, Save } from 'lucide-react';
-import type { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase/firestore'; // Correctly import Timestamp
+import type { Timestamp as FirestoreTimestamp } from 'firebase/firestore'; // Use FirestoreTimestamp for type clarity if needed
 import { useForm, useFieldArray, Controller, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -237,12 +238,12 @@ export default function ManageCohortsPage() {
     setIsScheduleDialogOpen(true);
   };
   
-  const formatDateForDisplay = (timestampOrDateString: Timestamp | Date | string | undefined): string => {
+  const formatDateForDisplay = (timestampOrDateString: FirestoreTimestamp | Date | string | undefined): string => {
     if (!timestampOrDateString) return 'N/A';
     
     let dateToFormat: Date;
-    if ((timestampOrDateString as Timestamp)?.toDate) {
-      dateToFormat = (timestampOrDateString as Timestamp).toDate();
+    if ((timestampOrDateString as FirestoreTimestamp)?.toDate) {
+      dateToFormat = (timestampOrDateString as FirestoreTimestamp).toDate();
     } else if (timestampOrDateString instanceof Date) {
       dateToFormat = timestampOrDateString;
     } else if (typeof timestampOrDateString === 'string') {
@@ -544,3 +545,4 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
+
