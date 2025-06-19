@@ -9,7 +9,7 @@ import { Users, Settings, BarChart3, Megaphone, UserCog, Loader2, FileText, BarC
 import { useAuth } from '@/contexts/AuthContext';
 import { getTotalUsersCount, getTotalIdeasCount, getPendingIdeasCount, getIdeasAssignedToMentor } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, MentorName } from '@/types';
-import { AVAILABLE_MENTORS } from '@/types';
+import { AVAILABLE_MENTOR_NAMES, AVAILABLE_MENTORS_DATA } from '@/types'; // Updated to use AVAILABLE_MENTOR_NAMES and AVAILABLE_MENTORS_DATA
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -88,13 +88,15 @@ export default function AdminDashboard() {
     if (userProfile?.role === 'ADMIN_FACULTY') {
       fetchStats();
 
-      const mentorNameFromProfile = (userProfile.displayName || userProfile.fullName) as MentorName;
-      const isRecognizedMentor = AVAILABLE_MENTORS.includes(mentorNameFromProfile);
+      const userProfileName = userProfile.displayName || userProfile.fullName;
+      // Check if the admin's profile name matches any name in AVAILABLE_MENTORS_DATA
+      const matchedMentor = AVAILABLE_MENTORS_DATA.find(mentor => mentor.name === userProfileName);
       
-      if (isRecognizedMentor) {
-        setCurrentMentorName(mentorNameFromProfile);
+      if (matchedMentor) {
+        const mentorName = matchedMentor.name as MentorName; // Cast to MentorName
+        setCurrentMentorName(mentorName);
         setLoadingMentorIdeas(true);
-        getIdeasAssignedToMentor(mentorNameFromProfile)
+        getIdeasAssignedToMentor(mentorName)
           .then(ideas => {
             setAssignedMentorIdeas(ideas);
           })
@@ -139,9 +141,6 @@ export default function AdminDashboard() {
             <div className="text-2xl font-bold">
               <StatDisplay value={stats.totalUsers} />
             </div>
-            {/* <p className="text-xs text-muted-foreground">
-              +10 this week 
-            </p> */}
           </CardContent>
         </Card>
          <Card className="hover:shadow-lg transition-shadow">
@@ -207,7 +206,6 @@ export default function AdminDashboard() {
                       <TableHead className="hidden md:table-cell">Applicant</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="hidden sm:table-cell">Phase</TableHead>
-                      {/* Add a "View Details" column later if needed */}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -261,3 +259,4 @@ export default function AdminDashboard() {
   );
 }
 
+    

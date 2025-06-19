@@ -10,11 +10,11 @@ import {
     deleteIdeaSubmission as deleteIdeaSubmissionFS,
     submitOrUpdatePhase2Mark,
     assignMentorToIdea as assignMentorFS,
-    getAllCohortsStream, // Added
-    assignIdeaToCohort as assignIdeaToCohortFS // Added
+    getAllCohortsStream, 
+    assignIdeaToCohort as assignIdeaToCohortFS 
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types'; // Added Cohort
-import { AVAILABLE_MENTORS } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types'; 
+import { AVAILABLE_MENTOR_NAMES } from '@/types'; // Updated to use AVAILABLE_MENTOR_NAMES
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -39,7 +39,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon } from 'lucide-react'; // Added GroupIcon
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon } from 'lucide-react'; 
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -51,7 +51,7 @@ const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION'
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
 const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__"; 
-const UNASSIGN_COHORT_TRIGGER_VALUE = "__UNASSIGN_COHORT__"; // Added
+const UNASSIGN_COHORT_TRIGGER_VALUE = "__UNASSIGN_COHORT__"; 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null | undefined): string => {
   if (!phase || phase === NO_PHASE_VALUE) return 'N/A';
@@ -77,16 +77,16 @@ export default function ViewApplicationsPage() {
   const { toast } = useToast();
 
   const [applications, setApplications] = useState<IdeaSubmission[]>([]);
-  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]); // Added for cohort selection
+  const [allCohorts, setAllCohorts] = useState<Cohort[]>([]); 
   const [loadingApplications, setLoadingApplications] = useState(true);
-  const [loadingCohorts, setLoadingCohorts] = useState(true); // Added
+  const [loadingCohorts, setLoadingCohorts] = useState(true); 
   const [selectedApplication, setSelectedApplication] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
   const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
   const [isSavingMark, setIsSavingMark] = useState(false);
   const [isAssigningMentor, setIsAssigningMentor] = useState(false);
-  const [isAssigningCohort, setIsAssigningCohort] = useState(false); // Added
+  const [isAssigningCohort, setIsAssigningCohort] = useState(false); 
 
   const [isRejectionDialogVisible, setIsRejectionDialogVisible] = useState(false);
   const [currentIdeaForRejection, setCurrentIdeaForRejection] = useState<IdeaSubmission | null>(null);
@@ -115,7 +115,7 @@ export default function ViewApplicationsPage() {
         router.push('/dashboard');
       } else {
         fetchApplications();
-        fetchCohorts(); // Added
+        fetchCohorts(); 
       }
     }
   }, [userProfile, authLoading, initialLoadComplete, router, toast]);
@@ -137,7 +137,7 @@ export default function ViewApplicationsPage() {
                 updatedVersionInList.programPhase !== selectedApplication.programPhase ||
                 updatedVersionInList.status !== selectedApplication.status ||
                 updatedVersionInList.mentor !== selectedApplication.mentor ||
-                updatedVersionInList.cohortId !== selectedApplication.cohortId || // Added
+                updatedVersionInList.cohortId !== selectedApplication.cohortId || 
                 (updatedVersionInList.phase2Marks && selectedApplication.phase2Marks && JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks)) ||
                 (updatedVersionInList.updatedAt && selectedApplication.updatedAt && updatedVersionInList.updatedAt.toMillis() !== selectedApplication.updatedAt.toMillis());
 
@@ -165,7 +165,7 @@ export default function ViewApplicationsPage() {
     }
   };
 
-  const fetchCohorts = () => { // Added function
+  const fetchCohorts = () => { 
     if (userProfile?.role === 'ADMIN_FACULTY') {
       setLoadingCohorts(true);
       const unsubscribe = getAllCohortsStream((fetchedCohorts) => {
@@ -307,7 +307,7 @@ export default function ViewApplicationsPage() {
             currentIdeaForRejection.title,
             'NOT_SELECTED',
             userProfile,
-            null, // No phase for rejection
+            null, 
             rejectionRemarksInput
         );
         toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
@@ -406,7 +406,7 @@ export default function ViewApplicationsPage() {
     }
   };
 
-  const handleAssignCohort = async (idea: IdeaSubmission, newCohortId: string | null) => { // Added function
+  const handleAssignCohort = async (idea: IdeaSubmission, newCohortId: string | null) => { 
     if (!userProfile || !userProfile.isSuperAdmin) {
         toast({ title: "Unauthorized", description: "Only Super Admins can assign ideas to cohorts.", variant: "destructive" });
         return;
@@ -415,11 +415,11 @@ export default function ViewApplicationsPage() {
     try {
       await assignIdeaToCohortFS(idea.id!, idea.title, newCohortId, userProfile);
       toast({ title: "Cohort Assignment Updated", description: `Idea "${idea.title}" ${newCohortId ? 'assigned to cohort' : 'unassigned from cohort'}.` });
-      fetchApplications(); // Re-fetch to update list with new cohortId
+      fetchApplications(); 
     } catch (error: any) {
       console.error("Error assigning idea to cohort:", error);
       toast({ title: "Cohort Assignment Error", description: error.message || "Could not update cohort assignment.", variant: "destructive" });
-      fetchApplications(); // Re-fetch to revert optimistic update on error
+      fetchApplications(); 
     } finally {
       setIsAssigningCohort(false);
     }
@@ -547,7 +547,7 @@ export default function ViewApplicationsPage() {
     const csvRows = [headers.join(',')];
 
     applications.forEach(app => {
-      const assignedCohort = allCohorts.find(c => c.id === app.cohortId); // Find cohort name
+      const assignedCohort = allCohorts.find(c => c.id === app.cohortId); 
       const row = [
         escapeCsvField(app.id),
         escapeCsvField(app.title),
@@ -562,7 +562,7 @@ export default function ViewApplicationsPage() {
         escapeCsvField(app.status.replace(/_/g, ' ')),
         escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
         escapeCsvField(app.mentor || 'N/A'),
-        escapeCsvField(assignedCohort ? assignedCohort.name : (app.cohortId ? 'Cohort ID: '+app.cohortId : 'N/A')), // Added cohort name
+        escapeCsvField(assignedCohort ? assignedCohort.name : (app.cohortId ? 'Cohort ID: '+app.cohortId : 'N/A')), 
         escapeCsvField(app.rejectionRemarks),
         escapeCsvField(app.studioLocation),
         escapeCsvField(app.fileURL),
@@ -960,7 +960,7 @@ export default function ViewApplicationsPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value={UNASSIGN_MENTOR_TRIGGER_VALUE}>Unassign Mentor</SelectItem>
-                                            {AVAILABLE_MENTORS.map(mentor => (
+                                            {AVAILABLE_MENTOR_NAMES.map(mentor => (
                                                 <SelectItem key={mentor} value={mentor}>{mentor}</SelectItem>
                                             ))}
                                         </SelectContent>

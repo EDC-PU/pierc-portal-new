@@ -6,13 +6,34 @@ export type Role = 'STUDENT' | 'EXTERNAL_USER' | 'ADMIN_FACULTY' | null;
 export type ApplicantCategory = 'PARUL_STUDENT' | 'PARUL_STAFF' | 'PARUL_ALUMNI' | 'OTHERS';
 export type CurrentStage = 'IDEA' | 'PROTOTYPE_STAGE' | 'STARTUP_STAGE';
 
-export const AVAILABLE_MENTORS = [
-  'Prashant Khanna', 'Anup Chaudhari', 'Riddhi Bagha', 'Sonal Sudani',
-  'Jay Sudani', 'Nikhil Jumde', 'Vishal SIngh', 'Hardik Kharva',
-  'Tushar Thakur', 'Pancham Baraiya', 'Paritosh Sharma', 'Juned Shaikh'
+export const AVAILABLE_MENTORS_DATA = [
+  { name: 'Prashant Khanna', email: 'prashant.khanna8747@paruluniversity.ac.in' },
+  { name: 'Riddhi Bagha', email: 'riddhi.bagha29080@paruluniversity.ac.in' },
+  { name: 'Nikhil Jumde', email: 'nikhil.jumade24167@paruluniversity.ac.in' },
+  { name: 'Jay Sudani', email: 'jay.sudani@paruluniversity.ac.in' },
+  { name: 'Hardik Kharva', email: 'hardik.kharva2899@paruluniversity.ac.in' },
+  { name: 'Sonal Sudani', email: 'sonal.sudani23321@paruluniversity.ac.in' },
+  { name: 'Pancham Baraiya', email: 'panchamkumar.baraiya28771@paruluniversity.ac.in' },
+  { name: 'Juned Shaikh', email: 'juned.shaikh32161@paruluniversity.ac.in' },
+  // Add other mentors from the original AVAILABLE_MENTORS list if they are not in the email list,
+  // or provide their emails to complete the data structure.
+  // For now, I'll only include those with emails provided in the request.
+  // Assuming 'Anup Chaudhari', 'Vishal SIngh', 'Tushar Thakur', 'Paritosh Sharma'
+  // are also mentors but their emails weren't specified for this mapping.
+  // If they should also be assignable, they need to be in this structure.
+  // For simplicity, let's stick to the provided list for now for AVAILABLE_MENTORS_DATA.
 ] as const;
 
-export type MentorName = typeof AVAILABLE_MENTORS[number];
+// Derive MentorName from the 'name' property of objects in AVAILABLE_MENTORS_DATA
+export type MentorName = typeof AVAILABLE_MENTORS_DATA[number]['name'];
+
+// This array will contain just the names for easier use in dropdowns or when only names are needed.
+export const AVAILABLE_MENTOR_NAMES: MentorName[] = AVAILABLE_MENTORS_DATA.map(m => m.name);
+
+// The original AVAILABLE_MENTORS array (now AVAILABLE_MENTOR_NAMES) is still useful for type consistency
+// if other parts of the code rely on an array of strings.
+// For clarity, I'm keeping the old export name for now if other files use it directly.
+export const AVAILABLE_MENTORS = AVAILABLE_MENTOR_NAMES;
 
 
 export interface UserProfile {
@@ -31,7 +52,7 @@ export interface UserProfile {
   solutionDescription: string;
   uniqueness: string;
 
-  teamMembers: string; // Comma-separated names, or descriptive text like "Solo". This is the original free-text field.
+  teamMembers: string; 
 
   enrollmentNumber?: string;
   college?: string;
@@ -41,7 +62,6 @@ export interface UserProfile {
   updatedAt: Timestamp;
   isSuperAdmin: boolean;
 
-  // Fields for team member identification
   isTeamMemberOnly?: boolean;
   associatedIdeaId?: string;
   associatedTeamLeaderUid?: string;
@@ -57,28 +77,28 @@ export interface AdminMark {
 }
 
 export interface TeamMember {
-  id: string; // Unique ID for the team member entry, generated client-side (e.g., nanoid or user's UID after profile setup)
+  id: string; 
   name: string;
   email: string;
   phone: string;
   institute: string;
   department: string;
-  enrollmentNumber?: string; // Optional
+  enrollmentNumber?: string; 
 }
 
 export interface IdeaSubmission {
   id?: string;
-  userId: string; // UID of the idea owner/leader
+  userId: string; 
   title: string;
-  category: string; // This seems to be covered by applicantType, but keeping for now if it has a different meaning.
+  category: string; 
   problem: string;
   solution: string;
   uniqueness: string;
   developmentStage: CurrentStage;
   applicantType?: ApplicantCategory;
-  teamMembers?: string; // Original free-text field for initial team description from profile
-  structuredTeamMembers?: TeamMember[]; // New field for structured team member data
-  teamMemberEmails?: string[]; // Flat list of emails for querying
+  teamMembers?: string; 
+  structuredTeamMembers?: TeamMember[]; 
+  teamMemberEmails?: string[]; 
 
   fileURL?: string;
   fileName?: string;
@@ -87,18 +107,17 @@ export interface IdeaSubmission {
   status: IdeaStatus;
   programPhase: ProgramPhase | null;
   phase2Marks?: { [adminUid: string]: AdminMark };
-  mentor?: MentorName; // Mentor assigned if in COHORT phase
-  cohortId?: string; // ID of the Cohort this idea is assigned to
+  mentor?: MentorName; 
+  cohortId?: string; 
 
   rejectionRemarks?: string;
-  rejectedByUid?: string; // UID of admin who rejected
+  rejectedByUid?: string; 
   rejectedAt?: Timestamp;
 
   phase2PptUrl?: string;
   phase2PptFileName?: string;
   phase2PptUploadedAt?: Timestamp;
 
-  // Fields for next phase meeting details
   nextPhaseDate?: Timestamp | null;
   nextPhaseStartTime?: string | null;
   nextPhaseEndTime?: string | null;
@@ -108,7 +127,6 @@ export interface IdeaSubmission {
   submittedAt: Timestamp;
   updatedAt: Timestamp;
 
-  // Denormalized fields for easier display
   applicantDisplayName?: string;
   applicantEmail?: string;
 }
@@ -163,57 +181,49 @@ export interface SystemSettings {
   updatedByUid?: string;
 }
 
-// Activity Logging Types
 export type ActivityLogAction =
-  // User Account & Profile
   | 'USER_PROFILE_CREATED'
-  | 'USER_PROFILE_UPDATED' // Could be self or by admin
+  | 'USER_PROFILE_UPDATED' 
   | 'USER_SIGNED_IN'
   | 'USER_SIGNED_OUT'
   | 'USER_PASSWORD_RESET_REQUESTED'
   | 'USER_ACCOUNT_DELETED_SELF'
   | 'USER_ACCOUNT_DELETED_BY_ADMIN'
-  // Idea Submission & Management (by user)
-  | 'IDEA_SUBMITTED' // Typically part of profile creation for idea owners
+  | 'IDEA_SUBMITTED' 
   | 'IDEA_PPT_UPLOADED'
   | 'IDEA_TEAM_MEMBER_ADDED'
   | 'IDEA_TEAM_MEMBER_UPDATED'
   | 'IDEA_TEAM_MEMBER_REMOVED'
   | 'USER_GENERATED_PITCH_DECK_OUTLINE'
-  // Admin - User Management
   | 'ADMIN_USER_ROLE_UPDATED'
-  // Admin - Idea Management
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
   | 'ADMIN_IDEA_MENTOR_ASSIGNED'
   | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
   | 'ADMIN_IDEA_DELETED'
   | 'ADMIN_IDEA_ASSIGNED_TO_COHORT'
-  // Admin - Announcements
   | 'ADMIN_ANNOUNCEMENT_CREATED'
   | 'ADMIN_ANNOUNCEMENT_UPDATED'
   | 'ADMIN_ANNOUNCEMENT_DELETED'
-  // Admin - Cohorts
   | 'ADMIN_COHORT_CREATED'
   | 'ADMIN_COHORT_UPDATED' 
   | 'ADMIN_COHORT_SCHEDULE_UPDATED' 
   | 'ADMIN_COHORT_DELETED'
-  // Admin - System Settings
   | 'ADMIN_SYSTEM_SETTINGS_UPDATED';
 
 export interface ActivityLogTarget {
-  type: string; // e.g., 'USER_PROFILE', 'IDEA', 'ANNOUNCEMENT', 'SYSTEM_SETTINGS'
+  type: string; 
   id: string;
-  displayName?: string; // e.g., user's name, idea title
+  displayName?: string; 
 }
 
 export interface ActivityLogEntry {
-  id?: string; // Firestore document ID
+  id?: string; 
   timestamp: Timestamp;
-  actorUid: string; // UID of the user performing the action
+  actorUid: string; 
   actorDisplayName: string | null;
   action: ActivityLogAction;
   target?: ActivityLogTarget;
-  details?: Record<string, any>; // e.g., { fieldChanged: 'status', oldValue: 'SUBMITTED', newValue: 'SELECTED' }
+  details?: Record<string, any>; 
 }
 
     
