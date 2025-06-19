@@ -1291,6 +1291,28 @@ export const updateCohortFS = async (cohortId: string, dataToUpdate: Omit<Cohort
   );
 };
 
+export const deleteCohortFS = async (cohortId: string, adminProfile: UserProfile): Promise<void> => {
+  const cohortRef = doc(db, 'cohorts', cohortId);
+  const cohortSnap = await getDoc(cohortRef);
+  if (!cohortSnap.exists()) {
+    throw new Error("Cohort not found.");
+  }
+  const cohortData = cohortSnap.data() as Cohort;
+  if (cohortData.ideaIds && cohortData.ideaIds.length > 0) {
+    throw new Error(`Cohort "${cohortData.name}" cannot be deleted because it has ${cohortData.ideaIds.length} idea(s) assigned. Please unassign all ideas first.`);
+  }
+
+  await deleteDoc(cohortRef);
+
+  await logUserActivity(
+    adminProfile.uid,
+    adminProfile.displayName || adminProfile.fullName,
+    'ADMIN_COHORT_DELETED',
+    { type: 'COHORT', id: cohortId, displayName: cohortData.name },
+    { name: cohortData.name }
+  );
+};
+
 
 export const updateCohortScheduleFS = async (cohortId: string, newSchedule: CohortScheduleEntry[], adminProfile: UserProfile): Promise<void> => {
   const cohortRef = doc(db, 'cohorts', cohortId);
@@ -1517,3 +1539,4 @@ export const assignIdeaToCohortFS = async (ideaId: string, ideaTitle: string, ne
     
 
     
+

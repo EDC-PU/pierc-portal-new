@@ -13,11 +13,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { createCohortFS, getAllCohortsStream, updateCohortScheduleFS, getIdeaById, updateCohortFS } from '@/lib/firebase/firestore'; // Added updateCohortFS & getIdeaById
+import { createCohortFS, getAllCohortsStream, updateCohortScheduleFS, getIdeaById, updateCohortFS, deleteCohortFS } from '@/lib/firebase/firestore'; // Added deleteCohortFS & getIdeaById
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format, isValid } from 'date-fns';
-import { PlusCircle, Users, CalendarRange, Edit3, Trash2, FileText, Download, Save } from 'lucide-react';
+import { PlusCircle, Users, CalendarRange, Edit3, Trash2, FileText, Download, Save, AlertTriangle } from 'lucide-react';
 import { Timestamp } from 'firebase/firestore'; // Correctly import Timestamp
 import type { Timestamp as FirestoreTimestamp } from 'firebase/firestore'; // Use FirestoreTimestamp for type clarity if needed
 import { useForm, useFieldArray, Controller, type SubmitHandler } from 'react-hook-form';
@@ -27,6 +27,17 @@ import { nanoid } from 'nanoid';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import * as XLSX from 'xlsx';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger as AlertDialogTriggerButton, // Alias to avoid conflict if DialogTrigger is also used from alert
+} from "@/components/ui/alert-dialog";
 
 
 const scheduleEntrySchema = z.object({
@@ -75,6 +86,7 @@ export default function ManageCohortsPage() {
   const [loadingIdeaDetails, setLoadingIdeaDetails] = useState(false);
   const [isCohortFormOpen, setIsCohortFormOpen] = useState(false); // Renamed from isCreateFormOpen
   const [editingCohort, setEditingCohort] = useState<Cohort | null>(null);
+  const [cohortToDelete, setCohortToDelete] = useState<DetailedCohort | null>(null);
 
   const [selectedCohortForSchedule, setSelectedCohortForSchedule] = useState<Cohort | null>(null);
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
@@ -176,14 +188,12 @@ export default function ManageCohortsPage() {
     toast({ title: "Success", description: editingCohort ? "Cohort updated successfully." : "Cohort created successfully." });
   };
 
-  // This function is now called by CreateCohortForm with CohortFormInternalData
   const handleSaveCohort = async (data: CohortFormInternalData) => {
     if (!userProfile) {
         toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
         throw new Error("Admin profile not found");
     }
     
-    // Convert Date objects to Timestamps before saving
     const dataToSaveWithTimestamps = {
       name: data.name,
       startDate: Timestamp.fromDate(data.startDate),
@@ -197,10 +207,10 @@ export default function ManageCohortsPage() {
         } else {
             await createCohortFS(dataToSaveWithTimestamps, userProfile);
         }
-        handleCohortFormSubmitSuccess(); // Call success handler here after successful save
+        handleCohortFormSubmitSuccess(); 
     } catch (error: any) {
         toast({ title: "Save Error", description: error.message || "Could not save cohort.", variant: "destructive"});
-        throw error; // Re-throw to be handled by the form if needed, or caught by its own try-catch
+        throw error; 
     }
   };
   
@@ -220,6 +230,41 @@ export default function ManageCohortsPage() {
         setIsScheduleDialogOpen(false);
     } catch (error: any) {
         toast({ title: "Save Schedule Error", description: error.message || "Could not save cohort schedule.", variant: "destructive"});
+    }
+  };
+
+  const confirmDeleteCohort = (cohort: DetailedCohort) => {
+    if ((cohort.ideaIds?.length || 0) > 0) {
+      toast({
+        title: "Cannot Delete Cohort",
+        description: `Cohort "${cohort.name}" has ${cohort.ideaIds?.length} idea(s) assigned. Please unassign all ideas before deleting.`,
+        variant: "destructive",
+        duration: 7000,
+      });
+      return;
+    }
+    setCohortToDelete(cohort);
+  };
+
+  const handleDeleteCohort = async () => {
+    if (!cohortToDelete || !cohortToDelete.id || !userProfile) {
+      toast({ title: "Error", description: "No cohort selected for deletion or admin profile missing.", variant: "destructive" });
+      return;
+    }
+    if ((cohortToDelete.ideaIds?.length || 0) > 0) {
+      toast({ title: "Deletion Blocked", description: `Cannot delete "${cohortToDelete.name}" as it still has ideas assigned.`, variant: "destructive" });
+      setCohortToDelete(null);
+      return;
+    }
+
+    try {
+      await deleteCohortFS(cohortToDelete.id, userProfile);
+      toast({ title: "Cohort Deleted", description: `Cohort "${cohortToDelete.name}" has been successfully deleted.` });
+      // The stream will update the list automatically
+    } catch (error: any) {
+      toast({ title: "Delete Error", description: error.message || "Could not delete cohort.", variant: "destructive" });
+    } finally {
+      setCohortToDelete(null);
     }
   };
 
@@ -338,7 +383,7 @@ export default function ManageCohortsPage() {
         <Dialog open={isCohortFormOpen} onOpenChange={(isOpen) => {
             setIsCohortFormOpen(isOpen);
             if (!isOpen) {
-                setEditingCohort(null); // Reset editing state when dialog closes
+                setEditingCohort(null); 
             }
         }}>
           <DialogTrigger asChild>
@@ -355,8 +400,8 @@ export default function ManageCohortsPage() {
             {isCohortFormOpen && userProfile && ( 
                  <CreateCohortForm
                     initialData={editingCohort}
-                    onSubmitSuccess={handleCohortFormSubmitSuccess} // This will be called by onSave after success
-                    onSave={handleSaveCohort} // Pass the combined save handler
+                    onSubmitSuccess={handleCohortFormSubmitSuccess}
+                    onSave={handleSaveCohort} 
                 />
             )}
           </DialogContent>
@@ -378,7 +423,7 @@ export default function ManageCohortsPage() {
                   <TableRow>
                     <TableHead className="min-w-[150px]">Cohort Name</TableHead>
                     <TableHead className="hidden lg:table-cell min-w-[200px]">Assigned Leaders</TableHead>
-                    <TableHead className="hidden lg:table-cell">Participants</TableHead>
+                    <TableHead className="hidden lg:table-cell">Total Ideas</TableHead>
                     <TableHead className="hidden md:table-cell">Max Teams</TableHead>
                     <TableHead className="hidden xl:table-cell">Schedule Entries</TableHead>
                     <TableHead className="hidden md:table-cell">Start Date</TableHead>
@@ -393,7 +438,7 @@ export default function ManageCohortsPage() {
                       <TableCell className="hidden lg:table-cell text-xs max-w-[200px] truncate" title={cohort.participantNames.join(', ')}>
                         {cohort.participantNames.length > 0 ? cohort.participantNames.join(', ') : 'N/A'}
                       </TableCell>
-                      <TableCell className="hidden lg:table-cell text-sm">{cohort.totalParticipants}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm">{cohort.ideaIds?.length || 0}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm">{cohort.batchSize}</TableCell>
                       <TableCell className="hidden xl:table-cell text-sm">{cohort.schedule?.length || 0}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
@@ -407,11 +452,37 @@ export default function ManageCohortsPage() {
                           <Edit3 className="h-4 w-4" />
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => openScheduleDialog(cohort)}>
-                          <CalendarRange className="mr-1 h-3.5 w-3.5" /> Manage Schedule
+                          <CalendarRange className="mr-1 h-3.5 w-3.5" /> Schedule
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => exportScheduleToXLSX(cohort)} disabled={!cohort.schedule || cohort.schedule.length === 0}>
-                            <Download className="mr-1 h-3.5 w-3.5" /> Export XLSX
+                            <Download className="mr-1 h-3.5 w-3.5" /> Export
                         </Button>
+                        <AlertDialog>
+                          <AlertDialogTriggerButton asChild>
+                            <Button variant="destructive" size="sm" onClick={() => confirmDeleteCohort(cohort)}>
+                              <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                            </Button>
+                          </AlertDialogTriggerButton>
+                          {cohortToDelete && cohortToDelete.id === cohort.id && (
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle className="flex items-center">
+                                  <AlertTriangle className="text-destructive mr-2" /> Are you absolutely sure?
+                                </AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. This will permanently delete the cohort "{cohortToDelete.name}".
+                                  Ensure no ideas are assigned to this cohort before deleting.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setCohortToDelete(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={handleDeleteCohort} className="bg-destructive hover:bg-destructive/90">
+                                  Yes, delete cohort
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          )}
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))}
