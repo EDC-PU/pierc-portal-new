@@ -446,7 +446,7 @@ export const createIdeaFromProfile = async (
   if (userProfile.isTeamMemberOnly ||
       (userProfile.role === 'ADMIN_FACULTY' &&
        (profileData.startupTitle === 'Administrative Account' || profileData.startupTitle === 'Faculty/Mentor Account'))) {
-    return null; // Don't create/update idea doc for team members or admins with placeholder profiles
+    return null; 
   }
 
   if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
@@ -462,7 +462,6 @@ export const createIdeaFromProfile = async (
 
   if (!existingIdeasSnap.empty) {
     const ideas = existingIdeasSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as IdeaSubmission));
-    // Prioritize updating an archived idea. If none, update the most recently updated one.
     existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') || 
                            ideas.sort((a,b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0))[0];
   }
@@ -487,7 +486,7 @@ export const createIdeaFromProfile = async (
       ideaDocRef = doc(db, 'ideas', existingIdeaToUpdate.id!);
       const updateData: Partial<IdeaSubmission> = {
         ...ideaPayloadBase,
-        status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status, // Reset status if archived
+        status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status,
         programPhase: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.programPhase,
         cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
         phase2Marks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? {} : existingIdeaToUpdate.phase2Marks,
@@ -495,19 +494,18 @@ export const createIdeaFromProfile = async (
         rejectionRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectionRemarks,
         rejectedByUid: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedByUid,
         rejectedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedAt,
-        phase2PptUrl: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.phase2PptUrl,
-        phase2PptFileName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.phase2PptFileName,
-        phase2PptUploadedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.phase2PptUploadedAt,
+        phase2PptUrl: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.phase2PptUrl || null),
+        phase2PptFileName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.phase2PptFileName || null),
+        phase2PptUploadedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.phase2PptUploadedAt || null),
         nextPhaseDate: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseDate,
         nextPhaseStartTime: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseStartTime,
         nextPhaseEndTime: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseEndTime,
         nextPhaseVenue: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseVenue,
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
-        // Preserve structuredTeamMembers if not an archive-resubmit, otherwise reset (or handle more granularly if needed)
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
       };
-      await updateDoc(ideaDocRef, updateData as any); // Cast as any to bypass strict type checks for partial update with serverTimestamp
+      await updateDoc(ideaDocRef, updateData as any); 
       await logUserActivity(
         userId,
         userProfile.displayName || userProfile.fullName,
@@ -516,13 +514,25 @@ export const createIdeaFromProfile = async (
       );
     } else {
       const newIdeaData: Omit<IdeaSubmission, 'id'> = {
-        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt'>), // Cast to satisfy base type
+        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt'>), 
         structuredTeamMembers: [],
         teamMemberEmails: [],
         status: 'SUBMITTED',
         programPhase: null,
         cohortId: null,
         phase2Marks: {},
+        mentor: null,
+        rejectionRemarks: null,
+        rejectedByUid: null,
+        rejectedAt: null,
+        phase2PptUrl: null,
+        phase2PptFileName: null,
+        phase2PptUploadedAt: null,
+        nextPhaseDate: null,
+        nextPhaseStartTime: null,
+        nextPhaseEndTime: null,
+        nextPhaseVenue: null,
+        nextPhaseGuidelines: null,
         submittedAt: serverTimestamp() as Timestamp,
       };
       ideaDocRef = await addDoc(collection(db, 'ideas'), newIdeaData);
@@ -1500,5 +1510,7 @@ export const assignIdeaToCohortFS = async (ideaId: string, ideaTitle: string, ne
     { oldCohortId: oldCohortId || null, newCohortId }
   );
 };
+
+    
 
     
