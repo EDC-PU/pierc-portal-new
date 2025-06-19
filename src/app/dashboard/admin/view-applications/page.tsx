@@ -54,6 +54,10 @@ const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
 const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__";
 const UNASSIGN_COHORT_TRIGGER_VALUE = "__UNASSIGN_COHORT__";
 
+const ALL_STATUSES_FILTER_VALUE = "_ALL_STATUSES_";
+const ALL_PHASES_FILTER_VALUE = "_ALL_PHASES_";
+const ALL_COHORTS_FILTER_VALUE = "_ALL_COHORTS_";
+
 const getProgramPhaseLabel = (phase: ProgramPhase | typeof NO_PHASE_VALUE | null | undefined): string => {
   if (!phase || phase === NO_PHASE_VALUE) return 'N/A';
   switch (phase) {
@@ -817,32 +821,42 @@ export default function ViewApplicationsPage() {
             </div>
             <div className="flex-grow min-w-[150px]">
               <Label htmlFor="statusFilter" className="text-xs">Status</Label>
-              <Select value={filters.status} onValueChange={(value) => setFilters(prev => ({ ...prev, status: value as IdeaStatus | '' }))}>
+              <Select 
+                value={filters.status || ALL_STATUSES_FILTER_VALUE} 
+                onValueChange={(value) => setFilters(prev => ({ ...prev, status: value === ALL_STATUSES_FILTER_VALUE ? '' : value as IdeaStatus | '' }))}
+              >
                 <SelectTrigger id="statusFilter" className="h-9 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="" className="text-xs">All Statuses</SelectItem>
+                  <SelectItem value={ALL_STATUSES_FILTER_VALUE} className="text-xs">All Statuses</SelectItem>
                   {ALL_IDEA_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s.replace(/_/g, ' ')}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex-grow min-w-[150px]">
               <Label htmlFor="phaseFilter" className="text-xs">Program Phase</Label>
-              <Select value={filters.programPhase} onValueChange={(value) => setFilters(prev => ({ ...prev, programPhase: value as ProgramPhase | '' }))}>
+              <Select 
+                value={filters.programPhase || ALL_PHASES_FILTER_VALUE} 
+                onValueChange={(value) => setFilters(prev => ({ ...prev, programPhase: value === ALL_PHASES_FILTER_VALUE ? '' : value as ProgramPhase | ''}))}
+              >
                 <SelectTrigger id="phaseFilter" className="h-9 text-xs"><SelectValue placeholder="All Phases" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="" className="text-xs">All Phases</SelectItem>
+                  <SelectItem value={ALL_PHASES_FILTER_VALUE} className="text-xs">All Phases</SelectItem>
                   {ALL_PROGRAM_PHASES.map(p => <SelectItem key={p} value={p} className="text-xs">{getProgramPhaseLabel(p)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex-grow min-w-[150px]">
               <Label htmlFor="cohortFilter" className="text-xs">Cohort</Label>
-              <Select value={filters.cohortId} onValueChange={(value) => setFilters(prev => ({ ...prev, cohortId: value as string | '' }))} disabled={loadingCohorts}>
+              <Select 
+                value={filters.cohortId || ALL_COHORTS_FILTER_VALUE} 
+                onValueChange={(value) => setFilters(prev => ({ ...prev, cohortId: value === ALL_COHORTS_FILTER_VALUE ? '' : value as string | ''}))} 
+                disabled={loadingCohorts}
+              >
                 <SelectTrigger id="cohortFilter" className="h-9 text-xs">
                   <SelectValue placeholder={loadingCohorts ? "Loading..." : "All Cohorts"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="" className="text-xs">All Cohorts</SelectItem>
+                  <SelectItem value={ALL_COHORTS_FILTER_VALUE} className="text-xs">All Cohorts</SelectItem>
                   {allCohorts.map(c => <SelectItem key={c.id!} value={c.id!} className="text-xs">{c.name}</SelectItem>)}
                 </SelectContent>
               </Select>
