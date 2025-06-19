@@ -14,7 +14,7 @@ import {
     assignIdeaToCohort as assignIdeaToCohortFS 
 } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types'; 
-import { AVAILABLE_MENTOR_NAMES } from '@/types'; // Updated to use AVAILABLE_MENTOR_NAMES
+import { AVAILABLE_MENTORS_DATA } from '@/types'; // Changed from AVAILABLE_MENTOR_NAMES
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -960,8 +960,8 @@ export default function ViewApplicationsPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value={UNASSIGN_MENTOR_TRIGGER_VALUE}>Unassign Mentor</SelectItem>
-                                            {AVAILABLE_MENTOR_NAMES.map(mentor => (
-                                                <SelectItem key={mentor} value={mentor}>{mentor}</SelectItem>
+                                            {AVAILABLE_MENTORS_DATA.map(mentor => (
+                                                <SelectItem key={mentor.name} value={mentor.name}>{mentor.name} ({mentor.email})</SelectItem>
                                             ))}
                                         </SelectContent>
                                     </Select>
@@ -1204,5 +1204,7 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+
+    
 
     
