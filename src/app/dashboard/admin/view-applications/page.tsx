@@ -1,24 +1,25 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import {
     getAllIdeaSubmissionsWithDetails,
     updateIdeaStatusAndPhase,
-    archiveIdeaSubmissionForUserRevisionFS, // Renamed import
+    archiveIdeaSubmissionForUserRevisionFS,
     submitOrUpdatePhase2Mark,
     assignMentorToIdea as assignMentorFS,
     getAllCohortsStream,
     assignIdeaToCohortFS
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types';
-import { AVAILABLE_MENTORS_DATA } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory } from '@/types';
+import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuGroup } from '@/components/ui/dropdown-menu';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -37,9 +39,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger as AlertDialogButtonTrigger, // Alias to avoid conflict
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive } from 'lucide-react'; // Added Archive icon
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -48,8 +50,6 @@ import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 
-const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED', 'ARCHIVED_BY_ADMIN']; // Added ARCHIVED_BY_ADMIN
-const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
 const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__";
 const UNASSIGN_COHORT_TRIGGER_VALUE = "__UNASSIGN_COHORT__";
@@ -72,6 +72,18 @@ interface PhaseDetailsFormData {
     guidelines: string;
 }
 
+type SortableKeys = 'title' | 'applicantDisplayName' | 'submittedAt' | 'status' | 'programPhase';
+interface SortConfig {
+  key: SortableKeys;
+  direction: 'ascending' | 'descending';
+}
+interface ApplicationFilters {
+  searchTerm: string;
+  status: IdeaStatus | '';
+  programPhase: ProgramPhase | '';
+  cohortId: string | '';
+}
+
 export default function ViewApplicationsPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
@@ -83,7 +95,7 @@ export default function ViewApplicationsPage() {
   const [loadingCohorts, setLoadingCohorts] = useState(true);
   const [selectedApplication, setSelectedApplication] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [applicationToArchive, setApplicationToArchive] = useState<IdeaSubmission | null>(null); // Renamed
+  const [applicationToArchive, setApplicationToArchive] = useState<IdeaSubmission | null>(null);
   const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
   const [isSavingMark, setIsSavingMark] = useState(false);
   const [isAssigningMentor, setIsAssigningMentor] = useState(false);
@@ -103,6 +115,17 @@ export default function ViewApplicationsPage() {
     venue: '',
     guidelines: '',
   });
+
+  const [filters, setFilters] = useState<ApplicationFilters>({
+    searchTerm: '',
+    status: '',
+    programPhase: '',
+    cohortId: '',
+  });
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'submittedAt', direction: 'descending' });
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [isBulkActionLoading, setIsBulkActionLoading] = useState(false);
+  const [bulkActionTarget, setBulkActionTarget] = useState<string | null>(null); // For cohort ID or status
 
 
   useEffect(() => {
@@ -158,6 +181,7 @@ export default function ViewApplicationsPage() {
     try {
       const fetchedApplications = await getAllIdeaSubmissionsWithDetails();
       setApplications(fetchedApplications);
+      setSelectedRowIds(new Set()); // Clear selections on data refresh
     } catch (error) {
       console.error("Error fetching applications:", error);
       toast({ title: "Error", description: "Could not fetch incubation applications.", variant: "destructive" });
@@ -177,6 +201,123 @@ export default function ViewApplicationsPage() {
     }
     return () => {};
   };
+
+  const displayedApplications = useMemo(() => {
+    let filtered = [...applications];
+
+    if (filters.searchTerm) {
+      const term = filters.searchTerm.toLowerCase();
+      filtered = filtered.filter(app =>
+        app.title.toLowerCase().includes(term) ||
+        (app.applicantDisplayName && app.applicantDisplayName.toLowerCase().includes(term))
+      );
+    }
+    if (filters.status) {
+      filtered = filtered.filter(app => app.status === filters.status);
+    }
+    if (filters.programPhase) {
+      filtered = filtered.filter(app => app.programPhase === filters.programPhase);
+    }
+    if (filters.cohortId) {
+      filtered = filtered.filter(app => app.cohortId === filters.cohortId);
+    }
+
+    if (sortConfig.key) {
+      filtered.sort((a, b) => {
+        const aValue = a[sortConfig.key];
+        const bValue = b[sortConfig.key];
+
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+        
+        let comparison = 0;
+        if (typeof aValue === 'string' && typeof bValue === 'string') {
+          comparison = aValue.localeCompare(bValue);
+        } else if (aValue instanceof Timestamp && bValue instanceof Timestamp) {
+          comparison = aValue.toMillis() - bValue.toMillis();
+        } else if (typeof aValue === 'number' && typeof bValue === 'number') {
+          comparison = aValue - bValue;
+        } else {
+          // Fallback for mixed types or other types
+          const strA = String(aValue).toLowerCase();
+          const strB = String(bValue).toLowerCase();
+          comparison = strA.localeCompare(strB);
+        }
+        return sortConfig.direction === 'ascending' ? comparison : -comparison;
+      });
+    }
+    return filtered;
+  }, [applications, filters, sortConfig]);
+
+
+  const handleSort = (key: SortableKeys) => {
+    setSortConfig(prevConfig => ({
+      key,
+      direction: prevConfig.key === key && prevConfig.direction === 'ascending' ? 'descending' : 'ascending'
+    }));
+  };
+
+  const handleSelectRow = (id: string) => {
+    setSelectedRowIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAllRows = () => {
+    if (selectedRowIds.size === displayedApplications.length) {
+      setSelectedRowIds(new Set());
+    } else {
+      setSelectedRowIds(new Set(displayedApplications.map(app => app.id!)));
+    }
+  };
+
+  const handleBulkAction = async (action: 'changeStatus' | 'assignCohort' | 'archive', targetValue?: string | null) => {
+    if (!userProfile || selectedRowIds.size === 0) {
+      toast({ title: "No Selection", description: "Please select applications to perform bulk action.", variant: "default" });
+      return;
+    }
+    setIsBulkActionLoading(true);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const ideaId of Array.from(selectedRowIds)) {
+      const idea = applications.find(app => app.id === ideaId);
+      if (!idea) continue;
+
+      try {
+        if (action === 'changeStatus' && targetValue) {
+          await updateIdeaStatusAndPhase(idea.id!, idea.title, targetValue as IdeaStatus, userProfile, idea.programPhase);
+        } else if (action === 'assignCohort') { // targetValue can be cohortId or null (for unassign)
+          if (!userProfile.isSuperAdmin) {
+             toast({ title: "Unauthorized", description: "Only Super Admins can assign ideas to cohorts.", variant: "destructive" });
+             errorCount++; // Count as error for this specific idea
+             continue;
+          }
+          await assignIdeaToCohortFS(idea.id!, idea.title, targetValue === 'UNASSIGN' ? null : targetValue, userProfile);
+        } else if (action === 'archive') {
+          await archiveIdeaSubmissionForUserRevisionFS(idea.id!, userProfile);
+        }
+        successCount++;
+      } catch (error: any) {
+        errorCount++;
+        toast({ title: `Error with ${idea.title}`, description: error.message || "Bulk action failed for this item.", variant: "destructive" });
+      }
+    }
+    setIsBulkActionLoading(false);
+    fetchApplications(); // Refresh the list
+    setSelectedRowIds(new Set()); // Clear selection
+    toast({
+      title: "Bulk Action Complete",
+      description: `${successCount} application(s) processed successfully. ${errorCount > 0 ? `${errorCount} failed.` : ''}`
+    });
+  };
+
 
   const getDefaultPhaseDetails = (phase: ProgramPhase): Partial<PhaseDetailsFormData> => {
     switch (phase) {
@@ -427,7 +568,7 @@ export default function ViewApplicationsPage() {
       case 'SUBMITTED': return 'secondary';
       case 'UNDER_REVIEW': return 'outline';
       case 'IN_EVALUATION': return 'outline';
-      case 'ARCHIVED_BY_ADMIN': return 'outline'; // Visual for archived
+      case 'ARCHIVED_BY_ADMIN': return 'outline'; 
       case 'NOT_SELECTED': return 'destructive';
       default: return 'secondary';
     }
@@ -640,6 +781,11 @@ export default function ViewApplicationsPage() {
     return <div className="flex justify-center items-center h-screen"><p>Verifying access or redirecting...</p></div>;
   }
 
+  const SortIcon = ({ columnKey }: { columnKey: SortableKeys }) => {
+    if (sortConfig.key !== columnKey) return <ChevronDown className="h-3 w-3 ml-1 opacity-30" />;
+    return sortConfig.direction === 'ascending' ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />;
+  };
+
   return (
     <div className="space-y-8 animate-slide-in-up p-4 md:p-6 lg:p-8">
       <header className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -657,31 +803,145 @@ export default function ViewApplicationsPage() {
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>All Submitted Applications</CardTitle>
-          <CardDescription>
-            Set status, program phase, and cohort for applications. Manage meeting details, marks, and mentors.
-          </CardDescription>
+          <CardTitle>Filter & Manage Applications</CardTitle>
+          <div className="flex flex-wrap gap-4 items-end pt-4">
+            <div className="flex-grow min-w-[200px]">
+              <Label htmlFor="searchTerm" className="text-xs">Search (Title/Applicant)</Label>
+              <Input
+                id="searchTerm"
+                placeholder="Search..."
+                value={filters.searchTerm}
+                onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                className="h-9"
+              />
+            </div>
+            <div className="flex-grow min-w-[150px]">
+              <Label htmlFor="statusFilter" className="text-xs">Status</Label>
+              <Select value={filters.status} onValueChange={(value) => setFilters(prev => ({ ...prev, status: value as IdeaStatus | '' }))}>
+                <SelectTrigger id="statusFilter" className="h-9 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="" className="text-xs">All Statuses</SelectItem>
+                  {ALL_IDEA_STATUSES.map(s => <SelectItem key={s} value={s} className="text-xs">{s.replace(/_/g, ' ')}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-grow min-w-[150px]">
+              <Label htmlFor="phaseFilter" className="text-xs">Program Phase</Label>
+              <Select value={filters.programPhase} onValueChange={(value) => setFilters(prev => ({ ...prev, programPhase: value as ProgramPhase | '' }))}>
+                <SelectTrigger id="phaseFilter" className="h-9 text-xs"><SelectValue placeholder="All Phases" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="" className="text-xs">All Phases</SelectItem>
+                  {ALL_PROGRAM_PHASES.map(p => <SelectItem key={p} value={p} className="text-xs">{getProgramPhaseLabel(p)}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-grow min-w-[150px]">
+              <Label htmlFor="cohortFilter" className="text-xs">Cohort</Label>
+              <Select value={filters.cohortId} onValueChange={(value) => setFilters(prev => ({ ...prev, cohortId: value as string | '' }))} disabled={loadingCohorts}>
+                <SelectTrigger id="cohortFilter" className="h-9 text-xs">
+                  <SelectValue placeholder={loadingCohorts ? "Loading..." : "All Cohorts"} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="" className="text-xs">All Cohorts</SelectItem>
+                  {allCohorts.map(c => <SelectItem key={c.id!} value={c.id!} className="text-xs">{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {selectedRowIds.size > 0 && (
+            <div className="mt-4 pt-3 border-t">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={isBulkActionLoading}>
+                    {isBulkActionLoading ? <LoadingSpinner className="mr-2" /> : <Layers className="mr-2 h-4 w-4" />}
+                    Bulk Actions ({selectedRowIds.size} selected) <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuLabel>Apply to Selected</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup>
+                    <DropdownMenuLabel className="text-xs px-2">Change Status to</DropdownMenuLabel>
+                    {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => ( // Exclude ARCHIVED_BY_ADMIN from direct status change
+                        <AlertDialogButtonTrigger asChild key={`status-${status}`}>
+                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(status); /* Open an AlertDialog */ }}>
+                                {status.replace(/_/g, ' ')}
+                            </DropdownMenuItem>
+                        </AlertDialogButtonTrigger>
+                    ))}
+                  </DropdownMenuGroup>
+                  <DropdownMenuSeparator />
+                   {userProfile.isSuperAdmin && (
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel className="text-xs px-2">Assign to Cohort</DropdownMenuLabel>
+                      <AlertDialogButtonTrigger asChild key="assign-UNASSIGN">
+                        <DropdownMenuItem onSelect={(e) => {e.preventDefault(); setBulkActionTarget('UNASSIGN'); }}>Unassign Cohort</DropdownMenuItem>
+                      </AlertDialogButtonTrigger>
+                      {allCohorts.map(cohort => (
+                        <AlertDialogButtonTrigger asChild key={`cohort-${cohort.id}`}>
+                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(cohort.id!); }}>
+                            {cohort.name}
+                            </DropdownMenuItem>
+                        </AlertDialogButtonTrigger>
+                      ))}
+                    </DropdownMenuGroup>
+                  )}
+                  <DropdownMenuSeparator />
+                  <AlertDialogButtonTrigger asChild key="archive-selected">
+                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget('ARCHIVE_BULK'); }} className="text-amber-600 focus:text-amber-700 focus:bg-amber-100">
+                        <Archive className="mr-2 h-4 w-4" /> Archive for User Revision
+                    </DropdownMenuItem>
+                  </AlertDialogButtonTrigger>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
-          {applications.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No applications found.</p>
+          {displayedApplications.length === 0 && !loadingApplications ? (
+            <p className="text-center text-muted-foreground py-8">No applications found matching your criteria.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="min-w-[150px] md:min-w-[200px]">Idea Title</TableHead>
-                    <TableHead className="hidden md:table-cell">Applicant Name</TableHead>
-                    <TableHead className="hidden lg:table-cell">Submitted</TableHead>
-                    <TableHead className="min-w-[180px]">Status</TableHead>
-                    <TableHead className="min-w-[200px]">Program Phase</TableHead>
+                    <TableHead className="w-[40px]">
+                       <Checkbox
+                        checked={selectedRowIds.size > 0 && selectedRowIds.size === displayedApplications.length && displayedApplications.length > 0}
+                        indeterminate={selectedRowIds.size > 0 && selectedRowIds.size < displayedApplications.length}
+                        onCheckedChange={handleSelectAllRows}
+                        aria-label="Select all rows"
+                      />
+                    </TableHead>
+                    <TableHead className="min-w-[150px] md:min-w-[200px] cursor-pointer hover:bg-muted/50" onClick={() => handleSort('title')}>
+                      Idea Title <SortIcon columnKey="title" />
+                    </TableHead>
+                    <TableHead className="hidden md:table-cell cursor-pointer hover:bg-muted/50" onClick={() => handleSort('applicantDisplayName')}>
+                      Applicant <SortIcon columnKey="applicantDisplayName" />
+                    </TableHead>
+                    <TableHead className="hidden lg:table-cell cursor-pointer hover:bg-muted/50" onClick={() => handleSort('submittedAt')}>
+                      Submitted <SortIcon columnKey="submittedAt" />
+                    </TableHead>
+                    <TableHead className="min-w-[180px] cursor-pointer hover:bg-muted/50" onClick={() => handleSort('status')}>
+                      Status <SortIcon columnKey="status" />
+                    </TableHead>
+                    <TableHead className="min-w-[200px] cursor-pointer hover:bg-muted/50" onClick={() => handleSort('programPhase')}>
+                      Program Phase <SortIcon columnKey="programPhase" />
+                    </TableHead>
                     <TableHead className="min-w-[200px] hidden xl:table-cell">Assigned Cohort</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {applications.map((app) => (
-                    <TableRow key={app.id}>
+                  {displayedApplications.map((app) => (
+                    <TableRow key={app.id} data-state={selectedRowIds.has(app.id!) ? "selected" : ""}>
+                       <TableCell>
+                        <Checkbox
+                          checked={selectedRowIds.has(app.id!)}
+                          onCheckedChange={() => handleSelectRow(app.id!)}
+                          aria-label={`Select row for ${app.title}`}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium max-w-[150px] md:max-w-xs truncate" title={app.title}>
                         {app.title}
                       </TableCell>
@@ -694,12 +954,13 @@ export default function ViewApplicationsPage() {
                           <Select
                             value={app.status}
                             onValueChange={(value) => handleStatusOrPhaseChange(app, value as IdeaStatus, app.programPhase)}
+                            disabled={isBulkActionLoading && selectedRowIds.has(app.id!)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Set status" />
                             </SelectTrigger>
                             <SelectContent>
-                              {ideaStatuses.map(statusVal => (
+                              {ALL_IDEA_STATUSES.map(statusVal => (
                                 <SelectItem key={statusVal} value={statusVal} className="text-xs">
                                   {statusVal.replace(/_/g, ' ')}
                                 </SelectItem>
@@ -716,13 +977,14 @@ export default function ViewApplicationsPage() {
                           <Select
                             value={app.programPhase || NO_PHASE_VALUE}
                             onValueChange={(value) => handleStatusOrPhaseChange(app, 'SELECTED', value as ProgramPhase | typeof NO_PHASE_VALUE)}
+                            disabled={isBulkActionLoading && selectedRowIds.has(app.id!)}
                           >
                             <SelectTrigger className="w-[150px] h-9 text-xs">
                               <SelectValue placeholder="Assign Phase" />
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={NO_PHASE_VALUE} className="text-xs italic">Not Assigned</SelectItem>
-                              {programPhases.map(phaseVal => (
+                              {ALL_PROGRAM_PHASES.map(phaseVal => (
                                 <SelectItem key={phaseVal} value={phaseVal} className="text-xs">
                                   {getProgramPhaseLabel(phaseVal)}
                                 </SelectItem>
@@ -740,7 +1002,7 @@ export default function ViewApplicationsPage() {
                             <Select
                                 value={app.cohortId || UNASSIGN_COHORT_TRIGGER_VALUE}
                                 onValueChange={(value) => handleAssignCohort(app, value === UNASSIGN_COHORT_TRIGGER_VALUE ? null : value)}
-                                disabled={isAssigningCohort}
+                                disabled={isAssigningCohort || (isBulkActionLoading && selectedRowIds.has(app.id!))}
                             >
                                 <SelectTrigger className="w-full max-w-[180px] h-9 text-xs">
                                 <SelectValue placeholder="Assign to Cohort" />
@@ -767,12 +1029,11 @@ export default function ViewApplicationsPage() {
                         <Button variant="outline" size="sm" onClick={() => openDetailModal(app)}>
                           <Eye className="mr-1 h-3.5 w-3.5" /> Details
                         </Button>
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
+                        <AlertDialogButtonTrigger asChild>
                             <Button variant="destructive" size="sm" onClick={() => setApplicationToArchive(app)}>
-                               <Archive className="mr-1 h-3.5 w-3.5" /> Archive for Revision
+                               <Archive className="mr-1 h-3.5 w-3.5" /> Archive
                             </Button>
-                          </AlertDialogTrigger>
+                        </AlertDialogButtonTrigger>
                            {applicationToArchive && applicationToArchive.id === app.id && (
                             <AlertDialogContent>
                                 <AlertDialogHeader>
@@ -790,7 +1051,7 @@ export default function ViewApplicationsPage() {
                                 </AlertDialogFooter>
                             </AlertDialogContent>
                            )}
-                        </AlertDialog>
+                        
                       </TableCell>
                     </TableRow>
                   ))}
@@ -800,6 +1061,37 @@ export default function ViewApplicationsPage() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={!!bulkActionTarget && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen) setBulkActionTarget(null); }}>
+        <AlertDialogContent>
+            <AlertDialogHeader>
+                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                <AlertDialogDescription>
+                    {bulkActionTarget === 'ARCHIVE_BULK' && `Are you sure you want to archive ${selectedRowIds.size} selected application(s) for user revision?`}
+                    {bulkActionTarget && bulkActionTarget !== 'ARCHIVE_BULK' && ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus) && `Change status of ${selectedRowIds.size} application(s) to "${bulkActionTarget.replace(/_/g,' ')}"?`}
+                    {bulkActionTarget && bulkActionTarget !== 'ARCHIVE_BULK' && !ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus) && `Assign ${selectedRowIds.size} application(s) to cohort: "${bulkActionTarget === 'UNASSIGN' ? 'Unassign' : allCohorts.find(c=>c.id===bulkActionTarget)?.name || 'Unknown'}"?`}
+                </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                    onClick={() => {
+                        if (bulkActionTarget === 'ARCHIVE_BULK') {
+                            handleBulkAction('archive');
+                        } else if (ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus)) {
+                            handleBulkAction('changeStatus', bulkActionTarget);
+                        } else if (bulkActionTarget) { // Cohort ID or 'UNASSIGN'
+                            handleBulkAction('assignCohort', bulkActionTarget);
+                        }
+                        setBulkActionTarget(null);
+                    }}
+                    className={bulkActionTarget === 'ARCHIVE_BULK' ? "bg-amber-600 hover:bg-amber-700" : ""}
+                >
+                    Proceed
+                </AlertDialogAction>
+            </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {selectedApplication && userProfile && (
         <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
@@ -1220,5 +1512,7 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+
+    
 
     

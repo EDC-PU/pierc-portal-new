@@ -1536,7 +1536,48 @@ export const assignIdeaToCohortFS = async (ideaId: string, ideaTitle: string, ne
   );
 };
 
+export const getActivityLogsStream = (
+  filters: { actorName?: string; actionType?: ActivityLogAction },
+  callback: (logs: ActivityLogEntry[]) => void,
+  limitCount: number = 50
+) => {
+  const logsCol = collection(db, 'activityLogs');
+  let q = query(logsCol, orderBy('timestamp', 'desc'), limit(limitCount));
+
+  if (filters.actorName) {
+    // Firestore does not support partial string matches directly in queries like 'string contains'.
+    // A common workaround is to fetch broader and filter client-side, or use a search service like Algolia/Typesense.
+    // For this implementation, we'll fetch and then filter client-side if actorName is provided.
+    // If you need more performant search, a dedicated search solution is recommended.
+  }
+  if (filters.actionType) {
+    q = query(q, where('action', '==', filters.actionType));
+  }
+  
+  return onSnapshot(q, (querySnapshot) => {
+    let logs: ActivityLogEntry[] = [];
+    querySnapshot.forEach((doc) => {
+      logs.push({ id: doc.id, ...doc.data() } as ActivityLogEntry);
+    });
+
+    if (filters.actorName) {
+      const searchTerm = filters.actorName.toLowerCase();
+      logs = logs.filter(log => 
+        log.actorDisplayName?.toLowerCase().includes(searchTerm) || 
+        log.actorUid.toLowerCase().includes(searchTerm)
+      );
+    }
+
+    callback(logs);
+  }, (error) => {
+    console.error("Error fetching activity logs:", error);
+    callback([]);
+  });
+};
     
 
     
 
+
+
+    
