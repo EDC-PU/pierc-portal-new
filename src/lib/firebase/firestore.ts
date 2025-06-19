@@ -469,7 +469,6 @@ export const createIdeaFromProfile = async (
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
     title: profileData.startupTitle!,
-    category: profileData.applicantCategory, 
     problem: profileData.problemDefinition!,
     solution: profileData.solutionDescription!,
     uniqueness: profileData.uniqueness!,
@@ -1903,4 +1902,5 @@ export const applyForNextSanctionFS = async (
 
 
     
+
 
