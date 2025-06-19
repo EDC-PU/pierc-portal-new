@@ -202,10 +202,12 @@ export default function ManageCohortsPage() {
     }
     const headers = ["Date", "Day", "Time", "Category", "Topic/Activity", "Content", "Speaker/Venue"];
     const csvRows = [headers.join(",")];
+    let previousDate: string | null = null;
 
     cohort.schedule.forEach(entry => {
+      const displayDate = entry.date === previousDate ? "" : entry.date;
       const row = [
-        entry.date,
+        displayDate,
         entry.day,
         entry.time,
         entry.category,
@@ -214,6 +216,7 @@ export default function ManageCohortsPage() {
         entry.speakerVenue || ''
       ].map(field => `"${String(field).replace(/"/g, '""')}"`); // Escape quotes and wrap in quotes
       csvRows.push(row.join(","));
+      previousDate = entry.date;
     });
 
     const csvString = csvRows.join("\n");
@@ -450,5 +453,3 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
-
-    
