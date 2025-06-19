@@ -48,7 +48,7 @@ interface AuthContextType {
   initialLoadComplete: boolean;
   isTeamMemberForIdea: IdeaSubmission | null;
   teamLeaderProfileForMember: UserProfile | null;
-  preFilledTeamMemberDataFromLeader: TeamMember | null; 
+  preFilledTeamMemberDataFromLeader: TeamMember | null;
   isMentorEmail: (email: string | null | undefined) => boolean;
 
   signInWithGoogle: () => Promise<void>;
@@ -118,7 +118,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 ) || null;
             }
           }
-        } else { 
+        } else {
           setUserProfile(null);
           if (firebaseUser.email) {
             ideaMembership = await getIdeaWhereUserIsTeamMember(firebaseUser.email);
@@ -137,41 +137,69 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         setIsTeamMemberForIdea(ideaMembership);
         setTeamLeaderProfileForMember(leaderProfile);
-        setPreFilledTeamMemberDataFromLeader(memberDataFromLeader); 
+        setPreFilledTeamMemberDataFromLeader(memberDataFromLeader);
 
         if (profile) {
           if (isNewAuthUser && profile.role !== 'ADMIN_FACULTY') {
              logUserActivity(firebaseUser.uid, profile.displayName || profile.fullName, 'USER_SIGNED_IN', undefined, { ipAddress: 'N/A', userAgent: 'N/A' });
           }
+
+          // Redirection logic
           const isOnProfileSetup = window.location.pathname === '/profile-setup';
-          const isMentorOrAdmin = profile.role === 'ADMIN_FACULTY';
-          const hasBasicIdeaDetails = profile.startupTitle && profile.startupTitle.trim() !== '';
-          
-          if (window.location.pathname === '/login') {
+          const isOnLogin = window.location.pathname === '/login';
+
+          const hasRequiredPersonalDetails =
+            profile.fullName && profile.fullName.trim() !== '' &&
+            profile.contactNumber && profile.contactNumber.trim() !== '';
+
+          const hasRequiredIdeaDetails =
+            hasRequiredPersonalDetails && // Personal details are always a prerequisite for idea owners
+            profile.startupTitle && profile.startupTitle.trim() !== '' &&
+            profile.startupTitle !== 'Administrative Account' &&
+            profile.startupTitle !== 'Faculty/Mentor Account' &&
+            profile.problemDefinition && profile.problemDefinition.trim() !== '' &&
+            profile.problemDefinition !== 'Handles portal administration.' &&
+            profile.problemDefinition !== 'Manages portal functions and/or mentorship.' &&
+            profile.solutionDescription && profile.solutionDescription.trim() !== '' &&
+            profile.solutionDescription !== 'Provides administrative functions and support.' &&
+            profile.solutionDescription !== 'Provides administrative or mentorship support.' &&
+            profile.uniqueness && profile.uniqueness.trim() !== '' &&
+            profile.uniqueness !== 'Unique administrative role for system management.' &&
+            profile.uniqueness !== 'Unique administrative/mentorship role.' &&
+            profile.applicantCategory &&
+            profile.currentStage;
+
+          if (isOnLogin) {
             router.push('/dashboard');
           } else if (isOnProfileSetup) {
-              if (isMentorOrAdmin && hasBasicIdeaDetails) { // Mentor/Admin with placeholders already set
-                 router.push('/dashboard');
-              } else if (!isMentorOrAdmin && !profile.isTeamMemberOnly && hasBasicIdeaDetails) { // Innovator with idea details
-                 router.push('/dashboard');
-              } else if (profile.isTeamMemberOnly && profile.fullName && profile.contactNumber) { // Team member completed setup
-                 router.push('/dashboard');
-              }
+            if (profile.role === 'ADMIN_FACULTY' && hasRequiredPersonalDetails) {
+              router.push('/dashboard');
+            } else if (profile.isTeamMemberOnly && hasRequiredPersonalDetails) {
+              router.push('/dashboard');
+            } else if (!profile.isTeamMemberOnly && profile.role !== 'ADMIN_FACULTY' && hasRequiredIdeaDetails) {
+              router.push('/dashboard');
+            }
+          } else { // User is on some other page (e.g., /dashboard or a sub-page)
+            if (profile.role === 'ADMIN_FACULTY') {
+              if (!hasRequiredPersonalDetails) router.push('/profile-setup');
+            } else if (profile.isTeamMemberOnly) {
+              if (!hasRequiredPersonalDetails) router.push('/profile-setup');
+            } else { // Idea Owner (not admin, not team member only)
+              if (!hasRequiredIdeaDetails) router.push('/profile-setup');
+            }
           }
-
-        } else {
-           if (router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login') {
+        } else { // No profile exists
+           if (router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login' && !window.location.pathname.startsWith('/_next')) {
              router.push('/profile-setup');
            }
         }
 
-      } else {
+      } else { // No firebaseUser
         setUser(null);
         setUserProfile(null);
         setIsTeamMemberForIdea(null);
         setTeamLeaderProfileForMember(null);
-        setPreFilledTeamMemberDataFromLeader(null); 
-
+        setPreFilledTeamMemberDataFromLeader(null);
 
         if (!firebaseUser && router && !['/login', '/'].includes(window.location.pathname) && !window.location.pathname.startsWith('/_next')) {
            router.push('/login');
@@ -184,7 +212,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMentorEmail]);
+  }, [isMentorEmail]); // router and toast dependencies are stable, isMentorEmail is useCallback
 
   const handleAuthError = (error: any, action: string) => {
     console.error(`Error during ${action}:`, error);
@@ -307,13 +335,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       profileDataForCreation.currentStage = null;
       profileDataForCreation.teamMembers = null;
     } else if (isSuperAdminContext || isMentorContext) {
-        // For new super admin or mentor, ensure placeholder idea fields if they are not team members
-        profileDataForCreation.startupTitle = additionalData.startupTitle || 'Faculty/Mentor Account';
-        profileDataForCreation.problemDefinition = additionalData.problemDefinition || 'Manages portal functions and/or mentorship.';
-        profileDataForCreation.solutionDescription = additionalData.solutionDescription || 'Provides administrative or mentorship support.';
-        profileDataForCreation.uniqueness = additionalData.uniqueness || 'Unique administrative/mentorship role.';
-        profileDataForCreation.currentStage = additionalData.currentStage || 'STARTUP_STAGE'; // Or some other sensible default
-        profileDataForCreation.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF'; // Or some other sensible default
+        profileDataForCreation.startupTitle = additionalData.startupTitle || (isSuperAdminContext ? 'Administrative Account' : 'Faculty/Mentor Account');
+        profileDataForCreation.problemDefinition = additionalData.problemDefinition || (isSuperAdminContext ? 'Handles portal administration.' : 'Manages portal functions and/or mentorship.');
+        profileDataForCreation.solutionDescription = additionalData.solutionDescription || (isSuperAdminContext ? 'Provides administrative functions and support.' : 'Provides administrative or mentorship support.');
+        profileDataForCreation.uniqueness = additionalData.uniqueness || (isSuperAdminContext ? 'Unique administrative role for system management.' : 'Unique administrative/mentorship role.');
+        profileDataForCreation.currentStage = additionalData.currentStage || 'STARTUP_STAGE';
+        profileDataForCreation.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF';
         profileDataForCreation.teamMembers = additionalData.teamMembers || '';
         profileDataForCreation.associatedIdeaId = null;
         profileDataForCreation.associatedTeamLeaderUid = null;
@@ -345,13 +372,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (!wasProfileExisting &&
           !createdOrUpdatedProfile.isTeamMemberOnly &&
-          !isMentorContext && // Do not create idea for mentors
+          !(isMentorContext && createdOrUpdatedProfile.startupTitle === 'Faculty/Mentor Account') &&
+          !(isSuperAdminContext && createdOrUpdatedProfile.startupTitle === 'Administrative Account') &&
           createdOrUpdatedProfile.startupTitle &&
-          createdOrUpdatedProfile.startupTitle.trim() !== '' &&
-          createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
-          createdOrUpdatedProfile.startupTitle !== 'Faculty/Mentor Account' 
+          createdOrUpdatedProfile.startupTitle.trim() !== ''
           ) {
-        console.log("[AuthContext] Attempting to create idea for new idea owner:", user.uid);
         try {
           const profileIdeaDataForCreation = {
               startupTitle: createdOrUpdatedProfile.startupTitle!,
@@ -364,7 +389,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           };
           const idea = await createIdeaFromProfile(user.uid, profileIdeaDataForCreation);
           if (idea && idea.id) {
-              console.log("[AuthContext] Idea created successfully from profile:", idea.id);
               await logUserActivity(
                   user.uid,
                   createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
@@ -373,7 +397,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                   { title: idea.title }
               );
           } else {
-            console.error("[AuthContext] createIdeaFromProfile returned null or no ID, idea creation failed.");
             toast({
               title: "Profile Saved, Idea Submission Issue",
               description: "Your profile was saved, but the initial idea submission could not be completed. Please try saving your profile again or contact support if the issue persists.",
@@ -383,7 +406,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             ideaCreationSuccessfulOrNotApplicable = false;
           }
         } catch (ideaError: any) {
-            console.error("[AuthContext] Error during createIdeaFromProfile call:", ideaError);
             toast({
               title: "Profile Saved, Idea Submission Failed",
               description: `Your profile was saved, but we couldn't create the initial idea submission: ${ideaError.message}. Please try saving your profile again or contact support.`,
@@ -482,7 +504,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       initialLoadComplete,
       isTeamMemberForIdea,
       teamLeaderProfileForMember,
-      preFilledTeamMemberDataFromLeader, 
+      preFilledTeamMemberDataFromLeader,
       isMentorEmail,
       signInWithGoogle,
       signUpWithEmailPassword,
@@ -503,3 +525,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
