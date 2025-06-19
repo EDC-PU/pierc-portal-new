@@ -54,6 +54,8 @@ const scheduleCategories = [
   "Valedictory Ceremony",
 ];
 
+const dayOptions = Array.from({ length: 15 }, (_, i) => `Day-${i + 1}`);
+
 
 export default function ManageCohortsPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -344,7 +346,7 @@ export default function ManageCohortsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-[130px]">Date</TableHead>
-                      <TableHead className="w-[100px]">Day</TableHead>
+                      <TableHead className="w-[120px]">Day</TableHead>
                       <TableHead className="w-[150px]">Time</TableHead>
                       <TableHead className="w-[200px]">Category</TableHead>
                       <TableHead className="min-w-[200px]">Topic/Activity</TableHead>
@@ -362,9 +364,25 @@ export default function ManageCohortsPage() {
                             {scheduleErrors.schedule?.[index]?.date && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.date?.message}</p>}
                         </TableCell>
                         <TableCell className="p-1">
-                          <Controller name={`schedule.${index}.day`} control={scheduleControl} render={({ field: controllerField }) => (
-                            <Input {...controllerField} placeholder="Day #" className="text-xs h-9"/> )}/>
-                            {scheduleErrors.schedule?.[index]?.day && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.day?.message}</p>}
+                           <Controller
+                            name={`schedule.${index}.day`}
+                            control={scheduleControl}
+                            render={({ field: controllerField }) => (
+                              <Select onValueChange={controllerField.onChange} value={controllerField.value} >
+                                <SelectTrigger className="text-xs h-9">
+                                  <SelectValue placeholder="Select Day" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {dayOptions.map((day) => (
+                                    <SelectItem key={day} value={day} className="text-xs">
+                                      {day}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
+                          {scheduleErrors.schedule?.[index]?.day && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.day?.message}</p>}
                         </TableCell>
                         <TableCell className="p-1">
                           <Controller name={`schedule.${index}.time`} control={scheduleControl} render={({ field: controllerField }) => (
@@ -432,6 +450,5 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
-
 
     
