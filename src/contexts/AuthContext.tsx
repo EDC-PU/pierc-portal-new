@@ -151,7 +151,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const hasRequiredPersonalDetails =
             profile.fullName && profile.fullName.trim() !== '' &&
             profile.contactNumber && profile.contactNumber.trim() !== '';
-
+          
           const isIdeaOwnerContext = !profile.isTeamMemberOnly && profile.role !== 'ADMIN_FACULTY';
 
           const hasRequiredIdeaDetails =
@@ -166,20 +166,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (isOnLogin) {
             router.push('/dashboard');
           } else if (isOnProfileSetup) {
-            if (profile.role === 'ADMIN_FACULTY' && hasRequiredPersonalDetails) { // Admin/Mentor only needs personal details
+            // Admin/Mentor: only personal details needed to proceed from profile setup
+            if (profile.role === 'ADMIN_FACULTY' && hasRequiredPersonalDetails) { 
               router.push('/dashboard');
-            } else if (profile.isTeamMemberOnly && hasRequiredPersonalDetails) { // Team member only needs personal details
+            // Team Member: only personal details needed
+            } else if (profile.isTeamMemberOnly && hasRequiredPersonalDetails) { 
               router.push('/dashboard');
-            } else if (isIdeaOwnerContext && hasRequiredIdeaDetails) { // Idea owner needs all idea details too
+            // Idea Owner: all idea details needed
+            } else if (isIdeaOwnerContext && hasRequiredPersonalDetails && hasRequiredIdeaDetails) { 
               router.push('/dashboard');
             }
+            // Otherwise, stay on profile-setup
           } else { // User is on some other page (e.g., /dashboard or a sub-page)
             if (profile.role === 'ADMIN_FACULTY') {
               if (!hasRequiredPersonalDetails) router.push('/profile-setup');
             } else if (profile.isTeamMemberOnly) {
               if (!hasRequiredPersonalDetails) router.push('/profile-setup');
             } else { // Idea Owner
-              if (!hasRequiredIdeaDetails) router.push('/profile-setup');
+              if (!hasRequiredPersonalDetails || !hasRequiredIdeaDetails) router.push('/profile-setup');
             }
           }
         } else { // No profile exists
