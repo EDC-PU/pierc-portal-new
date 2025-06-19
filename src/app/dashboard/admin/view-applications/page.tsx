@@ -11,10 +11,10 @@ import {
     submitOrUpdatePhase2Mark,
     assignMentorToIdea as assignMentorFS,
     getAllCohortsStream,
-    assignIdeaToCohortFS // Corrected import
+    assignIdeaToCohortFS
 } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types';
-import { AVAILABLE_MENTORS_DATA } from '@/types';
+import { AVAILABLE_MENTORS_DATA } from '@/types'; // Changed from AVAILABLE_MENTOR_NAMES
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -45,6 +45,7 @@ import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { cn } from '@/lib/utils';
+import * as XLSX from 'xlsx';
 
 
 const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
@@ -242,7 +243,9 @@ export default function ViewApplicationsPage() {
         setIsRejectionDialogVisible(true);
     } else {
         try {
-          await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined);
+          // For 'COHORT' phase, nextPhaseDetails are not applicable from this specific dialog.
+          // Cohort assignment is separate.
+          await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
           toast({ title: "Update Successful", description: `Application updated.` });
           fetchApplications();
         } catch (error) {
@@ -479,24 +482,14 @@ export default function ViewApplicationsPage() {
   };
 
 
-  const escapeCsvField = (field: string | number | null | undefined): string => {
-    if (field === null || field === undefined) {
-      return '';
-    }
-    const stringField = String(field);
-    if (stringField.includes(',') || stringField.includes('\n') || stringField.includes('"')) {
-      return `"${stringField.replace(/"/g, '""')}"`;
-    }
-    return stringField;
-  };
-
-  const handleExportCSV = () => {
+  const handleExportXLSX = () => {
     if (applications.length === 0) {
       toast({ title: "No Data", description: "There are no applications to export.", variant: "default" });
       return;
     }
 
-    const headers = [
+    const sheetTitle = "PIERC Applications Export";
+    let headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members (Free Text)',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
       'Status', 'Program Phase', 'Assigned Mentor', 'Assigned Cohort', 'Rejection Remarks', 'Studio Location',
@@ -537,78 +530,109 @@ export default function ViewApplicationsPage() {
         });
     }
 
+    const dataForSheet: any[][] = [];
 
-    const csvRows = [headers.join(',')];
+    // Add Title Row
+    const titleRow = Array(headers.length).fill(null);
+    titleRow[0] = { v: sheetTitle, s: { font: { bold: true, sz: 18 }, alignment: { horizontal: "center" } } };
+    dataForSheet.push(titleRow);
+
+    // Add Header Row
+    dataForSheet.push(headers.map(header => ({ v: header, s: { font: { bold: true } } })));
 
     applications.forEach(app => {
       const assignedCohort = allCohorts.find(c => c.id === app.cohortId);
-      const row = [
-        escapeCsvField(app.id),
-        escapeCsvField(app.title),
-        escapeCsvField(app.applicantDisplayName),
-        escapeCsvField(app.applicantEmail),
-        escapeCsvField(app.applicantType?.replace(/_/g, ' ')),
-        escapeCsvField(app.teamMembers),
-        escapeCsvField(app.developmentStage.replace(/_/g, ' ')),
-        escapeCsvField(app.problem),
-        escapeCsvField(app.solution),
-        escapeCsvField(app.uniqueness),
-        escapeCsvField(app.status.replace(/_/g, ' ')),
-        escapeCsvField(app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A'),
-        escapeCsvField(app.mentor || 'N/A'),
-        escapeCsvField(assignedCohort ? assignedCohort.name : (app.cohortId ? 'Cohort ID: '+app.cohortId : 'N/A')),
-        escapeCsvField(app.rejectionRemarks),
-        escapeCsvField(app.studioLocation),
-        escapeCsvField(app.fileURL),
-        escapeCsvField(app.fileName),
-        escapeCsvField(app.phase2PptFileName),
-        escapeCsvField(app.phase2PptUrl),
-        escapeCsvField(app.nextPhaseDate ? formatDateOnly(app.nextPhaseDate) : 'N/A'),
-        escapeCsvField(app.nextPhaseStartTime),
-        escapeCsvField(app.nextPhaseEndTime),
-        escapeCsvField(app.nextPhaseVenue),
-        escapeCsvField(app.nextPhaseGuidelines),
-        escapeCsvField(formatDateISO(app.submittedAt)),
-        escapeCsvField(formatDateISO(app.updatedAt)),
+      const rowValues: any[] = [
+        app.id, app.title, app.applicantDisplayName, app.applicantEmail,
+        app.applicantType?.replace(/_/g, ' '), app.teamMembers,
+        app.developmentStage.replace(/_/g, ' '), app.problem, app.solution, app.uniqueness,
+        app.status.replace(/_/g, ' '), app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A',
+        app.mentor || 'N/A',
+        assignedCohort ? assignedCohort.name : (app.cohortId ? 'Cohort ID: '+app.cohortId : 'N/A'),
+        app.rejectionRemarks, app.studioLocation,
+        app.fileURL, app.fileName, app.phase2PptFileName, app.phase2PptUrl,
+        app.nextPhaseDate ? formatDateOnly(app.nextPhaseDate) : 'N/A',
+        app.nextPhaseStartTime, app.nextPhaseEndTime, app.nextPhaseVenue, app.nextPhaseGuidelines,
+        formatDateISO(app.submittedAt), formatDateISO(app.updatedAt),
       ];
 
       for (let i = 0; i < maxTeamMembers; i++) {
         const member = app.structuredTeamMembers?.[i];
-        row.push(
-            escapeCsvField(member?.name),
-            escapeCsvField(member?.email),
-            escapeCsvField(member?.phone),
-            escapeCsvField(member?.institute),
-            escapeCsvField(member?.department),
-            escapeCsvField(member?.enrollmentNumber)
+        rowValues.push(
+            member?.name || '', member?.email || '', member?.phone || '',
+            member?.institute || '', member?.department || '', member?.enrollmentNumber || ''
         );
       }
 
       if (userProfile?.role === 'ADMIN_FACULTY') {
          adminMarkAdminUIDs.forEach(adminUid => {
-            row.push(escapeCsvField(app.phase2Marks?.[adminUid]?.mark ?? 'N/A'));
+            rowValues.push(app.phase2Marks?.[adminUid]?.mark ?? 'N/A');
          });
       }
-      csvRows.push(row.join(','));
+      dataForSheet.push(rowValues);
     });
 
-    const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    if (link.download !== undefined) {
-      const url = URL.createObjectURL(blob);
-      link.setAttribute('href', url);
-      link.setAttribute('download', `pierc_applications_${new Date().toISOString().split('T')[0]}.csv`);
-      link.style.visibility = 'hidden';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-      toast({ title: "Export Successful", description: "Applications CSV has been downloaded." });
-    } else {
-      toast({ title: "Export Failed", description: "Your browser does not support direct CSV download.", variant: "destructive" });
+    const worksheet = XLSX.utils.aoa_to_sheet(dataForSheet);
+
+    // Merge Title Cell
+    worksheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+
+    // Apply Borders to all cells with data (from header row downwards)
+    const range = XLSX.utils.decode_range(worksheet['!ref']!);
+    const thinBorderStyle = { style: "thin", color: { auto: 1 } };
+    const cellBorder = {
+      top: thinBorderStyle,
+      bottom: thinBorderStyle,
+      left: thinBorderStyle,
+      right: thinBorderStyle
+    };
+
+    for (let R = 1; R <= range.e.r; ++R) { // Start from R=1 (Header Row)
+      for (let C = 0; C <= range.e.c; ++C) {
+        const cell_address = XLSX.utils.encode_cell({ c: C, r: R });
+        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' }; // Create cell if it doesn't exist
+        if (!worksheet[cell_address].s) worksheet[cell_address].s = {}; // Ensure 's' object exists
+        worksheet[cell_address].s!.border = cellBorder;
+        if (R === 1 && worksheet[cell_address].s!.font) { // Header row, ensure bold
+             worksheet[cell_address].s!.font!.bold = true;
+        } else if (R === 1) {
+            worksheet[cell_address].s!.font = { bold: true };
+        }
+      }
     }
+     // For title row, ensure borders and alignment (alignment was set during cell creation)
+    for (let C = 0; C < headers.length; ++C) {
+        const cell_address_title = XLSX.utils.encode_cell({ c: C, r: 0 });
+         if (!worksheet[cell_address_title]) worksheet[cell_address_title] = { t: 's', v: (C === 0 ? sheetTitle : '') };
+         if (!worksheet[cell_address_title].s) worksheet[cell_address_title].s = {};
+         worksheet[cell_address_title].s!.border = cellBorder;
+         if (C === 0) { // Main title cell
+            if(!worksheet[cell_address_title].s!.font) worksheet[cell_address_title].s!.font = {};
+            worksheet[cell_address_title].s!.font!.bold = true;
+            worksheet[cell_address_title].s!.font!.sz = 18; // Adjusted for better compatibility
+            if(!worksheet[cell_address_title].s!.alignment) worksheet[cell_address_title].s!.alignment = {};
+            worksheet[cell_address_title].s!.alignment!.horizontal = "center";
+         }
+    }
+
+
+    // Set Column Widths (example, adjust as needed)
+    const wscols = headers.map((_, index) => {
+        if (index < 2) return { wch: 30 }; // ID, Title
+        if (index < 4) return { wch: 25 }; // Applicant Name, Email
+        if (index < 10) return { wch: 20 }; // Category, Team, Stage, Problem, Solution, Uniqueness
+        return { wch: 15 }; // Default for other columns
+    });
+    worksheet['!cols'] = wscols;
+
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Applications");
+
+    XLSX.writeFile(workbook, `pierc_applications_${new Date().toISOString().split('T')[0]}.xlsx`);
+    toast({ title: "Export Successful", description: "Applications XLSX has been downloaded." });
   };
+
 
 
   if (authLoading || !initialLoadComplete || loadingApplications || loadingCohorts) {
@@ -629,8 +653,8 @@ export default function ViewApplicationsPage() {
             <p className="text-muted-foreground">Review and manage all submitted ideas and innovations.</p>
           </div>
         </div>
-        <Button onClick={handleExportCSV} disabled={applications.length === 0}>
-          <Download className="mr-2 h-4 w-4" /> Export to CSV
+        <Button onClick={handleExportXLSX} disabled={applications.length === 0}>
+          <Download className="mr-2 h-4 w-4" /> Export to XLSX
         </Button>
       </header>
 
@@ -729,7 +753,7 @@ export default function ViewApplicationsPage() {
                                 {allCohorts.length === 0 && <SelectItem value="no-cohorts" disabled className="text-xs text-muted-foreground">No cohorts available</SelectItem>}
                                 {allCohorts.map(cohort => (
                                     <SelectItem key={cohort.id} value={cohort.id!} className="text-xs">
-                                    {cohort.name}
+                                    {cohort.name} ({cohort.ideaIds?.length || 0} ideas)
                                     </SelectItem>
                                 ))}
                                 </SelectContent>
