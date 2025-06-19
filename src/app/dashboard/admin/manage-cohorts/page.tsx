@@ -208,7 +208,7 @@ export default function ManageCohortsPage() {
 
     const dataForSheet = cohort.schedule.map(entry => {
       const displayDate = entry.date === previousDate ? "" : entry.date;
-      previousDate = entry.date; // Update previousDate *after* using it for displayDate logic
+      previousDate = entry.date; 
       return {
         "Date": displayDate,
         "Day": entry.day,
@@ -221,10 +221,26 @@ export default function ManageCohortsPage() {
     });
 
     const worksheet = XLSX.utils.json_to_sheet(dataForSheet, { header: headers });
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Schedule");
+    
+    // Apply borders to all cells
+    const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1'); // Default to A1 if ref is undefined
+    const thinBorderStyle = { style: "thin", color: { auto: 1 } };
+    const cellBorder = {
+      top: thinBorderStyle,
+      bottom: thinBorderStyle,
+      left: thinBorderStyle,
+      right: thinBorderStyle
+    };
 
-    // Attempt to set column widths (optional, might not be perfectly accurate for all content)
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_address = XLSX.utils.encode_cell({ c: C, r: R });
+        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' }; // Create cell if it doesn't exist, default to string type
+        if (!worksheet[cell_address].s) worksheet[cell_address].s = {}; // Create style object if it doesn't exist
+        worksheet[cell_address].s.border = cellBorder;
+      }
+    }
+
     const wscols = [
         { wch: 12 }, // Date
         { wch: 10 }, // Day
@@ -236,6 +252,8 @@ export default function ManageCohortsPage() {
     ];
     worksheet['!cols'] = wscols;
 
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Schedule");
     XLSX.writeFile(workbook, `${cohort.name}_schedule.xlsx`);
     toast({ title: "Export Successful", description: `Schedule for ${cohort.name} downloaded as XLSX.` });
   };
@@ -460,3 +478,4 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
+
