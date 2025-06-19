@@ -170,6 +170,7 @@ export type ActivityLogAction =
   | 'USER_PROFILE_UPDATED' // Could be self or by admin
   | 'USER_SIGNED_IN'
   | 'USER_SIGNED_OUT'
+  | 'USER_SIGNED_OUT_INACTIVITY' // New action for auto-logout
   | 'USER_PASSWORD_RESET_REQUESTED'
   | 'USER_ACCOUNT_DELETED_SELF'
   | 'USER_ACCOUNT_DELETED_BY_ADMIN'
@@ -214,6 +215,3 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>; // e.g., { fieldChanged: 'status', oldValue: 'SUBMITTED', newValue: 'SELECTED' }
 }
-
-
-    
