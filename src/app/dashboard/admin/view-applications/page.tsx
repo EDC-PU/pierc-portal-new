@@ -7,14 +7,14 @@ import { useRouter } from 'next/navigation';
 import {
     getAllIdeaSubmissionsWithDetails,
     updateIdeaStatusAndPhase,
-    deleteIdeaSubmission as deleteIdeaSubmissionFS,
+    archiveIdeaSubmissionForUserRevisionFS, // Renamed import
     submitOrUpdatePhase2Mark,
     assignMentorToIdea as assignMentorFS,
     getAllCohortsStream,
     assignIdeaToCohortFS
 } from '@/lib/firebase/firestore';
 import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort } from '@/types';
-import { AVAILABLE_MENTORS_DATA } from '@/types'; // Changed from AVAILABLE_MENTOR_NAMES
+import { AVAILABLE_MENTORS_DATA } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -39,7 +39,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive } from 'lucide-react'; // Added Archive icon
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -48,7 +48,7 @@ import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 
 
-const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED'];
+const ideaStatuses: IdeaStatus[] = ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED', 'ARCHIVED_BY_ADMIN']; // Added ARCHIVED_BY_ADMIN
 const programPhases: ProgramPhase[] = ['PHASE_1', 'PHASE_2', 'COHORT'];
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
 const UNASSIGN_MENTOR_TRIGGER_VALUE = "__UNASSIGN_MENTOR__";
@@ -83,7 +83,7 @@ export default function ViewApplicationsPage() {
   const [loadingCohorts, setLoadingCohorts] = useState(true);
   const [selectedApplication, setSelectedApplication] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
-  const [applicationToDelete, setApplicationToDelete] = useState<IdeaSubmission | null>(null);
+  const [applicationToArchive, setApplicationToArchive] = useState<IdeaSubmission | null>(null); // Renamed
   const [currentAdminMark, setCurrentAdminMark] = useState<string>('');
   const [isSavingMark, setIsSavingMark] = useState(false);
   const [isAssigningMentor, setIsAssigningMentor] = useState(false);
@@ -194,7 +194,7 @@ export default function ViewApplicationsPage() {
                 startTime: '10:00',
                 endTime: '13:00',
             };
-        case 'COHORT': // Defaults for COHORT are less about a single meeting
+        case 'COHORT': 
             return {
                 venue: 'Founders Studio, BBA Building, Parul University, Vadodara Campus',
                 guidelines: 'Details for the cohort program will be shared upon official assignment.',
@@ -235,7 +235,7 @@ export default function ViewApplicationsPage() {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
 
-    if (newStatus === 'SELECTED' && (actualNewPhase === 'PHASE_1' || actualNewPhase === 'PHASE_2')) {
+    if (newStatus === 'SELECTED' && actualNewPhase && (actualNewPhase === 'PHASE_1' || actualNewPhase === 'PHASE_2')) {
         openPhaseDetailsDialog(idea, actualNewPhase);
     } else if (newStatus === 'NOT_SELECTED') {
         setCurrentIdeaForRejection(idea);
@@ -243,8 +243,6 @@ export default function ViewApplicationsPage() {
         setIsRejectionDialogVisible(true);
     } else {
         try {
-          // For 'COHORT' phase, nextPhaseDetails are not applicable from this specific dialog.
-          // Cohort assignment is separate.
           await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
           toast({ title: "Update Successful", description: `Application updated.` });
           fetchApplications();
@@ -320,20 +318,20 @@ export default function ViewApplicationsPage() {
   };
 
 
-  const handleDeleteIdea = async (ideaId: string) => {
+  const handleArchiveIdea = async (ideaId: string) => {
     if (!userProfile) {
         toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
         return;
     }
     try {
-      await deleteIdeaSubmissionFS(ideaId, userProfile);
-      toast({ title: "Idea Deleted", description: "The idea submission has been successfully deleted." });
+      await archiveIdeaSubmissionForUserRevisionFS(ideaId, userProfile);
+      toast({ title: "Idea Archived", description: "The idea submission has been archived for user revision." });
       fetchApplications();
     } catch (error) {
-      console.error("Error deleting idea:", error);
-      toast({ title: "Delete Error", description: "Could not delete the idea submission.", variant: "destructive" });
+      console.error("Error archiving idea:", error);
+      toast({ title: "Archive Error", description: "Could not archive the idea submission.", variant: "destructive" });
     }
-    setApplicationToDelete(null);
+    setApplicationToArchive(null);
   };
 
   const handleSaveMark = async () => {
@@ -429,6 +427,7 @@ export default function ViewApplicationsPage() {
       case 'SUBMITTED': return 'secondary';
       case 'UNDER_REVIEW': return 'outline';
       case 'IN_EVALUATION': return 'outline';
+      case 'ARCHIVED_BY_ADMIN': return 'outline'; // Visual for archived
       case 'NOT_SELECTED': return 'destructive';
       default: return 'secondary';
     }
@@ -590,38 +589,36 @@ export default function ViewApplicationsPage() {
     for (let R = 1; R <= range.e.r; ++R) { // Start from R=1 (Header Row)
       for (let C = 0; C <= range.e.c; ++C) {
         const cell_address = XLSX.utils.encode_cell({ c: C, r: R });
-        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' }; // Create cell if it doesn't exist
-        if (!worksheet[cell_address].s) worksheet[cell_address].s = {}; // Ensure 's' object exists
+        if (!worksheet[cell_address]) worksheet[cell_address] = { t: 's', v: '' }; 
+        if (!worksheet[cell_address].s) worksheet[cell_address].s = {}; 
         worksheet[cell_address].s!.border = cellBorder;
-        if (R === 1 && worksheet[cell_address].s!.font) { // Header row, ensure bold
+        if (R === 1 && worksheet[cell_address].s!.font) { 
              worksheet[cell_address].s!.font!.bold = true;
         } else if (R === 1) {
             worksheet[cell_address].s!.font = { bold: true };
         }
       }
     }
-     // For title row, ensure borders and alignment (alignment was set during cell creation)
     for (let C = 0; C < headers.length; ++C) {
         const cell_address_title = XLSX.utils.encode_cell({ c: C, r: 0 });
          if (!worksheet[cell_address_title]) worksheet[cell_address_title] = { t: 's', v: (C === 0 ? sheetTitle : '') };
          if (!worksheet[cell_address_title].s) worksheet[cell_address_title].s = {};
          worksheet[cell_address_title].s!.border = cellBorder;
-         if (C === 0) { // Main title cell
+         if (C === 0) { 
             if(!worksheet[cell_address_title].s!.font) worksheet[cell_address_title].s!.font = {};
             worksheet[cell_address_title].s!.font!.bold = true;
-            worksheet[cell_address_title].s!.font!.sz = 18; // Adjusted for better compatibility
+            worksheet[cell_address_title].s!.font!.sz = 18; 
             if(!worksheet[cell_address_title].s!.alignment) worksheet[cell_address_title].s!.alignment = {};
             worksheet[cell_address_title].s!.alignment!.horizontal = "center";
          }
     }
 
 
-    // Set Column Widths (example, adjust as needed)
     const wscols = headers.map((_, index) => {
-        if (index < 2) return { wch: 30 }; // ID, Title
-        if (index < 4) return { wch: 25 }; // Applicant Name, Email
-        if (index < 10) return { wch: 20 }; // Category, Team, Stage, Problem, Solution, Uniqueness
-        return { wch: 15 }; // Default for other columns
+        if (index < 2) return { wch: 30 }; 
+        if (index < 4) return { wch: 25 }; 
+        if (index < 10) return { wch: 20 }; 
+        return { wch: 15 }; 
     });
     worksheet['!cols'] = wscols;
 
@@ -734,7 +731,7 @@ export default function ViewApplicationsPage() {
                           </Select>
                         ) : (
                           <span className="text-xs text-muted-foreground italic">
-                            {app.status === 'NOT_SELECTED' ? 'N/A (Rejected)' : "N/A (Status not 'Selected')"}
+                            {app.status === 'NOT_SELECTED' ? 'N/A (Rejected)' : (app.status === 'ARCHIVED_BY_ADMIN' ? 'N/A (Archived)' : "N/A (Status not 'Selected')")}
                           </span>
                         )}
                       </TableCell>
@@ -772,22 +769,23 @@ export default function ViewApplicationsPage() {
                         </Button>
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="destructive" size="sm" onClick={() => setApplicationToDelete(app)}>
-                               <Trash2 className="mr-1 h-3.5 w-3.5" /> Delete
+                            <Button variant="destructive" size="sm" onClick={() => setApplicationToArchive(app)}>
+                               <Archive className="mr-1 h-3.5 w-3.5" /> Archive for Revision
                             </Button>
                           </AlertDialogTrigger>
-                           {applicationToDelete && applicationToDelete.id === app.id && (
+                           {applicationToArchive && applicationToArchive.id === app.id && (
                             <AlertDialogContent>
                                 <AlertDialogHeader>
-                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                <AlertDialogTitle>Confirm Archive for Revision</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    This action cannot be undone. This will permanently delete the idea submission titled "{applicationToDelete.title}".
+                                    This will archive the idea "{applicationToArchive.title}", allowing the user to edit and resubmit it. 
+                                    It will be removed from active review processes.
                                 </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setApplicationToDelete(null)}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteIdea(applicationToDelete.id!)} className="bg-destructive hover:bg-destructive/90">
-                                    Delete
+                                <AlertDialogCancel onClick={() => setApplicationToArchive(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleArchiveIdea(applicationToArchive.id!)} className="bg-destructive hover:bg-destructive/90">
+                                    Archive Idea
                                 </AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogContent>
@@ -1222,3 +1220,5 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+
+    

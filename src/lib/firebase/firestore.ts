@@ -111,7 +111,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     createdAt: rawData.createdAt as Timestamp,
     updatedAt: rawData.updatedAt as Timestamp,
     isSuperAdmin: rawData.isSuperAdmin === true,
-    isTeamMemberOnly: rawData.isTeamMemberOnly === true,
+    isTeamMemberOnly: rawData.isTeamMemberOnly === true, 
     associatedIdeaId: rawData.associatedIdeaId ?? null,
     associatedTeamLeaderUid: rawData.associatedTeamLeaderUid ?? null,
   };
@@ -443,15 +443,31 @@ export const createIdeaFromProfile = async (
     throw new Error("User profile not found, cannot create idea submission.");
   }
 
-  if ((userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Administrative Account') || (userProfile.role === 'ADMIN_FACULTY' && profileData.startupTitle === 'Faculty/Mentor Account') || userProfile.isTeamMemberOnly) {
-    return null;
+  if (userProfile.isTeamMemberOnly ||
+      (userProfile.role === 'ADMIN_FACULTY' &&
+       (profileData.startupTitle === 'Administrative Account' || profileData.startupTitle === 'Faculty/Mentor Account'))) {
+    return null; // Don't create/update idea doc for team members or admins with placeholder profiles
   }
 
   if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
     throw new Error("Missing essential idea fields in profile data for idea submission. All idea-related fields must be provided.");
   }
 
-  const finalPayload: Omit<IdeaSubmission, 'id'> = {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('userId', '==', userId));
+  const existingIdeasSnap = await getDocs(q);
+
+  let existingIdeaToUpdate: IdeaSubmission | null = null;
+  let ideaDocRef;
+
+  if (!existingIdeasSnap.empty) {
+    const ideas = existingIdeasSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as IdeaSubmission));
+    // Prioritize updating an archived idea. If none, update the most recently updated one.
+    existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') || 
+                           ideas.sort((a,b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0))[0];
+  }
+  
+  const ideaPayloadBase = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
     applicantEmail: userProfile.email || 'N/A',
@@ -463,28 +479,70 @@ export const createIdeaFromProfile = async (
     developmentStage: profileData.currentStage!,
     applicantType: profileData.applicantCategory,
     teamMembers: profileData.teamMembers || '', 
-    structuredTeamMembers: [], 
-    teamMemberEmails: [], 
-    status: 'SUBMITTED',
-    programPhase: null,
-    cohortId: null,
-    phase2Marks: {}, 
-    submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
 
   try {
-    const docRef = await addDoc(collection(db, 'ideas'), finalPayload);
-    const newDocSnap = await getDoc(docRef);
-    if (!newDocSnap.exists()) {
-      throw new Error("Could not create idea submission from profile (doc not found after creation).");
+    if (existingIdeaToUpdate) {
+      ideaDocRef = doc(db, 'ideas', existingIdeaToUpdate.id!);
+      const updateData: Partial<IdeaSubmission> = {
+        ...ideaPayloadBase,
+        status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status, // Reset status if archived
+        programPhase: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.programPhase,
+        cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
+        phase2Marks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? {} : existingIdeaToUpdate.phase2Marks,
+        mentor: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.mentor,
+        rejectionRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectionRemarks,
+        rejectedByUid: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedByUid,
+        rejectedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedAt,
+        phase2PptUrl: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.phase2PptUrl,
+        phase2PptFileName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.phase2PptFileName,
+        phase2PptUploadedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.phase2PptUploadedAt,
+        nextPhaseDate: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseDate,
+        nextPhaseStartTime: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseStartTime,
+        nextPhaseEndTime: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseEndTime,
+        nextPhaseVenue: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseVenue,
+        nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
+        // Preserve structuredTeamMembers if not an archive-resubmit, otherwise reset (or handle more granularly if needed)
+        structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
+        teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
+      };
+      await updateDoc(ideaDocRef, updateData as any); // Cast as any to bypass strict type checks for partial update with serverTimestamp
+      await logUserActivity(
+        userId,
+        userProfile.displayName || userProfile.fullName,
+        existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'IDEA_RESUBMITTED' : 'IDEA_PROFILE_DATA_UPDATED',
+        { type: 'IDEA', id: ideaDocRef.id, displayName: profileData.startupTitle! }
+      );
+    } else {
+      const newIdeaData: Omit<IdeaSubmission, 'id'> = {
+        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt'>), // Cast to satisfy base type
+        structuredTeamMembers: [],
+        teamMemberEmails: [],
+        status: 'SUBMITTED',
+        programPhase: null,
+        cohortId: null,
+        phase2Marks: {},
+        submittedAt: serverTimestamp() as Timestamp,
+      };
+      ideaDocRef = await addDoc(collection(db, 'ideas'), newIdeaData);
+      await logUserActivity(
+        userId,
+        userProfile.displayName || userProfile.fullName,
+        'IDEA_SUBMITTED',
+        { type: 'IDEA', id: ideaDocRef.id, displayName: profileData.startupTitle! }
+      );
     }
-    const data = newDocSnap.data()!;
-    return { id: newDocSnap.id, ...data } as IdeaSubmission;
+
+    const finalDocSnap = await getDoc(ideaDocRef);
+    if (!finalDocSnap.exists()) {
+      throw new Error("Could not create or update idea submission from profile.");
+    }
+    return { id: finalDocSnap.id, ...finalDocSnap.data() } as IdeaSubmission;
   } catch (error) {
-    console.error("[firestore.ts:createIdeaFromProfile] Firestore addDoc error:", error);
+    console.error("[firestore.ts:createIdeaFromProfile] Firestore operation error:", error);
     if ((error as any).code === 'permission-denied') {
-        console.error("[firestore.ts:createIdeaFromProfile] Firestore Permission Denied. Check security rules for /ideas collection create operation. Payload was:", JSON.stringify(finalPayload, null, 2));
+        console.error("[firestore.ts:createIdeaFromProfile] Firestore Permission Denied. Check security rules for /ideas collection. Payload was:", JSON.stringify(ideaPayloadBase, null, 2));
     }
     throw error; 
   }
@@ -548,17 +606,17 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
-      rejectionRemarks: ideaData.rejectionRemarks,
-      rejectedByUid: ideaData.rejectedByUid,
-      rejectedAt: ideaData.rejectedAt,
-      phase2PptUrl: ideaData.phase2PptUrl,
-      phase2PptFileName: ideaData.phase2PptFileName,
-      phase2PptUploadedAt: ideaData.phase2PptUploadedAt,
+      rejectionRemarks: ideaData.rejectionRemarks || null,
+      rejectedByUid: ideaData.rejectedByUid || null,
+      rejectedAt: ideaData.rejectedAt || null,
+      phase2PptUrl: ideaData.phase2PptUrl || null,
+      phase2PptFileName: ideaData.phase2PptFileName || null,
+      phase2PptUploadedAt: ideaData.phase2PptUploadedAt || null,
       nextPhaseDate: nextPhaseDate,
-      nextPhaseStartTime: ideaData.nextPhaseStartTime,
-      nextPhaseEndTime: ideaData.nextPhaseEndTime,
-      nextPhaseVenue: ideaData.nextPhaseVenue,
-      nextPhaseGuidelines: ideaData.nextPhaseGuidelines,
+      nextPhaseStartTime: ideaData.nextPhaseStartTime || null,
+      nextPhaseEndTime: ideaData.nextPhaseEndTime || null,
+      nextPhaseVenue: ideaData.nextPhaseVenue || null,
+      nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
     } as IdeaSubmission);
   });
@@ -626,17 +684,17 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
-      rejectionRemarks: ideaData.rejectionRemarks,
-      rejectedByUid: ideaData.rejectedByUid,
-      rejectedAt: ideaData.rejectedAt,
-      phase2PptUrl: ideaData.phase2PptUrl,
-      phase2PptFileName: ideaData.phase2PptFileName,
-      phase2PptUploadedAt: ideaData.phase2PptUploadedAt,
+      rejectionRemarks: ideaData.rejectionRemarks || null,
+      rejectedByUid: ideaData.rejectedByUid || null,
+      rejectedAt: ideaData.rejectedAt || null,
+      phase2PptUrl: ideaData.phase2PptUrl || null,
+      phase2PptFileName: ideaData.phase2PptFileName || null,
+      phase2PptUploadedAt: ideaData.phase2PptUploadedAt || null,
       nextPhaseDate: nextPhaseDate,
-      nextPhaseStartTime: ideaData.nextPhaseStartTime,
-      nextPhaseEndTime: ideaData.nextPhaseEndTime,
-      nextPhaseVenue: ideaData.nextPhaseVenue,
-      nextPhaseGuidelines: ideaData.nextPhaseGuidelines,
+      nextPhaseStartTime: ideaData.nextPhaseStartTime || null,
+      nextPhaseEndTime: ideaData.nextPhaseEndTime || null,
+      nextPhaseVenue: ideaData.nextPhaseVenue || null,
+      nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
     } as IdeaSubmission);
   });
@@ -701,7 +759,20 @@ export const updateIdeaStatusAndPhase = async (
           updates.mentor = deleteField();
         }
     }
-  } else { 
+  } else if (newStatus === 'ARCHIVED_BY_ADMIN') { // Handle archive specifically
+    updates.programPhase = null;
+    updates.phase2Marks = {};
+    updates.mentor = deleteField();
+    updates.cohortId = deleteField(); // Remove from cohort when archived
+    updates.rejectionRemarks = deleteField();
+    updates.rejectedByUid = deleteField();
+    updates.rejectedAt = deleteField();
+    updates.nextPhaseDate = null;
+    updates.nextPhaseStartTime = null;
+    updates.nextPhaseEndTime = null;
+    updates.nextPhaseVenue = null;
+    updates.nextPhaseGuidelines = null;
+  } else { // For other non-SELECTED statuses like SUBMITTED, UNDER_REVIEW, NOT_SELECTED
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -725,7 +796,7 @@ export const updateIdeaStatusAndPhase = async (
   await logUserActivity(
     adminProfile.uid,
     adminProfile.displayName || adminProfile.fullName,
-    'ADMIN_IDEA_STATUS_PHASE_UPDATED',
+    newStatus === 'ARCHIVED_BY_ADMIN' ? 'ADMIN_IDEA_ARCHIVED_FOR_REVISION' : 'ADMIN_IDEA_STATUS_PHASE_UPDATED',
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
     { oldStatus, newStatus, oldPhase, newPhase, remarks: newStatus === 'NOT_SELECTED' ? remarks : undefined }
   );
@@ -803,17 +874,17 @@ export const submitOrUpdatePhase2Mark = async (
 
 export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, where('userId', '==', userId), orderBy('submittedAt', 'desc'));
+  const q = query(ideasCol, where('userId', '==', userId), orderBy('updatedAt', 'desc')); // Order by updatedAt to get the most recent first
   const querySnapshot = await getDocs(q);
   const userIdeas: IdeaSubmission[] = [];
-  querySnapshot.forEach((doc) => {
-    const data = doc.data();
+  querySnapshot.forEach((docSnap) => {
+    const data = docSnap.data();
     const submittedAt = (data.submittedAt as any) instanceof Timestamp ? (data.submittedAt as Timestamp) : Timestamp.now();
     const updatedAt = (data.updatedAt as any) instanceof Timestamp ? (data.updatedAt as Timestamp) : Timestamp.now();
     const nextPhaseDate = (data.nextPhaseDate as any) instanceof Timestamp ? (data.nextPhaseDate as Timestamp) : null;
 
     userIdeas.push({
-        id: doc.id,
+        id: docSnap.id,
         ...data,
         programPhase: data.programPhase || null,
         cohortId: data.cohortId || null,
@@ -823,17 +894,17 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         teamMemberEmails: data.teamMemberEmails || [],
         submittedAt,
         updatedAt,
-        rejectionRemarks: data.rejectionRemarks,
-        rejectedByUid: data.rejectedByUid,
-        rejectedAt: data.rejectedAt,
-        phase2PptUrl: data.phase2PptUrl,
-        phase2PptFileName: data.phase2PptFileName,
-        phase2PptUploadedAt: data.phase2PptUploadedAt,
+        rejectionRemarks: data.rejectionRemarks || null,
+        rejectedByUid: data.rejectedByUid || null,
+        rejectedAt: data.rejectedAt || null,
+        phase2PptUrl: data.phase2PptUrl || null,
+        phase2PptFileName: data.phase2PptFileName || null,
+        phase2PptUploadedAt: data.phase2PptUploadedAt || null,
         nextPhaseDate: nextPhaseDate,
-        nextPhaseStartTime: data.nextPhaseStartTime,
-        nextPhaseEndTime: data.nextPhaseEndTime,
-        nextPhaseVenue: data.nextPhaseVenue,
-        nextPhaseGuidelines: data.nextPhaseGuidelines,
+        nextPhaseStartTime: data.nextPhaseStartTime || null,
+        nextPhaseEndTime: data.nextPhaseEndTime || null,
+        nextPhaseVenue: data.nextPhaseVenue || null,
+        nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
     } as IdeaSubmission);
   });
@@ -843,7 +914,8 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
 
 export const getTotalIdeasCount = async (): Promise<number> => {
   const ideasCol = collection(db, 'ideas');
-  const snapshot = await getCountFromServer(ideasCol);
+  const q = query(ideasCol, where('status', '!=', 'ARCHIVED_BY_ADMIN')); // Exclude archived from total active count
+  const snapshot = await getCountFromServer(q);
   return snapshot.data().count;
 };
 
@@ -856,25 +928,43 @@ export const getPendingIdeasCount = async (): Promise<number> => {
 
 export const getUserIdeaSubmissionsCount = async (userId: string): Promise<number> => {
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, where('userId', '==', userId));
+  const q = query(ideasCol, where('userId', '==', userId), where('status', '!=', 'ARCHIVED_BY_ADMIN'));
   const snapshot = await getCountFromServer(q);
   return snapshot.data().count;
 };
 
-export const deleteIdeaSubmission = async (ideaId: string, adminProfile: UserProfile): Promise<void> => {
+export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaSnap = await getDoc(ideaRef);
   if (!ideaSnap.exists()) {
     throw new Error("Idea not found.");
   }
-  const ideaTitle = ideaSnap.data().title;
-  const ideaCohortId = ideaSnap.data().cohortId;
+  const ideaData = ideaSnap.data();
+  const ideaTitle = ideaData.title;
+  const oldCohortId = ideaData.cohortId;
+
+  const updates = {
+    status: 'ARCHIVED_BY_ADMIN' as IdeaStatus,
+    programPhase: null,
+    phase2Marks: {},
+    mentor: deleteField(),
+    cohortId: deleteField(),
+    rejectionRemarks: deleteField(),
+    rejectedByUid: deleteField(),
+    rejectedAt: deleteField(),
+    nextPhaseDate: null,
+    nextPhaseStartTime: null,
+    nextPhaseEndTime: null,
+    nextPhaseVenue: null,
+    nextPhaseGuidelines: null,
+    updatedAt: serverTimestamp(),
+  };
 
   const batch = writeBatch(db);
-  batch.delete(ideaRef);
+  batch.update(ideaRef, updates);
 
-  if (ideaCohortId) {
-    const cohortRef = doc(db, 'cohorts', ideaCohortId);
+  if (oldCohortId) {
+    const cohortRef = doc(db, 'cohorts', oldCohortId);
     batch.update(cohortRef, {
       ideaIds: arrayRemove(ideaId),
       updatedAt: serverTimestamp()
@@ -885,7 +975,7 @@ export const deleteIdeaSubmission = async (ideaId: string, adminProfile: UserPro
   await logUserActivity(
     adminProfile.uid,
     adminProfile.displayName || adminProfile.fullName,
-    'ADMIN_IDEA_DELETED',
+    'ADMIN_IDEA_ARCHIVED_FOR_REVISION',
     { type: 'IDEA', id: ideaId, displayName: ideaTitle }
   );
 };
@@ -908,7 +998,7 @@ export const getIdeasCountByApplicantCategory = async (): Promise<Record<Applica
   const ideasCol = collection(db, 'ideas');
 
   for (const category of categories) {
-    const q = query(ideasCol, where('applicantType', '==', category));
+    const q = query(ideasCol, where('applicantType', '==', category), where('status', '!=', 'ARCHIVED_BY_ADMIN'));
     const snapshot = await getCountFromServer(q);
     counts[category] = snapshot.data().count;
   }
@@ -1113,17 +1203,17 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         teamMemberEmails: data.teamMemberEmails || [],
         submittedAt,
         updatedAt,
-        rejectionRemarks: data.rejectionRemarks,
-        rejectedByUid: data.rejectedByUid,
-        rejectedAt: data.rejectedAt,
-        phase2PptUrl: data.phase2PptUrl,
-        phase2PptFileName: data.phase2PptFileName,
-        phase2PptUploadedAt: data.phase2PptUploadedAt,
+        rejectionRemarks: data.rejectionRemarks || null,
+        rejectedByUid: data.rejectedByUid || null,
+        rejectedAt: data.rejectedAt || null,
+        phase2PptUrl: data.phase2PptUrl || null,
+        phase2PptFileName: data.phase2PptFileName || null,
+        phase2PptUploadedAt: data.phase2PptUploadedAt || null,
         nextPhaseDate: nextPhaseDate,
-        nextPhaseStartTime: data.nextPhaseStartTime,
-        nextPhaseEndTime: data.nextPhaseEndTime,
-        nextPhaseVenue: data.nextPhaseVenue,
-        nextPhaseGuidelines: data.nextPhaseGuidelines,
+        nextPhaseStartTime: data.nextPhaseStartTime || null,
+        nextPhaseEndTime: data.nextPhaseEndTime || null,
+        nextPhaseVenue: data.nextPhaseVenue || null,
+        nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
     } as IdeaSubmission;
   }
@@ -1218,9 +1308,9 @@ export const getAllCohortsStream = (callback: (cohorts: Cohort[]) => void) => {
 
   return onSnapshot(q, (querySnapshot) => {
     const cohorts: Cohort[] = [];
-    querySnapshot.forEach((doc) => {
-      const data = doc.data();
-      cohorts.push({ id: doc.id, schedule: data.schedule || [], ...data } as Cohort); 
+    querySnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      cohorts.push({ id: docSnap.id, schedule: data.schedule || [], ...data } as Cohort); 
     });
     callback(cohorts);
   }, (error) => {
@@ -1354,17 +1444,17 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         teamMemberEmails: data.teamMemberEmails || [],
         submittedAt,
         updatedAt,
-        rejectionRemarks: data.rejectionRemarks,
-        rejectedByUid: data.rejectedByUid,
-        rejectedAt: data.rejectedAt,
-        phase2PptUrl: data.phase2PptUrl,
-        phase2PptFileName: data.phase2PptFileName,
-        phase2PptUploadedAt: data.phase2PptUploadedAt,
+        rejectionRemarks: data.rejectionRemarks || null,
+        rejectedByUid: data.rejectedByUid || null,
+        rejectedAt: data.rejectedAt || null,
+        phase2PptUrl: data.phase2PptUrl || null,
+        phase2PptFileName: data.phase2PptFileName || null,
+        phase2PptUploadedAt: data.phase2PptUploadedAt || null,
         nextPhaseDate: nextPhaseDate,
-        nextPhaseStartTime: data.nextPhaseStartTime,
-        nextPhaseEndTime: data.nextPhaseEndTime,
-        nextPhaseVenue: data.nextPhaseVenue,
-        nextPhaseGuidelines: data.nextPhaseGuidelines,
+        nextPhaseStartTime: data.nextPhaseStartTime || null,
+        nextPhaseEndTime: data.nextPhaseEndTime || null,
+        nextPhaseVenue: data.nextPhaseVenue || null,
+        nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
     } as IdeaSubmission;
   }

@@ -53,7 +53,7 @@ export interface UserProfile {
   associatedTeamLeaderUid?: string;
 }
 
-export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED';
+export type IdeaStatus = 'SUBMITTED' | 'UNDER_REVIEW' | 'IN_EVALUATION' | 'SELECTED' | 'NOT_SELECTED' | 'ARCHIVED_BY_ADMIN';
 export type ProgramPhase = 'PHASE_1' | 'PHASE_2' | 'COHORT';
 
 export interface AdminMark {
@@ -94,15 +94,15 @@ export interface IdeaSubmission {
   programPhase: ProgramPhase | null;
   phase2Marks?: { [adminUid: string]: AdminMark };
   mentor?: MentorName; 
-  cohortId?: string; 
+  cohortId?: string | null; // Can be null if not assigned
 
-  rejectionRemarks?: string;
-  rejectedByUid?: string; 
-  rejectedAt?: Timestamp;
+  rejectionRemarks?: string | null;
+  rejectedByUid?: string | null; 
+  rejectedAt?: Timestamp | null;
 
-  phase2PptUrl?: string;
-  phase2PptFileName?: string;
-  phase2PptUploadedAt?: Timestamp;
+  phase2PptUrl?: string | null;
+  phase2PptFileName?: string | null;
+  phase2PptUploadedAt?: Timestamp | null;
 
   nextPhaseDate?: Timestamp | null;
   nextPhaseStartTime?: string | null;
@@ -148,7 +148,7 @@ export interface Announcement {
   content: string;
   isUrgent: boolean;
   targetAudience: 'ALL' | 'SPECIFIC_COHORT';
-  cohortId?: string | null; // Can be null if targetAudience is ALL
+  cohortId?: string | null; 
   attachmentURL?: string;
   attachmentName?: string;
   createdByUid: string;
@@ -176,6 +176,8 @@ export type ActivityLogAction =
   | 'USER_ACCOUNT_DELETED_SELF'
   | 'USER_ACCOUNT_DELETED_BY_ADMIN'
   | 'IDEA_SUBMITTED' 
+  | 'IDEA_PROFILE_DATA_UPDATED' // When an existing idea is updated due to profile save
+  | 'IDEA_RESUBMITTED' // When an archived idea is resubmitted via profile save
   | 'IDEA_PPT_UPLOADED'
   | 'IDEA_TEAM_MEMBER_ADDED'
   | 'IDEA_TEAM_MEMBER_UPDATED'
@@ -185,7 +187,7 @@ export type ActivityLogAction =
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
   | 'ADMIN_IDEA_MENTOR_ASSIGNED'
   | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
-  | 'ADMIN_IDEA_DELETED'
+  | 'ADMIN_IDEA_ARCHIVED_FOR_REVISION' // Renamed from ADMIN_IDEA_DELETED
   | 'ADMIN_IDEA_ASSIGNED_TO_COHORT'
   | 'ADMIN_ANNOUNCEMENT_CREATED'
   | 'ADMIN_ANNOUNCEMENT_UPDATED'

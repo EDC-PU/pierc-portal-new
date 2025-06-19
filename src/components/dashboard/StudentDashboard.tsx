@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore } from 'lucide-react'; // Added ArchiveRestore
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -27,7 +27,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus } from '@/types'; // Added IdeaStatus
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
 import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
@@ -212,13 +212,14 @@ export default function StudentDashboard() {
   }, [selectedIdeaForTeamMgmt, replace, isTeamMemberForIdea]);
 
 
-  const getStatusBadgeVariant = (status?: IdeaSubmission['status']) => {
+  const getStatusBadgeVariant = (status?: IdeaStatus) => {
     if (!status) return 'secondary';
     switch (status) {
       case 'SELECTED': return 'default';
       case 'SUBMITTED': return 'secondary';
       case 'UNDER_REVIEW': return 'outline';
       case 'IN_EVALUATION': return 'outline';
+      case 'ARCHIVED_BY_ADMIN': return 'outline';
       case 'NOT_SELECTED': return 'destructive';
       default: return 'secondary';
     }
@@ -542,6 +543,18 @@ export default function StudentDashboard() {
                     </CardContent>
                 </Card>
             )}
+             {idea.status === 'ARCHIVED_BY_ADMIN' && (
+                <Card className="mt-3 bg-yellow-500/10 border-yellow-500/30">
+                    <CardHeader className="pb-2 pt-3 px-4">
+                        <CardTitle className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 flex items-center">
+                            <ArchiveRestore className="h-4 w-4 mr-2"/> Action Required
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-xs text-yellow-700/90 dark:text-yellow-400/90 px-4 pb-3">
+                        This idea was archived by an administrator. Please review any feedback, update your idea details in your main profile (Profile Setup page), and save your profile to resubmit it for consideration.
+                    </CardContent>
+                </Card>
+            )}
         </CardContent>
         </Card>
     </div>
@@ -737,6 +750,18 @@ export default function StudentDashboard() {
                               </CardContent>
                           </Card>
                       )}
+                      {idea.status === 'ARCHIVED_BY_ADMIN' && (
+                        <Card className="mt-3 bg-yellow-500/10 border-yellow-500/30">
+                            <CardHeader className="pb-2 pt-3 px-4">
+                                <CardTitle className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 flex items-center">
+                                    <ArchiveRestore className="h-4 w-4 mr-2"/> Action Required
+                                </CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-xs text-yellow-700/90 dark:text-yellow-400/90 px-4 pb-3">
+                                This idea submission was archived by an administrator. You can update your core idea details (title, problem, solution, etc.) on your main "Profile Setup" page. Saving your profile will resubmit this idea for review.
+                            </CardContent>
+                        </Card>
+                       )}
 
                         {idea.status === 'SELECTED' && idea.programPhase && (
                             <>
@@ -824,7 +849,7 @@ export default function StudentDashboard() {
                               </CardContent>
                           </Card>
                       )}
-                      {idea.problem && idea.solution && idea.uniqueness && (
+                      {idea.problem && idea.solution && idea.uniqueness && idea.status !== 'ARCHIVED_BY_ADMIN' && (
                         <div className="mt-3 pt-3 border-t border-border/50">
                             <Button
                                 variant="outline"
@@ -844,7 +869,7 @@ export default function StudentDashboard() {
             )}
           </CardContent>
           <CardFooter>
-              <p className="text-xs text-muted-foreground">Your idea submissions are automatically created when you save your profile with startup details.</p>
+              <p className="text-xs text-muted-foreground">Your idea submissions are automatically created or updated when you save your profile with startup details.</p>
           </CardFooter>
         </Card>
 
@@ -903,14 +928,14 @@ export default function StudentDashboard() {
             <CardDescription>Select an idea to add, edit, or view its team members. You can add up to 4 members.</CardDescription>
           </CardHeader>
           <CardContent>
-            {userIdeas.length === 0 ? (
-              <p className="text-muted-foreground">You have no submitted ideas to manage teams for.</p>
+            {userIdeas.filter(idea => idea.status !== 'ARCHIVED_BY_ADMIN').length === 0 ? (
+              <p className="text-muted-foreground">You have no active idea submissions to manage teams for. Archived ideas cannot have their teams managed here directly.</p>
             ) : (
               <div className="space-y-2 mb-6">
-                <Label>Select an Idea to Manage its Team:</Label>
+                <Label>Select an Active Idea to Manage its Team:</Label>
                 <ScrollArea className="h-auto max-h-40 border rounded-md">
                   <div className="p-2 space-y-1">
-                  {userIdeas.map(idea => (
+                  {userIdeas.filter(idea => idea.status !== 'ARCHIVED_BY_ADMIN').map(idea => (
                     <Button
                       key={idea.id}
                       variant={selectedIdeaForTeamMgmt?.id === idea.id ? "default" : "outline"}
@@ -925,7 +950,7 @@ export default function StudentDashboard() {
               </div>
             )}
 
-            {selectedIdeaForTeamMgmt && (
+            {selectedIdeaForTeamMgmt && selectedIdeaForTeamMgmt.status !== 'ARCHIVED_BY_ADMIN' && (
               <form onSubmit={handleSubmit(handleSaveTeamTable)} className="space-y-6">
                 <h3 className="text-lg font-semibold mb-1">Edit Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
                 <p className="text-sm text-muted-foreground mb-3">
