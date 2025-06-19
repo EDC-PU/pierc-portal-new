@@ -694,31 +694,37 @@ export const updateIdeaStatusAndPhase = async (
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
+    
     if (newPhase === 'PHASE_2') {
       const currentDoc = await getDoc(ideaRef);
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
       }
-    } else if (newPhase !== 'COHORT') {
+    } else if (newPhase !== 'COHORT') { // If not COHORT, clear mentor and cohort assignment
         updates.mentor = deleteField();
-        // updates.cohortId = deleteField(); // If moving out of cohort phase, cohortId should also be cleared here.
+        // Do not clear cohortId here if the phase is changing from COHORT to something else temporarily.
+        // Cohort assignment/unassignment is handled by assignIdeaToCohortFS.
     }
-    if (newPhase && nextPhaseDetails) {
+    
+    if (newPhase && (newPhase === 'PHASE_1' || newPhase === 'PHASE_2') && nextPhaseDetails) {
       updates.nextPhaseDate = nextPhaseDetails.date;
       updates.nextPhaseStartTime = nextPhaseDetails.startTime;
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (!newPhase) { // If phase is set to null (e.g. selected but no phase assigned yet)
+    } else if (newPhase === 'COHORT' || !newPhase) { // If moving to COHORT or no phase, clear meeting details
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
         updates.nextPhaseVenue = null;
         updates.nextPhaseGuidelines = null;
-        updates.mentor = deleteField();
-        updates.cohortId = deleteField(); // Clear cohortId if phase is not COHORT or no phase.
+        // If phase is not COHORT (i.e., null or not selected), and not PHASE_1 or PHASE_2, also clear mentor.
+        // Cohort ID clearing is handled by assignIdeaToCohortFS.
+        if (newPhase !== 'COHORT') {
+          updates.mentor = deleteField();
+        }
     }
-  } else { // Status is not 'SELECTED'
+  } else { // Status is not 'SELECTED' (e.g., SUBMITTED, UNDER_REVIEW, NOT_SELECTED)
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -726,7 +732,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
     updates.mentor = deleteField();
-    updates.cohortId = deleteField(); // Clear cohortId
+    updates.cohortId = deleteField(); // Clear cohortId if not selected
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminProfile.uid;
@@ -1395,7 +1401,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
 };
 
 // Assign an idea to a cohort
-export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, newCohortId: string | null, adminProfile: UserProfile): Promise<void> => {
+export const assignIdeaToCohortFS = async (ideaId: string, ideaTitle: string, newCohortId: string | null, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const batch = writeBatch(db);
 
@@ -1405,7 +1411,7 @@ export const assignIdeaToCohort = async (ideaId: string, ideaTitle: string, newC
 
   // Update the idea document with the new cohortId (or null if unassigning)
   batch.update(ideaRef, {
-    cohortId: newCohortId,
+    cohortId: newCohortId, // This will be null if unassigning
     updatedAt: serverTimestamp()
   });
 
