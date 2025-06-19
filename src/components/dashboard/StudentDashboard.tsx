@@ -326,14 +326,31 @@ export default function StudentDashboard() {
   };
 
   const handleGenerateOutline = async (idea: IdeaSubmission) => {
-    if (!userProfile || !idea.id || !idea.problem || !idea.solution || !idea.uniqueness) {
-      toast({ title: "Missing Data", description: "Idea problem, solution, or uniqueness is missing for outline generation.", variant: "destructive" });
+    if (!userProfile || !idea.id) {
+      toast({ title: "Error", description: "User or Idea context missing.", variant: "destructive" });
       return;
     }
+
     setIsGeneratingOutline(true);
     setGeneratingOutlineIdeaId(idea.id);
     setGeneratedOutline(null);
     setOutlineError(null);
+
+    if (!idea.problem || !idea.solution || !idea.uniqueness || 
+        idea.problem.trim().length < 10 || 
+        idea.solution.trim().length < 10 || 
+        idea.uniqueness.trim().length < 10) {
+      toast({
+        title: "Complete Idea Details Required",
+        description: "To generate a pitch deck outline, please ensure your idea's Problem, Solution, and Uniqueness sections are detailed (min 10 characters each) in your Profile Setup page.",
+        variant: "default",
+        duration: 8000,
+      });
+      setIsGeneratingOutline(false);
+      setGeneratingOutlineIdeaId(null);
+      return;
+    }
+
     try {
       const outline = await generatePitchDeckOutline({
         ideaTitle: idea.title,
@@ -383,7 +400,15 @@ export default function StudentDashboard() {
 
         for (const formMember of formData.members) {
             if (!formMember.name || formMember.name.trim() === '') {
-                continue;
+                // If an existing member was cleared from the form, handle removal
+                if (formMember.id && existingStructuredMembers.some(em => em.id === formMember.id)) {
+                     // This scenario should ideally be handled by a separate "clear/remove" button per row for clarity,
+                     // but for now, we'll treat clearing a name as a desire to remove if an ID exists.
+                     // However, the current structure of removeTeamMemberFromIdea might be better triggered by a direct action.
+                     // For simplicity with the current form, we will just not process empty rows for update/add.
+                     // True removal is handled by the trash icon.
+                }
+                continue; 
             }
 
             const memberDataToSave: TeamMember = {
@@ -434,7 +459,7 @@ export default function StudentDashboard() {
     const ideaId = selectedIdeaForTeamMgmt.id;
     const ideaTitle = selectedIdeaForTeamMgmt.title;
     try {
-      await removeTeamMemberFromIdea(ideaId, ideaTitle, memberId, userProfile);
+      await removeTeamMemberFromIdea(ideaId, ideaTitle, memberIdToRemove, userProfile);
       toast({ title: "Team Member Removed", description: `Member has been removed from the team for "${ideaTitle}".` });
       fetchUserIdeasAndUpdateState(ideaId);
     } catch (error) {
@@ -849,7 +874,7 @@ export default function StudentDashboard() {
                               </CardContent>
                           </Card>
                       )}
-                      {idea.problem && idea.solution && idea.uniqueness && idea.status !== 'ARCHIVED_BY_ADMIN' && (
+                      {idea.status !== 'ARCHIVED_BY_ADMIN' && (
                         <div className="mt-3 pt-3 border-t border-border/50">
                             <Button
                                 variant="outline"
