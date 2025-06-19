@@ -93,25 +93,28 @@ export default function AdminDashboard() {
         const matchedMentor = AVAILABLE_MENTORS_DATA.find(mentor => mentor.email.toLowerCase() === adminEmail);
 
         if (matchedMentor) {
-          const mentorName = matchedMentor.name as MentorName; // Get the canonical name
-          setCurrentMentorName(mentorName); // Display the canonical name
+          const mentorName = matchedMentor.name as MentorName; 
+          setCurrentMentorName(mentorName); 
           setLoadingMentorIdeas(true);
-          getIdeasAssignedToMentor(mentorName) // Query ideas using the canonical name
+          getIdeasAssignedToMentor(mentorName) 
             .then(ideas => {
               setAssignedMentorIdeas(ideas);
             })
             .catch(err => {
               console.error("Error fetching assigned mentor ideas:", err);
               toast({ title: "Error", description: "Could not load your assigned ideas.", variant: "destructive" });
+              setLoadingMentorIdeas(false); // Explicitly set loading to false on error
             })
             .finally(() => setLoadingMentorIdeas(false));
         } else {
           setCurrentMentorName(null);
           setAssignedMentorIdeas([]);
+          setLoadingMentorIdeas(false); 
         }
       } else {
         setCurrentMentorName(null);
         setAssignedMentorIdeas([]);
+        setLoadingMentorIdeas(false); 
       }
     }
   }, [userProfile, toast]);
@@ -262,5 +265,3 @@ export default function AdminDashboard() {
     </div>
   );
 }
-
-    
