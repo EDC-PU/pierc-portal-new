@@ -152,31 +152,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             profile.fullName && profile.fullName.trim() !== '' &&
             profile.contactNumber && profile.contactNumber.trim() !== '';
 
+          const isIdeaOwnerContext = !profile.isTeamMemberOnly && profile.role !== 'ADMIN_FACULTY';
+
           const hasRequiredIdeaDetails =
-            hasRequiredPersonalDetails && // Personal details are always a prerequisite for idea owners
+            isIdeaOwnerContext &&
             profile.startupTitle && profile.startupTitle.trim() !== '' &&
-            profile.startupTitle !== 'Administrative Account' &&
-            profile.startupTitle !== 'Faculty/Mentor Account' &&
             profile.problemDefinition && profile.problemDefinition.trim() !== '' &&
-            profile.problemDefinition !== 'Handles portal administration.' &&
-            profile.problemDefinition !== 'Manages portal functions and/or mentorship.' &&
             profile.solutionDescription && profile.solutionDescription.trim() !== '' &&
-            profile.solutionDescription !== 'Provides administrative functions and support.' &&
-            profile.solutionDescription !== 'Provides administrative or mentorship support.' &&
             profile.uniqueness && profile.uniqueness.trim() !== '' &&
-            profile.uniqueness !== 'Unique administrative role for system management.' &&
-            profile.uniqueness !== 'Unique administrative/mentorship role.' &&
             profile.applicantCategory &&
             profile.currentStage;
 
           if (isOnLogin) {
             router.push('/dashboard');
           } else if (isOnProfileSetup) {
-            if (profile.role === 'ADMIN_FACULTY' && hasRequiredPersonalDetails) {
+            if (profile.role === 'ADMIN_FACULTY' && hasRequiredPersonalDetails) { // Admin/Mentor only needs personal details
               router.push('/dashboard');
-            } else if (profile.isTeamMemberOnly && hasRequiredPersonalDetails) {
+            } else if (profile.isTeamMemberOnly && hasRequiredPersonalDetails) { // Team member only needs personal details
               router.push('/dashboard');
-            } else if (!profile.isTeamMemberOnly && profile.role !== 'ADMIN_FACULTY' && hasRequiredIdeaDetails) {
+            } else if (isIdeaOwnerContext && hasRequiredIdeaDetails) { // Idea owner needs all idea details too
               router.push('/dashboard');
             }
           } else { // User is on some other page (e.g., /dashboard or a sub-page)
@@ -184,7 +178,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               if (!hasRequiredPersonalDetails) router.push('/profile-setup');
             } else if (profile.isTeamMemberOnly) {
               if (!hasRequiredPersonalDetails) router.push('/profile-setup');
-            } else { // Idea Owner (not admin, not team member only)
+            } else { // Idea Owner
               if (!hasRequiredIdeaDetails) router.push('/profile-setup');
             }
           }
@@ -245,7 +239,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
     toast({ title: `${action.charAt(0).toUpperCase() + action.slice(1)} Error`, description: message, variant: "destructive" });
     setLoading(false);
-    throw error;
+    // Do not re-throw the error here to prevent unhandled promise rejections higher up
+    // throw error; 
   };
 
   const signInWithGoogle = async () => {
@@ -480,7 +475,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       console.error("Error deleting user account:", error);
       try { await firebaseSignOut(auth); } catch (e) { console.error("Sign out failed after delete error:", e); }
       toast({ title: "Account Deletion Failed", description: error.message || "Could not fully delete your account. Please contact support.", variant: "destructive" });
-      throw error;
+      throw error; // Re-throw so page can potentially handle it
     } finally {
       setLoading(false);
     }
