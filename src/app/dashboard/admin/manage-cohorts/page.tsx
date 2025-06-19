@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { CreateCohortForm, type CreateCohortFormData } from '@/components/admin/CreateCohortForm';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
@@ -201,7 +201,6 @@ export default function ManageCohortsPage() {
         await updateCohortScheduleFS(selectedCohortForSchedule.id, data.schedule, userProfile);
         toast({title: "Schedule Saved", description: `Schedule for ${selectedCohortForSchedule.name} updated.`});
         
-        // Optimistically update local detailedCohorts state for schedule entries count
         setDetailedCohorts(prevDetailedCohorts => prevDetailedCohorts.map(dc => 
             dc.id === selectedCohortForSchedule.id ? {...dc, schedule: data.schedule} : dc
         ));
@@ -217,7 +216,7 @@ export default function ManageCohortsPage() {
     setIsCreateFormOpen(true);
   };
 
-  const openScheduleDialog = (cohort: DetailedCohort) => { // Use DetailedCohort
+  const openScheduleDialog = (cohort: DetailedCohort) => {
     setSelectedCohortForSchedule(cohort);
     setIsScheduleDialogOpen(true);
   };
@@ -246,7 +245,7 @@ export default function ManageCohortsPage() {
   };
 
 
-  const exportScheduleToXLSX = (cohort: DetailedCohort) => { // Use DetailedCohort
+  const exportScheduleToXLSX = (cohort: DetailedCohort) => {
     if (!cohort.schedule || cohort.schedule.length === 0) {
       toast({ title: "No Schedule Data", description: "This cohort has no schedule to export.", variant: "default" });
       return;
@@ -364,7 +363,7 @@ export default function ManageCohortsPage() {
                     <TableHead className="min-w-[150px]">Cohort Name</TableHead>
                     <TableHead className="hidden lg:table-cell min-w-[200px]">Assigned Leaders</TableHead>
                     <TableHead className="hidden lg:table-cell">Participants</TableHead>
-                    <TableHead className="hidden md:table-cell">Batch Size</TableHead>
+                    <TableHead className="hidden md:table-cell">Max Teams</TableHead>
                     <TableHead className="hidden xl:table-cell">Schedule Entries</TableHead>
                     <TableHead className="hidden md:table-cell">Start Date</TableHead>
                     <TableHead className="hidden md:table-cell">End Date</TableHead>
@@ -527,5 +526,3 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
-
-    
