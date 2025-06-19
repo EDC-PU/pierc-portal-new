@@ -25,6 +25,8 @@ import * as z from 'zod';
 import { nanoid } from 'nanoid';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import * as XLSX from 'xlsx';
+
 
 const scheduleEntrySchema = z.object({
   id: z.string().default(() => nanoid()),
@@ -195,42 +197,47 @@ export default function ManageCohortsPage() {
   };
 
 
-  const exportScheduleToCSV = (cohort: Cohort) => {
+  const exportScheduleToXLSX = (cohort: Cohort) => {
     if (!cohort.schedule || cohort.schedule.length === 0) {
       toast({ title: "No Schedule Data", description: "This cohort has no schedule to export.", variant: "default" });
       return;
     }
+
     const headers = ["Date", "Day", "Time", "Category", "Topic/Activity", "Content", "Speaker/Venue"];
-    const csvRows = [headers.join(",")];
     let previousDate: string | null = null;
 
-    cohort.schedule.forEach(entry => {
+    const dataForSheet = cohort.schedule.map(entry => {
       const displayDate = entry.date === previousDate ? "" : entry.date;
-      const row = [
-        displayDate,
-        entry.day,
-        entry.time,
-        entry.category,
-        entry.topicActivity,
-        entry.content || '',
-        entry.speakerVenue || ''
-      ].map(field => `"${String(field).replace(/"/g, '""')}"`); // Escape quotes and wrap in quotes
-      csvRows.push(row.join(","));
-      previousDate = entry.date;
+      previousDate = entry.date; // Update previousDate *after* using it for displayDate logic
+      return {
+        "Date": displayDate,
+        "Day": entry.day,
+        "Time": entry.time,
+        "Category": entry.category,
+        "Topic/Activity": entry.topicActivity,
+        "Content": entry.content || '',
+        "Speaker/Venue": entry.speakerVenue || ''
+      };
     });
 
-    const csvString = csvRows.join("\n");
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${cohort.name}_schedule.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    toast({ title: "Export Successful", description: `Schedule for ${cohort.name} downloaded.` });
+    const worksheet = XLSX.utils.json_to_sheet(dataForSheet, { header: headers });
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Schedule");
+
+    // Attempt to set column widths (optional, might not be perfectly accurate for all content)
+    const wscols = [
+        { wch: 12 }, // Date
+        { wch: 10 }, // Day
+        { wch: 20 }, // Time
+        { wch: 20 }, // Category
+        { wch: 30 }, // Topic/Activity
+        { wch: 40 }, // Content
+        { wch: 25 }, // Speaker/Venue
+    ];
+    worksheet['!cols'] = wscols;
+
+    XLSX.writeFile(workbook, `${cohort.name}_schedule.xlsx`);
+    toast({ title: "Export Successful", description: `Schedule for ${cohort.name} downloaded as XLSX.` });
   };
 
 
@@ -317,8 +324,8 @@ export default function ManageCohortsPage() {
                         <Button variant="outline" size="sm" onClick={() => openScheduleDialog(cohort)}>
                           <CalendarRange className="mr-1 h-3.5 w-3.5" /> Manage Schedule
                         </Button>
-                        <Button variant="outline" size="sm" onClick={() => exportScheduleToCSV(cohort)} disabled={!cohort.schedule || cohort.schedule.length === 0}>
-                            <Download className="mr-1 h-3.5 w-3.5" /> Export CSV
+                        <Button variant="outline" size="sm" onClick={() => exportScheduleToXLSX(cohort)} disabled={!cohort.schedule || cohort.schedule.length === 0}>
+                            <Download className="mr-1 h-3.5 w-3.5" /> Export XLSX
                         </Button>
                       </TableCell>
                     </TableRow>
