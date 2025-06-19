@@ -28,6 +28,19 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 
+// Predefined Mentor Emails
+const MENTOR_EMAILS: string[] = [
+  'prashant.khanna8747@paruluniversity.ac.in',
+  'riddhi.bagha29080@paruluniversity.ac.in',
+  'nikhil.jumade24167@paruluniversity.ac.in',
+  'jay.sudani@paruluniversity.ac.in',
+  'hardik.kharva2899@paruluniversity.ac.in',
+  'sonal.sudani23321@paruluniversity.ac.in',
+  'panchamkumar.baraiya28771@paruluniversity.ac.in',
+  'juned.shaikh32161@paruluniversity.ac.in',
+];
+
+
 interface AuthContextType {
   user: User | null;
   userProfile: UserProfile | null;
@@ -35,7 +48,8 @@ interface AuthContextType {
   initialLoadComplete: boolean;
   isTeamMemberForIdea: IdeaSubmission | null;
   teamLeaderProfileForMember: UserProfile | null;
-  preFilledTeamMemberDataFromLeader: TeamMember | null; // New state
+  preFilledTeamMemberDataFromLeader: TeamMember | null; 
+  isMentorEmail: (email: string | null | undefined) => boolean;
 
   signInWithGoogle: () => Promise<void>;
   signUpWithEmailPassword: (email: string, password: string) => Promise<void>;
@@ -55,10 +69,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
   const [isTeamMemberForIdea, setIsTeamMemberForIdea] = useState<IdeaSubmission | null>(null);
   const [teamLeaderProfileForMember, setTeamLeaderProfileForMember] = useState<UserProfile | null>(null);
-  const [preFilledTeamMemberDataFromLeader, setPreFilledTeamMemberDataFromLeader] = useState<TeamMember | null>(null); // New state initialized
+  const [preFilledTeamMemberDataFromLeader, setPreFilledTeamMemberDataFromLeader] = useState<TeamMember | null>(null);
 
   const router = useRouter();
   const { toast } = useToast();
+
+  const isMentorEmail = useCallback((email: string | null | undefined): boolean => {
+    if (!email) return false;
+    return MENTOR_EMAILS.includes(email.toLowerCase());
+  }, []);
+
 
   useEffect(() => {
     setIsMounted(true);
@@ -82,6 +102,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (firebaseUser.email === 'pranavrathi07@gmail.com') {
               profile.isSuperAdmin = true;
               profile.role = 'ADMIN_FACULTY';
+          } else if (isMentorEmail(firebaseUser.email)) {
+              profile.role = 'ADMIN_FACULTY';
           }
           setUserProfile(profile);
 
@@ -90,14 +112,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             if (ideaMembership && ideaMembership.userId) {
                leaderProfile = await getUserProfile(ideaMembership.userId);
             }
-            // If profile exists and they are team member only, try to find their prefill data too
             if (ideaMembership && ideaMembership.structuredTeamMembers && firebaseUser.email) {
                 memberDataFromLeader = ideaMembership.structuredTeamMembers.find(
                     (m) => m.email.toLowerCase() === firebaseUser.email!.toLowerCase()
                 ) || null;
             }
           }
-        } else { // No profile exists yet
+        } else { 
           setUserProfile(null);
           if (firebaseUser.email) {
             ideaMembership = await getIdeaWhereUserIsTeamMember(firebaseUser.email);
@@ -105,7 +126,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                 if (ideaMembership.userId) {
                     leaderProfile = await getUserProfile(ideaMembership.userId);
                 }
-                // If no profile and they are part of an idea, this is where we find their pre-fill data
                 if (ideaMembership.structuredTeamMembers) {
                     memberDataFromLeader = ideaMembership.structuredTeamMembers.find(
                         (m) => m.email.toLowerCase() === firebaseUser.email!.toLowerCase()
@@ -117,15 +137,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
         setIsTeamMemberForIdea(ideaMembership);
         setTeamLeaderProfileForMember(leaderProfile);
-        setPreFilledTeamMemberDataFromLeader(memberDataFromLeader); // Set pre-fill data
+        setPreFilledTeamMemberDataFromLeader(memberDataFromLeader); 
 
         if (profile) {
           if (isNewAuthUser && profile.role !== 'ADMIN_FACULTY') {
              logUserActivity(firebaseUser.uid, profile.displayName || profile.fullName, 'USER_SIGNED_IN', undefined, { ipAddress: 'N/A', userAgent: 'N/A' });
           }
-          if (router && (window.location.pathname === '/login' || (window.location.pathname === '/profile-setup' && profile.startupTitle && !profile.isTeamMemberOnly && profile.startupTitle !== 'Administrative Account'))) {
+          const isOnProfileSetup = window.location.pathname === '/profile-setup';
+          const isMentorOrAdmin = profile.role === 'ADMIN_FACULTY';
+          const hasBasicIdeaDetails = profile.startupTitle && profile.startupTitle.trim() !== '';
+          
+          if (window.location.pathname === '/login') {
             router.push('/dashboard');
+          } else if (isOnProfileSetup) {
+              if (isMentorOrAdmin && hasBasicIdeaDetails) { // Mentor/Admin with placeholders already set
+                 router.push('/dashboard');
+              } else if (!isMentorOrAdmin && !profile.isTeamMemberOnly && hasBasicIdeaDetails) { // Innovator with idea details
+                 router.push('/dashboard');
+              } else if (profile.isTeamMemberOnly && profile.fullName && profile.contactNumber) { // Team member completed setup
+                 router.push('/dashboard');
+              }
           }
+
         } else {
            if (router && window.location.pathname !== '/profile-setup' && window.location.pathname !== '/login') {
              router.push('/profile-setup');
@@ -137,7 +170,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUserProfile(null);
         setIsTeamMemberForIdea(null);
         setTeamLeaderProfileForMember(null);
-        setPreFilledTeamMemberDataFromLeader(null); // Clear pre-fill data on logout
+        setPreFilledTeamMemberDataFromLeader(null); 
 
 
         if (!firebaseUser && router && !['/login', '/'].includes(window.location.pathname) && !window.location.pathname.startsWith('/_next')) {
@@ -151,7 +184,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
     return () => unsubscribe();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isMentorEmail]);
 
   const handleAuthError = (error: any, action: string) => {
     console.error(`Error during ${action}:`, error);
@@ -192,7 +225,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
-      // onAuthStateChanged handles navigation and profile loading
     } catch (error: any) {
       handleAuthError(error, "Google sign-in");
     }
@@ -202,7 +234,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged handles navigation and profile loading
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     }
@@ -212,7 +243,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await firebaseSignInWithEmailPassword(auth, email, password);
-      // onAuthStateChanged handles navigation and profile loading
     } catch (error: any) {
       handleAuthError(error, "sign-in");
     }
@@ -226,7 +256,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await firebaseSignOut(auth);
       toast({ title: "Signed Out", description: "You have been successfully signed out." });
-      // onAuthStateChanged will handle redirect to /login
     } catch (error: any) {
       handleAuthError(error, "sign-out");
     } finally {
@@ -247,8 +276,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let ideaCreationSuccessfulOrNotApplicable = true;
 
     let actualRole = roleFromForm;
-    const isSuperAdminEmail = user.email === 'pranavrathi07@gmail.com';
-    if (isSuperAdminEmail) {
+    const isSuperAdminContext = user.email === 'pranavrathi07@gmail.com';
+    const isMentorContext = isMentorEmail(user.email);
+
+    if (isSuperAdminContext || isMentorContext) {
       actualRole = 'ADMIN_FACULTY';
     }
 
@@ -256,7 +287,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const profileDataForCreation: Partial<UserProfile> = {
       role: actualRole,
-      isSuperAdmin: isSuperAdminEmail,
+      isSuperAdmin: isSuperAdminContext,
       fullName: additionalData.fullName,
       contactNumber: additionalData.contactNumber,
       enrollmentNumber: additionalData.enrollmentNumber || null,
@@ -275,6 +306,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       profileDataForCreation.applicantCategory = null;
       profileDataForCreation.currentStage = null;
       profileDataForCreation.teamMembers = null;
+    } else if (isSuperAdminContext || isMentorContext) {
+        // For new super admin or mentor, ensure placeholder idea fields if they are not team members
+        profileDataForCreation.startupTitle = additionalData.startupTitle || 'Faculty/Mentor Account';
+        profileDataForCreation.problemDefinition = additionalData.problemDefinition || 'Manages portal functions and/or mentorship.';
+        profileDataForCreation.solutionDescription = additionalData.solutionDescription || 'Provides administrative or mentorship support.';
+        profileDataForCreation.uniqueness = additionalData.uniqueness || 'Unique administrative/mentorship role.';
+        profileDataForCreation.currentStage = additionalData.currentStage || 'STARTUP_STAGE'; // Or some other sensible default
+        profileDataForCreation.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF'; // Or some other sensible default
+        profileDataForCreation.teamMembers = additionalData.teamMembers || '';
+        profileDataForCreation.associatedIdeaId = null;
+        profileDataForCreation.associatedTeamLeaderUid = null;
     } else {
       profileDataForCreation.startupTitle = additionalData.startupTitle;
       profileDataForCreation.problemDefinition = additionalData.problemDefinition;
@@ -303,9 +345,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
       if (!wasProfileExisting &&
           !createdOrUpdatedProfile.isTeamMemberOnly &&
+          !isMentorContext && // Do not create idea for mentors
           createdOrUpdatedProfile.startupTitle &&
           createdOrUpdatedProfile.startupTitle.trim() !== '' &&
-          createdOrUpdatedProfile.startupTitle !== 'Administrative Account') {
+          createdOrUpdatedProfile.startupTitle !== 'Administrative Account' &&
+          createdOrUpdatedProfile.startupTitle !== 'Faculty/Mentor Account' 
+          ) {
         console.log("[AuthContext] Attempting to create idea for new idea owner:", user.uid);
         try {
           const profileIdeaDataForCreation = {
@@ -409,7 +454,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         { type: 'USER_PROFILE', id: user.uid, displayName: userProfile.displayName || userProfile.fullName || undefined }
       );
       toast({ title: "Account Deleted", description: "Your account has been successfully deleted. You have been signed out." });
-      // Sign out will be triggered by onAuthStateChanged
     } catch (error: any) {
       console.error("Error deleting user account:", error);
       try { await firebaseSignOut(auth); } catch (e) { console.error("Sign out failed after delete error:", e); }
@@ -438,7 +482,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       initialLoadComplete,
       isTeamMemberForIdea,
       teamLeaderProfileForMember,
-      preFilledTeamMemberDataFromLeader, // Provide new state
+      preFilledTeamMemberDataFromLeader, 
+      isMentorEmail,
       signInWithGoogle,
       signUpWithEmailPassword,
       signInWithEmailPassword,

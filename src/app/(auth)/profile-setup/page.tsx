@@ -44,36 +44,34 @@ const currentStages: { value: CurrentStage; label: string }[] = [
 ];
 
 const rolesForSelection: { value: Role; label: string }[] = [
-  { value: 'STUDENT', label: 'Student / Innovator' }, // Default for idea owners
-  { value: 'EXTERNAL_USER', label: 'External User / Collaborator' }, // Can also be idea owners
+  { value: 'STUDENT', label: 'Student / Innovator' }, 
+  { value: 'EXTERNAL_USER', label: 'External User / Collaborator' }, 
 ];
 
 const profileSetupSchemaBase = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
   contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long')
     .regex(/^(\+\d{1,3}[- ]?)?\d{10,14}$/, 'Invalid phone number format'),
-  role: z.custom<Role>().optional(), // Role selected by user if applicable (not admin, not team member context)
+  role: z.custom<Role>().optional(), 
 
-  // Conditional Academic/Institutional Fields
   enrollmentNumber: z.string().max(50).optional(),
   college: z.string().max(100).optional(),
   instituteName: z.string().max(100).optional(),
 
-  // Idea Owner Specific Fields (conditionally required)
   applicantCategory: z.custom<ApplicantCategory>().optional(),
   startupTitle: z.string().max(200).optional(),
   problemDefinition: z.string().max(2000).optional(),
   solutionDescription: z.string().max(2000).optional(),
   uniqueness: z.string().max(2000).optional(),
   currentStage: z.custom<CurrentStage>().optional(),
-  teamMembers: z.string().max(500).optional(), // Original free-text team members
+  teamMembers: z.string().max(500).optional(), 
 });
 
-// Refined schema using superRefine for complex conditional logic for IDEA OWNERS
 const profileSetupSchemaForIdeaOwners = profileSetupSchemaBase.superRefine((data, ctx) => {
-  const isSuperAdminContext = data.role === 'ADMIN_FACULTY' && data.startupTitle === 'Administrative Account';
-  // This validation applies if NOT a super admin context AND the user is taking on a role that typically owns an idea.
-  const isIdeaOwnerValidationContext = !isSuperAdminContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
+  const isAdministrativeContext = data.role === 'ADMIN_FACULTY' && 
+                                 (data.startupTitle === 'Administrative Account' || data.startupTitle === 'Faculty/Mentor Account');
+
+  const isIdeaOwnerValidationContext = !isAdministrativeContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
 
 
   if (isIdeaOwnerValidationContext) {
@@ -109,7 +107,8 @@ export default function ProfileSetupPage() {
     isTeamMemberForIdea,
     teamLeaderProfileForMember,
     preFilledTeamMemberDataFromLeader,
-    deleteCurrentUserAccount
+    deleteCurrentUserAccount,
+    isMentorEmail
   } = authContext;
   const router = useRouter();
   const { toast } = useToast();
@@ -118,12 +117,15 @@ export default function ProfileSetupPage() {
   const [isEditing, setIsEditing] = useState(false);
 
   const isSuperAdminEmail = useMemo(() => user?.email === 'pranavrathi07@gmail.com', [user?.email]);
+  const isCurrentMentorEmail = useMemo(() => isMentorEmail(user?.email), [user?.email, isMentorEmail]);
   const isNewTeamMemberSetupContext = useMemo(() => !!(!userProfile && isTeamMemberForIdea), [userProfile, isTeamMemberForIdea]);
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user?.email]);
 
+
   const activeSchema = useMemo(() => {
-    return isNewTeamMemberSetupContext ? profileSetupSchemaBase : profileSetupSchemaForIdeaOwners;
-  }, [isNewTeamMemberSetupContext]);
+    const isNewAdminOrMentorSetup = !isEditing && (isSuperAdminEmail || isCurrentMentorEmail);
+    return isNewTeamMemberSetupContext || isNewAdminOrMentorSetup ? profileSetupSchemaBase : profileSetupSchemaForIdeaOwners;
+  }, [isNewTeamMemberSetupContext, isEditing, isSuperAdminEmail, isCurrentMentorEmail]);
 
   const { control, handleSubmit, watch, reset, formState: { errors, isSubmitting }, setValue } = useForm<ProfileSetupFormData>({
     resolver: zodResolver(activeSchema),
@@ -148,11 +150,11 @@ export default function ProfileSetupPage() {
   const selectedApplicantCategory = watch('applicantCategory');
 
   const determinedRole: Role = useMemo(() => {
-    if (isSuperAdminEmail) return 'ADMIN_FACULTY';
+    if (isSuperAdminEmail || isCurrentMentorEmail) return 'ADMIN_FACULTY';
     if (userProfile?.role) return userProfile.role;
     if (isNewTeamMemberSetupContext) return isParulEmail ? 'STUDENT' : 'EXTERNAL_USER';
     return selectedRole || null;
-  }, [isSuperAdminEmail, userProfile?.role, isNewTeamMemberSetupContext, isParulEmail, selectedRole]);
+  }, [isSuperAdminEmail, isCurrentMentorEmail, userProfile?.role, isNewTeamMemberSetupContext, isParulEmail, selectedRole]);
 
 
   useEffect(() => {
@@ -170,7 +172,6 @@ export default function ProfileSetupPage() {
         college: '',
         instituteName: '',
         teamMembers: '',
-        // Ensure idea fields are undefined by default for all, unless editing existing or superadmin
         applicantCategory: undefined,
         startupTitle: undefined,
         problemDefinition: undefined,
@@ -197,23 +198,22 @@ export default function ProfileSetupPage() {
           currentStage: userProfile.currentStage || undefined,
           teamMembers: userProfile.teamMembers || '',
         };
-      } else {
+      } else { // New user setup
         setIsEditing(false);
-        if (isSuperAdminEmail) {
+        if (isSuperAdminEmail || isCurrentMentorEmail) {
           defaultVals.role = 'ADMIN_FACULTY';
-          defaultVals.startupTitle = 'Administrative Account';
-          defaultVals.problemDefinition = 'Handles portal administration.';
-          defaultVals.solutionDescription = 'Provides administrative functions and support.';
-          defaultVals.uniqueness = 'Unique administrative role for system management.';
-          defaultVals.currentStage = 'STARTUP_STAGE';
-          defaultVals.applicantCategory = 'PARUL_STAFF';
+          defaultVals.startupTitle = isSuperAdminEmail ? 'Administrative Account' : 'Faculty/Mentor Account';
+          defaultVals.problemDefinition = 'Handles portal administration and/or mentorship.';
+          defaultVals.solutionDescription = 'Provides administrative/mentorship functions and support.';
+          defaultVals.uniqueness = 'Unique administrative/mentorship role for system management.';
+          defaultVals.currentStage = 'STARTUP_STAGE'; // Default placeholder
+          defaultVals.applicantCategory = 'PARUL_STAFF'; // Default placeholder
         } else if (isNewTeamMemberSetupContext) {
           defaultVals.role = isParulEmail ? 'STUDENT' : 'EXTERNAL_USER';
           if (preFilledTeamMemberDataFromLeader) {
             defaultVals.fullName = preFilledTeamMemberDataFromLeader.name || user.displayName || '';
             defaultVals.contactNumber = preFilledTeamMemberDataFromLeader.phone || '';
           }
-          // Ensure idea fields are explicitly undefined for new team members
           defaultVals.startupTitle = undefined;
           defaultVals.problemDefinition = undefined;
           defaultVals.solutionDescription = undefined;
@@ -221,9 +221,6 @@ export default function ProfileSetupPage() {
           defaultVals.applicantCategory = undefined;
           defaultVals.currentStage = undefined;
           defaultVals.teamMembers = undefined;
-        } else {
-          // New idea owner - idea fields remain undefined here, will be filled by user
-          // and validated by profileSetupSchemaForIdeaOwners
         }
       }
       reset(defaultVals);
@@ -233,7 +230,7 @@ export default function ProfileSetupPage() {
 
       setPageLoading(false);
     }
-  }, [authLoading, initialLoadComplete, user, userProfile, router, reset, setValue, isSuperAdminEmail, isNewTeamMemberSetupContext, isParulEmail, preFilledTeamMemberDataFromLeader]);
+  }, [authLoading, initialLoadComplete, user, userProfile, router, reset, setValue, isSuperAdminEmail, isCurrentMentorEmail, isNewTeamMemberSetupContext, isParulEmail, preFilledTeamMemberDataFromLeader]);
 
 
   const processSubmit: SubmitHandler<ProfileSetupFormData> = async (data) => {
@@ -241,7 +238,7 @@ export default function ProfileSetupPage() {
 
     let roleToSubmit: Role = determinedRole;
 
-    if (!roleToSubmit && !isSuperAdminEmail && !isNewTeamMemberSetupContext) {
+    if (!roleToSubmit && !isSuperAdminEmail && !isCurrentMentorEmail && !isNewTeamMemberSetupContext) {
       toast({ title: "Role Selection Required", description: "Please select your role (Student/Innovator or External User).", variant: "destructive" });
       return;
     }
@@ -252,8 +249,6 @@ export default function ProfileSetupPage() {
       enrollmentNumber: data.enrollmentNumber || null,
       college: data.college || null,
       instituteName: data.instituteName || null,
-      // These will be undefined if isNewTeamMemberSetupContext due to schema and default values,
-      // or filled if user is an idea owner. AuthContext handles nullifying them for team members.
       applicantCategory: data.applicantCategory,
       startupTitle: data.startupTitle,
       problemDefinition: data.problemDefinition,
@@ -274,17 +269,20 @@ export default function ProfileSetupPage() {
     try {
         await deleteCurrentUserAccount();
     } catch (error) {
-        // Error toast handled by AuthContext
     }
   };
 
-  const showRoleSelection = !isEditing && !isSuperAdminEmail && !isNewTeamMemberSetupContext;
+  const isNewAdminOrMentorSetup = !isEditing && (isSuperAdminEmail || isCurrentMentorEmail);
+  const showRoleSelection = !isEditing && !isSuperAdminEmail && !isCurrentMentorEmail && !isNewTeamMemberSetupContext;
 
-  const showIdeaDetailsSection =
-    (isEditing && userProfile && !userProfile.isTeamMemberOnly && userProfile.role !== 'ADMIN_FACULTY') ||
-    (!isEditing && !isNewTeamMemberSetupContext && determinedRole && determinedRole !== 'ADMIN_FACULTY');
+  const showIdeaDetailsSection = useMemo(() => {
+    if (isEditing && userProfile && !userProfile.isTeamMemberOnly && userProfile.role !== 'ADMIN_FACULTY') return true;
+    if (!isEditing && !isNewTeamMemberSetupContext && !isSuperAdminEmail && !isCurrentMentorEmail && determinedRole && determinedRole !== 'ADMIN_FACULTY') return true;
+    return false;
+  }, [isEditing, userProfile, isNewTeamMemberSetupContext, isSuperAdminEmail, isCurrentMentorEmail, determinedRole]);
 
-  const showAdminPlaceholderIdeaFields = isSuperAdminEmail && determinedRole === 'ADMIN_FACULTY' && !isEditing;
+
+  const showAdminOrMentorPlaceholderIdeaFields = isNewAdminOrMentorSetup;
 
 
   if (authLoading || !initialLoadComplete || pageLoading) {
@@ -300,12 +298,12 @@ export default function ProfileSetupPage() {
     return <p className="text-center py-10">User not found. Redirecting...</p>;
   }
 
-  const pageTitle = isEditing ? "Edit Your Profile" : (isNewTeamMemberSetupContext ? "Complete Your Team Member Profile" : "Set Up Your Profile");
+  const pageTitle = isEditing ? "Edit Your Profile" : (isNewTeamMemberSetupContext ? "Complete Your Team Member Profile" : (isSuperAdminEmail || isCurrentMentorEmail ? "Complete Your Admin/Mentor Profile" : "Set Up Your Profile"));
   const pageDescription = isEditing
     ? "Update your personal, academic, and startup information."
     : (isNewTeamMemberSetupContext
         ? `You're being added as a team member for "${isTeamMemberForIdea?.title || 'an idea'}" by ${teamLeaderProfileForMember?.displayName || 'the team leader'}. Please complete your details.`
-        : "Provide your details to get started with the PIERC portal.");
+        : (isSuperAdminEmail || isCurrentMentorEmail ? "Confirm your details to activate your administrative/mentorship account." : "Provide your details to get started with the PIERC portal."));
 
 
   return (
@@ -334,7 +332,7 @@ export default function ProfileSetupPage() {
                   <Label>Your Role</Label>
                   <p className="text-sm text-foreground/80 capitalize">
                     {determinedRole.replace('_', ' ').toLowerCase()}
-                    {isSuperAdminEmail ? ' (Super Admin)' : ''}
+                    {isSuperAdminEmail ? ' (Super Admin)' : (isCurrentMentorEmail ? ' (Mentor)' : '')}
                     {isNewTeamMemberSetupContext ? ' (Team Member)' : ''}
                   </p>
                 </div>
@@ -377,10 +375,10 @@ export default function ProfileSetupPage() {
               </section>
             )}
 
-            { (determinedRole !== 'ADMIN_FACULTY' || isEditing) && (
+            { (determinedRole !== 'ADMIN_FACULTY' || (isEditing && userProfile?.role !== 'ADMIN_FACULTY' && !isCurrentMentorEmail && !isSuperAdminEmail)) && (
               <section className="space-y-4 pt-4">
                 <h3 className="font-semibold text-lg text-primary border-t pt-4">Academic & Institutional Information</h3>
-                {(isParulEmail || selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection) && (
+                {(isParulEmail || (selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection)) && (
                   <>
                     <div>
                       <Label htmlFor="enrollmentNumber">Enrollment Number {(selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection) ? '*' : ''}</Label>
@@ -412,18 +410,20 @@ export default function ProfileSetupPage() {
             )}
 
 
-            {(showIdeaDetailsSection || showAdminPlaceholderIdeaFields) && (
+            {(showIdeaDetailsSection || showAdminOrMentorPlaceholderIdeaFields) && (
               <section className="space-y-4 pt-4">
                 <div className="flex items-center gap-2 border-t pt-4">
                     <Lightbulb className="h-6 w-6 text-primary" />
-                    <h3 className="font-semibold text-lg text-primary">Your Startup / Idea Details</h3>
+                    <h3 className="font-semibold text-lg text-primary">
+                      {isNewAdminOrMentorSetup ? "Administrative Account Details" : "Your Startup / Idea Details"}
+                    </h3>
                 </div>
                  <p className="text-xs text-muted-foreground -mt-3">
-                    {isEditing ? "Manage your existing startup/idea information." : "Tell us about your innovative concept."}
-                    {showAdminPlaceholderIdeaFields && " (These are placeholder details for your admin account.)"}
+                    {isEditing ? "Manage your existing startup/idea information." : 
+                     (isNewAdminOrMentorSetup ? "These are placeholder details for your account." : "Tell us about your innovative concept.")}
                  </p>
 
-                {!showAdminPlaceholderIdeaFields ? (
+                {!showAdminOrMentorPlaceholderIdeaFields ? (
                     <>
                         <div>
                         <Label>Applicant Category *</Label>
@@ -485,13 +485,15 @@ export default function ProfileSetupPage() {
                     </>
                 ) : ( 
                     <>
-                        <div><Label>Applicant Category</Label><Input value="Parul Staff (Admin)" disabled /></div>
-                        <div><Label>Startup Title</Label><Input value="Administrative Account" disabled /></div>
-                        <div><Label>Team Members</Label><Input value="N/A" disabled /></div>
-                        <div><Label>Problem Definition</Label><Textarea value="Handles portal administration." disabled rows={3}/></div>
-                        <div><Label>Solution Description</Label><Textarea value="Provides administrative functions and support." disabled rows={3}/></div>
-                        <div><Label>Uniqueness</Label><Textarea value="Unique administrative role for system management." disabled rows={3}/></div>
-                        <div><Label>Current Stage</Label><Input value="Startup Stage (System)" disabled /></div>
+                        <div><Label>Account Type</Label><Input value={isSuperAdminEmail ? "Super Admin Placeholder" : "Faculty/Mentor Placeholder"} disabled /></div>
+                        <Controller name="applicantCategory" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <Controller name="startupTitle" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <Controller name="teamMembers" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <Controller name="problemDefinition" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <Controller name="solutionDescription" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <Controller name="uniqueness" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <Controller name="currentStage" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        <p className="text-xs text-muted-foreground">The fields above are pre-filled for your administrative/mentorship account and are not typically edited here.</p>
                     </>
                 )}
               </section>
@@ -503,7 +505,7 @@ export default function ProfileSetupPage() {
               {(isSubmitting || pageLoading) && <LoadingSpinner className="mr-2" />}
               {isEditing ? 'Save Changes' : 'Save Profile & Proceed'}
             </Button>
-            {isEditing && user?.email !== 'pranavrathi07@gmail.com' && (
+            {isEditing && user?.email !== 'pranavrathi07@gmail.com' && !isCurrentMentorEmail && (
                 <AlertDialog>
                     <AlertDialogTrigger asChild>
                         <Button type="button" variant="destructive" className="w-full sm:w-auto mt-3 sm:mt-0">
