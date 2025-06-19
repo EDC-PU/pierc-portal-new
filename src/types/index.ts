@@ -179,6 +179,7 @@ export type ActivityLogAction =
   | 'IDEA_TEAM_MEMBER_ADDED'
   | 'IDEA_TEAM_MEMBER_UPDATED'
   | 'IDEA_TEAM_MEMBER_REMOVED'
+  | 'USER_GENERATED_PITCH_DECK_OUTLINE' // New action
   // Admin - User Management
   | 'ADMIN_USER_ROLE_UPDATED'
   // Admin - Idea Management

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -28,6 +28,7 @@ import { db } from '@/lib/firebase/config';
 import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
+import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow'; // Added
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -44,6 +45,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Dialog, DialogContent as ModalContent, DialogHeader as ModalHeader, DialogTitle as ModalTitle, DialogDescription as ModalDescription, DialogFooter as ModalFooter } from '@/components/ui/dialog'; // For AI Outline Modal
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'; // For AI Outline Display
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -110,6 +113,12 @@ export default function StudentDashboard() {
 
   const [selectedIdeaForTeamMgmt, setSelectedIdeaForTeamMgmt] = useState<IdeaSubmission | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
+
+  const [generatingOutlineIdeaId, setGeneratingOutlineIdeaId] = useState<string | null>(null);
+  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
+  const [generatedOutline, setGeneratedOutline] = useState<GeneratePitchDeckOutlineOutput | null>(null);
+  const [outlineError, setOutlineError] = useState<string | null>(null);
+  const [isOutlineModalOpen, setIsOutlineModalOpen] = useState(false);
 
 
   const { control, handleSubmit, reset: resetTeamManagementFormInternal, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
@@ -292,6 +301,43 @@ export default function StudentDashboard() {
       setUploadingPptIdeaId(null);
     }
   };
+
+  const handleGenerateOutline = async (idea: IdeaSubmission) => {
+    if (!userProfile || !idea.id || !idea.problem || !idea.solution || !idea.uniqueness) {
+      toast({ title: "Missing Data", description: "Idea problem, solution, or uniqueness is missing for outline generation.", variant: "destructive" });
+      return;
+    }
+    setIsGeneratingOutline(true);
+    setGeneratingOutlineIdeaId(idea.id);
+    setGeneratedOutline(null);
+    setOutlineError(null);
+    try {
+      const outline = await generatePitchDeckOutline({
+        ideaTitle: idea.title,
+        problemStatement: idea.problem,
+        proposedSolution: idea.solution,
+        uniqueness: idea.uniqueness,
+      });
+      setGeneratedOutline(outline);
+      setIsOutlineModalOpen(true);
+      toast({ title: "Pitch Deck Outline Generated!", description: "Review the AI-suggested outline." });
+      await logUserActivity(
+        userProfile.uid,
+        userProfile.displayName || userProfile.fullName,
+        'USER_GENERATED_PITCH_DECK_OUTLINE',
+        { type: 'IDEA', id: idea.id, displayName: idea.title }
+      );
+    } catch (error) {
+      console.error("Error generating pitch deck outline:", error);
+      const errorMessage = (error instanceof Error) ? error.message : "Could not generate outline.";
+      setOutlineError(errorMessage);
+      toast({ title: "Outline Generation Failed", description: errorMessage, variant: "destructive" });
+    } finally {
+      setIsGeneratingOutline(false);
+      setGeneratingOutlineIdeaId(null);
+    }
+  };
+
 
  const handleSaveTeamTable: SubmitHandler<TeamManagementFormData> = async (formData) => {
     if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !userProfile) {
@@ -688,6 +734,19 @@ export default function StudentDashboard() {
                               </CardContent>
                           </Card>
                       )}
+                      {idea.problem && idea.solution && idea.uniqueness && (
+                        <div className="mt-3 pt-3 border-t border-border/50">
+                            <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={() => handleGenerateOutline(idea)}
+                                disabled={isGeneratingOutline && generatingOutlineIdeaId === idea.id}
+                            >
+                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>}
+                                Generate Pitch Deck Outline (AI)
+                            </Button>
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
@@ -913,6 +972,64 @@ export default function StudentDashboard() {
           </CardContent>
         </Card>
       </TabsContent>
+
+      {isOutlineModalOpen && generatedOutline && selectedIdeaForTeamMgmt && (
+        <Dialog open={isOutlineModalOpen} onOpenChange={(isOpen) => {
+            if (!isOpen) {
+                setIsOutlineModalOpen(false);
+                setGeneratedOutline(null);
+                setOutlineError(null);
+            }
+        }}>
+            <ModalContent className="sm:max-w-2xl md:max-w-3xl max-h-[90vh]">
+                <ModalHeader>
+                    <ModalTitle className="font-headline text-xl flex items-center">
+                        <AiIcon className="h-6 w-6 mr-2 text-primary"/> AI Generated Pitch Deck Outline
+                    </ModalTitle>
+                    <ModalDescription>
+                        For idea: <span className="font-semibold">{selectedIdeaForTeamMgmt.title}</span>.
+                        This is a suggestion to help you get started. Customize it to best fit your vision.
+                    </ModalDescription>
+                </ModalHeader>
+                {outlineError ? (
+                    <div className="py-4 text-destructive text-center">
+                        <p>Error generating outline: {outlineError}</p>
+                    </div>
+                ) : (
+                <ScrollArea className="max-h-[calc(90vh-12rem)] overflow-y-auto p-1 pr-3">
+                    <Accordion type="multiple" defaultValue={Object.keys(generatedOutline).map(key => key)} className="w-full">
+                        {Object.entries(generatedOutline).map(([key, slide]) => {
+                            if (!slide || !slide.title || !slide.keyPoints) return null;
+                            const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+                            return (
+                                <AccordionItem value={key} key={key}>
+                                    <AccordionTrigger className="text-md font-semibold hover:bg-muted/50 px-2 py-3">
+                                        {slide.title || formattedKey}
+                                    </AccordionTrigger>
+                                    <AccordionContent className="px-2 py-2 bg-muted/20 rounded-b-md">
+                                        <ul className="list-disc space-y-1 pl-5 text-sm text-foreground/90">
+                                            {slide.keyPoints.map((point, index) => (
+                                                <li key={index}>{point}</li>
+                                            ))}
+                                        </ul>
+                                    </AccordionContent>
+                                </AccordionItem>
+                            );
+                        })}
+                    </Accordion>
+                </ScrollArea>
+                )}
+                <ModalFooter className="mt-4">
+                    <Button variant="outline" onClick={() => {
+                        setIsOutlineModalOpen(false);
+                        setGeneratedOutline(null);
+                        setOutlineError(null);
+                    }}>Close</Button>
+                </ModalFooter>
+            </ModalContent>
+        </Dialog>
+      )}
     </Tabs>
   );
 }
+
