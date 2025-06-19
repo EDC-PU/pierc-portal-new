@@ -24,7 +24,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { nanoid } from 'nanoid';
 import { ScrollArea } from '@/components/ui/scroll-area';
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const scheduleEntrySchema = z.object({
   id: z.string().default(() => nanoid()),
@@ -42,6 +42,17 @@ const cohortScheduleFormSchema = z.object({
 });
 
 type CohortScheduleFormData = z.infer<typeof cohortScheduleFormSchema>;
+
+const scheduleCategories = [
+  "Input Session",
+  "Lunch Break",
+  "Activity",
+  "Break",
+  "Mentoring Session",
+  "Group Work",
+  "Presentation",
+  "Valedictory Ceremony",
+];
 
 
 export default function ManageCohortsPage() {
@@ -335,7 +346,7 @@ export default function ManageCohortsPage() {
                       <TableHead className="w-[130px]">Date</TableHead>
                       <TableHead className="w-[100px]">Day</TableHead>
                       <TableHead className="w-[150px]">Time</TableHead>
-                      <TableHead className="w-[150px]">Category</TableHead>
+                      <TableHead className="w-[200px]">Category</TableHead>
                       <TableHead className="min-w-[200px]">Topic/Activity</TableHead>
                       <TableHead className="min-w-[200px]">Content</TableHead>
                       <TableHead className="w-[180px]">Speaker/Venue</TableHead>
@@ -361,9 +372,25 @@ export default function ManageCohortsPage() {
                              {scheduleErrors.schedule?.[index]?.time && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.time?.message}</p>}
                         </TableCell>
                         <TableCell className="p-1">
-                          <Controller name={`schedule.${index}.category`} control={scheduleControl} render={({ field: controllerField }) => (
-                            <Input {...controllerField} placeholder="e.g., Input Session" className="text-xs h-9"/> )}/>
-                            {scheduleErrors.schedule?.[index]?.category && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.category?.message}</p>}
+                          <Controller
+                            name={`schedule.${index}.category`}
+                            control={scheduleControl}
+                            render={({ field: controllerField }) => (
+                              <Select onValueChange={controllerField.onChange} value={controllerField.value} >
+                                <SelectTrigger className="text-xs h-9">
+                                  <SelectValue placeholder="Select Category" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {scheduleCategories.map((cat) => (
+                                    <SelectItem key={cat} value={cat} className="text-xs">
+                                      {cat}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            )}
+                          />
+                          {scheduleErrors.schedule?.[index]?.category && <p className="text-xs text-destructive mt-0.5">{scheduleErrors.schedule[index]?.category?.message}</p>}
                         </TableCell>
                         <TableCell className="p-1">
                           <Controller name={`schedule.${index}.topicActivity`} control={scheduleControl} render={({ field: controllerField }) => (
@@ -405,3 +432,6 @@ export default function ManageCohortsPage() {
     </div>
   );
 }
+
+
+    
