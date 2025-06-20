@@ -1,5 +1,5 @@
 
-import { db, functions as firebaseFunctions, auth } from './config'; 
+import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus } from '@/types';
 import { httpsCallable } from 'firebase/functions';
@@ -41,11 +41,11 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     email: data.email ?? currentAuthUser?.email ?? null,
     displayName: data.displayName || data.fullName || currentAuthUser?.displayName || 'New User',
     photoURL: data.photoURL ?? currentAuthUser?.photoURL ?? null,
-    role: data.role ?? null, 
+    role: data.role ?? null,
     isSuperAdmin: (data.email ?? currentAuthUser?.email) === 'pranavrathi07@gmail.com' ? true : (data.isSuperAdmin ?? false),
     fullName: data.fullName || '',
     contactNumber: data.contactNumber || '',
-    isTeamMemberOnly: data.isTeamMemberOnly === true, 
+    isTeamMemberOnly: data.isTeamMemberOnly === true,
     enrollmentNumber: data.enrollmentNumber || null,
     college: data.college || null,
     instituteName: data.instituteName || null,
@@ -59,10 +59,10 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     profileDataForWrite.uniqueness = data.uniqueness || null;
     profileDataForWrite.applicantCategory = data.applicantCategory || null;
     profileDataForWrite.currentStage = data.currentStage || null;
-    profileDataForWrite.teamMembers = data.teamMembers || ''; 
+    profileDataForWrite.teamMembers = data.teamMembers || '';
     profileDataForWrite.associatedIdeaId = null;
     profileDataForWrite.associatedTeamLeaderUid = null;
-  } else { 
+  } else {
     profileDataForWrite.associatedIdeaId = data.associatedIdeaId || null;
     profileDataForWrite.associatedTeamLeaderUid = data.associatedTeamLeaderUid || null;
     profileDataForWrite.startupTitle = null;
@@ -77,7 +77,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
   const existingProfileSnap = await getDoc(userProfileRef);
   if (existingProfileSnap.exists()) {
     profileDataForWrite.updatedAt = serverTimestamp() as Timestamp;
-    delete profileDataForWrite.createdAt; 
+    delete profileDataForWrite.createdAt;
     await updateDoc(userProfileRef, profileDataForWrite);
   } else {
     profileDataForWrite.createdAt = serverTimestamp() as Timestamp;
@@ -111,7 +111,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     createdAt: rawData.createdAt as Timestamp,
     updatedAt: rawData.updatedAt as Timestamp,
     isSuperAdmin: rawData.isSuperAdmin === true,
-    isTeamMemberOnly: rawData.isTeamMemberOnly === true, 
+    isTeamMemberOnly: rawData.isTeamMemberOnly === true,
     associatedIdeaId: rawData.associatedIdeaId ?? null,
     associatedTeamLeaderUid: rawData.associatedTeamLeaderUid ?? null,
   };
@@ -144,7 +144,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
         isSuperAdmin: false,
-        isTeamMemberOnly: data.isTeamMemberOnly === true, 
+        isTeamMemberOnly: data.isTeamMemberOnly === true,
         associatedIdeaId: data.associatedIdeaId ?? null,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
     };
@@ -228,7 +228,7 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         createdAt: data.createdAt,
         updatedAt: data.updatedAt,
         isSuperAdmin: false,
-        isTeamMemberOnly: data.isTeamMemberOnly === true, 
+        isTeamMemberOnly: data.isTeamMemberOnly === true,
         associatedIdeaId: data.associatedIdeaId ?? null,
         associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
     };
@@ -362,7 +362,7 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol,
     where('isUrgent', '==', true),
-    where('targetAudience', '==', 'ALL'), 
+    where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
   );
 
@@ -396,10 +396,10 @@ export const getAllAnnouncementsForAdminStream = (callback: (announcements: Anno
 
 export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'|'createdByUid'|'creatorDisplayName'>>, adminProfile: UserProfile): Promise<void> => {
   const announcementRef = doc(db, 'announcements', announcementId);
-  
+
   const updateData = { ...data };
   if (data.targetAudience === 'ALL') {
-    updateData.cohortId = null; 
+    updateData.cohortId = null;
   }
 
   await updateDoc(announcementRef, {
@@ -444,7 +444,7 @@ export const createIdeaFromProfile = async (
   if (userProfile.isTeamMemberOnly ||
       (userProfile.role === 'ADMIN_FACULTY' &&
        (profileData.startupTitle === 'Administrative Account' || profileData.startupTitle === 'Faculty/Mentor Account'))) {
-    return null; 
+    return null;
   }
 
   if (!profileData.startupTitle || !profileData.problemDefinition || !profileData.solutionDescription || !profileData.uniqueness || !profileData.currentStage || !profileData.applicantCategory) {
@@ -460,10 +460,10 @@ export const createIdeaFromProfile = async (
 
   if (!existingIdeasSnap.empty) {
     const ideas = existingIdeasSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as IdeaSubmission));
-    existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') || 
+    existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') ||
                            ideas.sort((a,b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0))[0];
   }
-  
+
   const ideaPayloadBase = {
     userId: userId,
     applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
@@ -474,7 +474,7 @@ export const createIdeaFromProfile = async (
     uniqueness: profileData.uniqueness!,
     developmentStage: profileData.currentStage!,
     applicantType: profileData.applicantCategory,
-    teamMembers: profileData.teamMembers || '', 
+    teamMembers: profileData.teamMembers || '',
     updatedAt: serverTimestamp() as Timestamp,
   };
 
@@ -523,7 +523,7 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationReviewedBy,
         sanction2UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationReviewedAt,
       };
-      await updateDoc(ideaDocRef, updateData as any); 
+      await updateDoc(ideaDocRef, updateData as any);
       await logUserActivity(
         userId,
         userProfile.displayName || userProfile.fullName,
@@ -532,7 +532,7 @@ export const createIdeaFromProfile = async (
       );
     } else {
       const newIdeaData: Omit<IdeaSubmission, 'id'> = {
-        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt'>), 
+        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt'>),
         structuredTeamMembers: [],
         teamMemberEmails: [],
         status: 'SUBMITTED',
@@ -593,7 +593,7 @@ export const createIdeaFromProfile = async (
     if ((error as any).code === 'permission-denied') {
         console.error("[firestore.ts:createIdeaFromProfile] Firestore Permission Denied. Check security rules for /ideas collection. Payload was:", JSON.stringify(ideaPayloadBase, null, 2));
     }
-    throw error; 
+    throw error;
   }
 };
 
@@ -699,7 +699,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
   const ideasQuery = query(
     ideasCol,
     where('mentor', '==', mentorName),
-    orderBy('updatedAt', 'desc') 
+    orderBy('updatedAt', 'desc')
   );
   const ideasSnapshot = await getDocs(ideasQuery);
 
@@ -824,13 +824,13 @@ export const updateIdeaStatusAndPhase = async (
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
-    
+
     if (newPhase === 'PHASE_2') {
       const currentDoc = await getDoc(ideaRef);
       if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
         updates.phase2Marks = {};
       }
-    } else if (newPhase !== 'COHORT' && newPhase !== 'INCUBATED') { 
+    } else if (newPhase !== 'COHORT' && newPhase !== 'INCUBATED') {
         updates.mentor = deleteField();
     }
      if (newPhase === 'INCUBATED') {
@@ -841,14 +841,14 @@ export const updateIdeaStatusAndPhase = async (
         if (currentData && !currentData.sanction1Expenses) updates.sanction1Expenses = [];
         if (currentData && !currentData.sanction2Expenses) updates.sanction2Expenses = [];
     }
-    
+
     if (newPhase && (newPhase === 'PHASE_1' || newPhase === 'PHASE_2' || newPhase === 'INCUBATED') && nextPhaseDetails) {
       updates.nextPhaseDate = nextPhaseDetails.date;
       updates.nextPhaseStartTime = nextPhaseDetails.startTime;
       updates.nextPhaseEndTime = nextPhaseDetails.endTime;
       updates.nextPhaseVenue = nextPhaseDetails.venue;
       updates.nextPhaseGuidelines = nextPhaseDetails.guidelines;
-    } else if (newPhase === 'COHORT' || !newPhase) { 
+    } else if (newPhase === 'COHORT' || !newPhase) {
         updates.nextPhaseDate = null;
         updates.nextPhaseStartTime = null;
         updates.nextPhaseEndTime = null;
@@ -858,11 +858,11 @@ export const updateIdeaStatusAndPhase = async (
           updates.mentor = deleteField();
         }
     }
-  } else if (newStatus === 'ARCHIVED_BY_ADMIN') { 
+  } else if (newStatus === 'ARCHIVED_BY_ADMIN') {
     updates.programPhase = null;
     updates.phase2Marks = {};
     updates.mentor = deleteField();
-    updates.cohortId = deleteField(); 
+    updates.cohortId = deleteField();
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
@@ -892,7 +892,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.sanction2UtilizationRemarks = deleteField();
     updates.sanction2UtilizationReviewedBy = deleteField();
     updates.sanction2UtilizationReviewedAt = deleteField();
-  } else { 
+  } else {
     updates.programPhase = null;
     updates.nextPhaseDate = null;
     updates.nextPhaseStartTime = null;
@@ -900,7 +900,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
     updates.mentor = deleteField();
-    updates.cohortId = deleteField(); 
+    updates.cohortId = deleteField();
     if (newStatus === 'NOT_SELECTED') {
       updates.rejectionRemarks = remarks || 'No specific remarks provided.';
       updates.rejectedByUid = adminProfile.uid;
@@ -994,7 +994,7 @@ export const submitOrUpdatePhase2Mark = async (
 
 export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<IdeaSubmission[]> => {
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, where('userId', '==', userId), orderBy('updatedAt', 'desc')); 
+  const q = query(ideasCol, where('userId', '==', userId), orderBy('updatedAt', 'desc'));
   const querySnapshot = await getDocs(q);
   const userIdeas: IdeaSubmission[] = [];
   querySnapshot.forEach((docSnap) => {
@@ -1055,7 +1055,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
 
 export const getTotalIdeasCount = async (): Promise<number> => {
   const ideasCol = collection(db, 'ideas');
-  const q = query(ideasCol, where('status', '!=', 'ARCHIVED_BY_ADMIN')); 
+  const q = query(ideasCol, where('status', '!=', 'ARCHIVED_BY_ADMIN'));
   const snapshot = await getCountFromServer(q);
   return snapshot.data().count;
 };
@@ -1089,7 +1089,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     programPhase: null,
     phase2Marks: {},
     mentor: deleteField(),
-    cohortId: deleteField(), 
+    cohortId: deleteField(),
     rejectionRemarks: deleteField(),
     rejectedByUid: deleteField(),
     rejectedAt: deleteField(),
@@ -1098,7 +1098,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     nextPhaseEndTime: null,
     nextPhaseVenue: null,
     nextPhaseGuidelines: null,
-    // Reset funding fields as well when archiving
+     // Reset funding fields as well when archiving
     totalFundingAllocated: deleteField(),
     sanction1Amount: deleteField(),
     sanction2Amount: deleteField(),
@@ -1280,13 +1280,13 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
     if (member.email.toLowerCase() === memberUser.email!.toLowerCase()) {
       memberFoundAndUpdated = true;
       return {
-        id: memberUser.uid, 
+        id: memberUser.uid,
         name: memberProfileDataFromForm.fullName,
         email: memberUser.email!,
         phone: memberProfileDataFromForm.contactNumber,
-        institute: memberProfileDataFromForm.instituteName || member.institute || '', 
-        department: member.department || '', 
-        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '', 
+        institute: memberProfileDataFromForm.instituteName || member.institute || '',
+        department: member.department || '',
+        enrollmentNumber: memberProfileDataFromForm.enrollmentNumber || member.enrollmentNumber || '',
       };
     }
     return member;
@@ -1306,7 +1306,7 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
   await logUserActivity(
     memberUser.uid,
     memberProfileDataFromForm.fullName,
-    'IDEA_TEAM_MEMBER_UPDATED', 
+    'IDEA_TEAM_MEMBER_UPDATED',
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
     { memberEmail: memberUser.email, detailsUpdated: ['id (to UID)', 'name', 'phone', 'institute', 'enrollmentNumber'] }
   );
@@ -1409,8 +1409,8 @@ export const createCohortFS = async (cohortData: Omit<Cohort, 'id' | 'createdAt'
   const cohortCol = collection(db, 'cohorts');
   const newCohortPayload: Omit<Cohort, 'id'> = {
     ...cohortData,
-    ideaIds: [], 
-    schedule: [], 
+    ideaIds: [],
+    schedule: [],
     createdByUid: adminProfile.uid,
     creatorDisplayName: adminProfile.displayName || adminProfile.fullName,
     createdAt: serverTimestamp() as Timestamp,
@@ -1515,7 +1515,7 @@ export const getAllCohortsStream = (callback: (cohorts: Cohort[]) => void) => {
     const cohorts: Cohort[] = [];
     querySnapshot.forEach((docSnap) => {
       const data = docSnap.data();
-      cohorts.push({ id: docSnap.id, schedule: data.schedule || [], ...data } as Cohort); 
+      cohorts.push({ id: docSnap.id, schedule: data.schedule || [], ...data } as Cohort);
     });
     callback(cohorts);
   }, (error) => {
@@ -1717,7 +1717,7 @@ export const assignIdeaToCohortFS = async (ideaId: string, ideaTitle: string, ne
   const oldCohortId = oldIdeaSnap.data().cohortId as string | undefined | null;
 
   batch.update(ideaRef, {
-    cohortId: newCohortId, 
+    cohortId: newCohortId,
     updatedAt: serverTimestamp()
   });
 
@@ -1761,7 +1761,7 @@ export const getActivityLogsStream = (
   if (filters.actionType) {
     q = query(q, where('action', '==', filters.actionType));
   }
-  
+
   return onSnapshot(q, (querySnapshot) => {
     let logs: ActivityLogEntry[] = [];
     querySnapshot.forEach((doc) => {
@@ -1770,8 +1770,8 @@ export const getActivityLogsStream = (
 
     if (filters.actorName) {
       const searchTerm = filters.actorName.toLowerCase();
-      logs = logs.filter(log => 
-        log.actorDisplayName?.toLowerCase().includes(searchTerm) || 
+      logs = logs.filter(log =>
+        log.actorDisplayName?.toLowerCase().includes(searchTerm) ||
         log.actorUid.toLowerCase().includes(searchTerm)
       );
     }
@@ -1887,7 +1887,7 @@ export const applyForNextSanctionFS = async (
         await updateDoc(ideaRef, {
             sanction1AppliedForNext: true,
             // When user applies for S2, set S1 utilization to PENDING for admin review if it wasn't already.
-            sanction1UtilizationStatus: 'PENDING', 
+            sanction1UtilizationStatus: 'PENDING',
             updatedAt: serverTimestamp(),
         });
         await logUserActivity(userProfile.uid, userProfile.displayName || userProfile.fullName, 'IDEA_APPLIED_FOR_NEXT_SANCTION', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { appliedForSanction: 2 });
@@ -1904,3 +1904,6 @@ export const applyForNextSanctionFS = async (
     
 
 
+
+
+    
