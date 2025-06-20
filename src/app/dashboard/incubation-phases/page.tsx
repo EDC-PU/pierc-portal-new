@@ -1,15 +1,16 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Zap, Lightbulb, Rocket, CheckCircle, Users, TrendingUp, Edit } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Zap, Lightbulb, Rocket, CheckCircle, Users, Edit, Loader2 } from 'lucide-react'; // Added Loader2
 import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { SubmitIdeaModalForm } from '@/components/dashboard/SubmitIdeaModalForm';
+import { LoadingSpinner } from '@/components/common/LoadingSpinner'; // Added LoadingSpinner
 
 interface Phase {
   icon: React.ElementType;
@@ -48,17 +49,17 @@ const incubationPhases: Phase[] = [
 ];
 
 export default function IncubationPhasesPage() {
-  const { userProfile, loading } = useAuth();
+  const { user, userProfile, loading: authLoading, initialLoadComplete } = useAuth(); // Added user, initialLoadComplete
   const router = useRouter();
   const [isIdeaModalOpen, setIsIdeaModalOpen] = useState(false);
   const [isProfilePromptModalOpen, setIsProfilePromptModalOpen] = useState(false);
 
-  const canSubmitIdeaDetails = !!userProfile && !!userProfile.applicantCategory && !!userProfile.currentStage;
+  // Moved canSubmitIdeaDetails to be derived after loading checks
+  const canSubmitIdeaDetails = initialLoadComplete && !authLoading && !!userProfile && !!userProfile.applicantCategory && !!userProfile.currentStage;
 
   const handleOpenSubmitIdeaModal = () => {
-    if (loading) return;
+    if (authLoading || !initialLoadComplete) return; // Guard against clicks while auth state is resolving
     if (!userProfile) {
-      // Should not happen if page is protected, but good to check
       router.push('/login');
       return;
     }
@@ -68,6 +69,27 @@ export default function IncubationPhasesPage() {
       setIsProfilePromptModalOpen(true);
     }
   };
+
+  // Added loading check for the page content
+  if (authLoading || !initialLoadComplete) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]"> {/* Adjust min-height as needed */}
+        <LoadingSpinner size={36} />
+        <p className="ml-3 text-muted-foreground">Loading Incubation Phases...</p>
+      </div>
+    );
+  }
+  
+  // Fallback if user context somehow isn't ready after loading (DashboardLayout should prevent this)
+  if (!user) {
+     router.push('/login'); // Or show a message
+     return (
+        <div className="flex items-center justify-center h-full min-h-[calc(100vh-12rem)]">
+            <p className="text-muted-foreground">Redirecting to login...</p>
+        </div>
+     );
+  }
+
 
   return (
     <div className="space-y-8 animate-slide-in-up">
@@ -128,19 +150,20 @@ export default function IncubationPhasesPage() {
             If you have an idea or a startup project, PIERC is here to support you.
             {userProfile && !canSubmitIdeaDetails && " First, ensure your innovator profile (including applicant category and current stage) is complete on the Profile Setup page."}
             {userProfile && canSubmitIdeaDetails && " You can submit or update your core idea details below."}
-            {!userProfile && !loading && " Please log in and complete your profile to get started."}
+            {!userProfile && " Please complete your profile to get started."}
           </p>
           {userProfile && (
             <Button
               size="lg"
               onClick={handleOpenSubmitIdeaModal}
-              disabled={loading}
+              // disabled={authLoading} // authLoading check now at page level
               className="bg-accent hover:bg-accent/90"
             >
               <Edit className="mr-2 h-5 w-5" /> {canSubmitIdeaDetails ? "Submit / Update Your Idea Details" : "Complete Profile to Submit Idea"}
             </Button>
           )}
-          {!userProfile && !loading && (
+          {/* This case should ideally not be hit if page-level guards are effective */}
+          {!userProfile && initialLoadComplete && !authLoading && (
              <Button size="lg" onClick={() => router.push('/login')} className="bg-accent hover:bg-accent/90">
                 Login to Get Started
               </Button>
@@ -156,6 +179,7 @@ export default function IncubationPhasesPage() {
               Fill in the core details of your innovation. You can elaborate further on your Profile Setup page.
             </DialogDescription>
           </DialogHeader>
+          {/* Ensure userProfile is definitely available here before rendering form */}
           {userProfile && canSubmitIdeaDetails && (
             <SubmitIdeaModalForm
               currentUserProfile={userProfile}
