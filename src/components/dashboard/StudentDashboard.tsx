@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye, Sparkles } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye, Sparkles, Landmark } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -31,7 +31,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
 import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
@@ -55,6 +55,7 @@ import { Dialog, DialogContent as ModalContent, DialogHeader as ModalHeader, Dia
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -115,8 +116,11 @@ const beneficiarySchema = z.object({
     beneficiaryBankName: z.string().min(3, "Bank name is required (min 3 chars).").max(100),
     beneficiaryIfscCode: z.string().length(11, "IFSC code must be 11 characters long.")
                            .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "Invalid IFSC code format (e.g., ABCD0123456)."),
+    beneficiaryAccountType: z.enum(['SAVINGS', 'CURRENT'], { required_error: "Account type is required."}),
+    beneficiaryCity: z.string().min(2, "City is required.").max(50),
+    beneficiaryBranchName: z.string().min(2, "Branch name is required.").max(100),
 });
-type BeneficiaryFormData = z.infer<typeof beneficiarySchema>;
+export type BeneficiaryFormData = z.infer<typeof beneficiarySchema>;
 
 const expenseSchema = z.object({
     description: z.string().min(5, "Description is required (min 5 chars).").max(200),
@@ -173,7 +177,7 @@ export default function StudentDashboard() {
   const { fields, replace } = useFieldArray({ control, name: "members" });
 
   const { control: beneficiaryControl, handleSubmit: handleBeneficiarySubmit, reset: resetBeneficiaryForm, formState: { errors: beneficiaryErrors } } = useForm<BeneficiaryFormData>({
-    resolver: zodResolver(beneficiarySchema), defaultValues: { beneficiaryName: '', beneficiaryAccountNo: '', beneficiaryBankName: '', beneficiaryIfscCode: '' }
+    resolver: zodResolver(beneficiarySchema), defaultValues: { beneficiaryName: '', beneficiaryAccountNo: '', beneficiaryBankName: '', beneficiaryIfscCode: '', beneficiaryAccountType: undefined, beneficiaryCity: '', beneficiaryBranchName: '' }
   });
   
   const { control: expenseControl, handleSubmit: handleExpenseSubmit, reset: resetExpenseForm, formState: { errors: expenseErrors }, setValue: setExpenseValue } = useForm<ExpenseFormData>({
@@ -196,6 +200,18 @@ export default function StudentDashboard() {
             const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaIdToPreserve);
             setSelectedIdeaForTeamMgmt(updatedSelected || null);
         } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
+             // No specific idea to preserve, but if an idea was previously selected for fund mgmt, try to keep it if still incubated.
+            const currentFundMgmtIdea = ideaForFundManagementTab;
+            if (currentFundMgmtIdea) {
+                 const stillIncubated = ideas.find(i => i.id === currentFundMgmtIdea.id && i.programPhase === 'INCUBATED');
+                 if (stillIncubated) {
+                    // Keep it implicitly by not changing selectedIdeaForTeamMgmt if it was already set for funding
+                 } else {
+                    setSelectedIdeaForTeamMgmt(null); // Or select the first idea
+                 }
+            } else {
+                // setSelectedIdeaForTeamMgmt(ideas[0]); // Optionally select the first idea if none specifically selected
+            }
         } else if (ideas.length === 0) {
             setSelectedIdeaForTeamMgmt(null);
         }
@@ -272,6 +288,9 @@ export default function StudentDashboard() {
             beneficiaryAccountNo: ideaForFundManagementTab.beneficiaryAccountNo || '',
             beneficiaryBankName: ideaForFundManagementTab.beneficiaryBankName || '',
             beneficiaryIfscCode: ideaForFundManagementTab.beneficiaryIfscCode || '',
+            beneficiaryAccountType: ideaForFundManagementTab.beneficiaryAccountType || undefined,
+            beneficiaryCity: ideaForFundManagementTab.beneficiaryCity || '',
+            beneficiaryBranchName: ideaForFundManagementTab.beneficiaryBranchName || '',
         });
     }
   }, [ideaForFundManagementTab, isBeneficiaryModalOpen, resetBeneficiaryForm]);
@@ -783,14 +802,14 @@ export default function StudentDashboard() {
                     <CardTitle className="font-headline text-xl text-primary flex items-center"><DollarSign className="mr-2 h-5 w-5"/>Incubation Funding Status</CardTitle>
                     <CardDescription>Overview of your idea's funding from PIERC.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                    <div><strong>Total Allocated:</strong> {isTeamMemberForIdea.totalFundingAllocated ? `₹${isTeamMemberForIdea.totalFundingAllocated.toLocaleString()}` : 'Not Set'}</div>
-                    <div><strong>Sanction 1 Amount:</strong> {isTeamMemberForIdea.sanction1Amount ? `₹${isTeamMemberForIdea.sanction1Amount.toLocaleString()}` : 'Not Set'}</div>
+                <CardContent className="space-y-3">
+                    <div className="text-sm"><strong>Total Allocated:</strong> {isTeamMemberForIdea.totalFundingAllocated ? `₹${isTeamMemberForIdea.totalFundingAllocated.toLocaleString()}` : 'Not Set'}</div>
+                    <div className="text-sm"><strong>Sanction 1 Amount:</strong> {isTeamMemberForIdea.sanction1Amount ? `₹${isTeamMemberForIdea.sanction1Amount.toLocaleString()}` : 'Not Set'}</div>
                     <div><strong>Sanction 1 Disbursed:</strong> {isTeamMemberForIdea.sanction1DisbursedAt ? formatDate(isTeamMemberForIdea.sanction1DisbursedAt) : <Badge variant="outline">Pending</Badge>}</div>
                     <div><strong>Sanction 1 Utilization:</strong> <Badge variant={isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (isTeamMemberForIdea.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{isTeamMemberForIdea.sanction1UtilizationStatus || 'Pending Review'}</Badge></div>
                     {isTeamMemberForIdea.sanction1UtilizationRemarks && <div className="text-xs text-muted-foreground italic">Admin Remarks (S1): {isTeamMemberForIdea.sanction1UtilizationRemarks}</div>}
                     <hr className="my-2"/>
-                    <div><strong>Sanction 2 Amount:</strong> {isTeamMemberForIdea.sanction2Amount ? `₹${isTeamMemberForIdea.sanction2Amount.toLocaleString()}` : 'Not Set'}</div>
+                    <div className="text-sm"><strong>Sanction 2 Amount:</strong> {isTeamMemberForIdea.sanction2Amount ? `₹${isTeamMemberForIdea.sanction2Amount.toLocaleString()}` : 'Not Set'}</div>
                     <div><strong>Sanction 2 Disbursed:</strong> {isTeamMemberForIdea.sanction2DisbursedAt ? formatDate(isTeamMemberForIdea.sanction2DisbursedAt) : (isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? <Badge variant="outline">Pending</Badge> : <Badge variant="outline">Awaiting S1 Approval</Badge>)}</div>
                     <div><strong>Sanction 2 Utilization:</strong> <Badge variant={isTeamMemberForIdea.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (isTeamMemberForIdea.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{isTeamMemberForIdea.sanction2UtilizationStatus || 'Pending Review'}</Badge></div>
                     {isTeamMemberForIdea.sanction2UtilizationRemarks && <div className="text-xs text-muted-foreground italic">Admin Remarks (S2): {isTeamMemberForIdea.sanction2UtilizationRemarks}</div>}
@@ -1334,10 +1353,15 @@ export default function StudentDashboard() {
                                 <p className="text-xs text-muted-foreground mb-2">These details will be used for fund disbursement. Ensure they are accurate.</p>
                                 {ideaForFundManagementTab.beneficiaryName ? (
                                     <div className="space-y-1 text-sm bg-muted/30 p-3 rounded-md">
-                                        <p><strong>Name:</strong> {ideaForFundManagementTab.beneficiaryName}</p>
-                                        <p><strong>Account No:</strong> {ideaForFundManagementTab.beneficiaryAccountNo}</p>
-                                        <p><strong>Bank:</strong> {ideaForFundManagementTab.beneficiaryBankName}</p>
-                                        <p><strong>IFSC:</strong> {ideaForFundManagementTab.beneficiaryIfscCode}</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1">
+                                          <p><strong>Name:</strong> {ideaForFundManagementTab.beneficiaryName}</p>
+                                          <p><strong>Account No:</strong> {ideaForFundManagementTab.beneficiaryAccountNo}</p>
+                                          <p><strong>Bank:</strong> {ideaForFundManagementTab.beneficiaryBankName}</p>
+                                          <p><strong>IFSC:</strong> {ideaForFundManagementTab.beneficiaryIfscCode}</p>
+                                          <p><strong>Account Type:</strong> <span className="capitalize">{ideaForFundManagementTab.beneficiaryAccountType?.toLowerCase()}</span></p>
+                                          <p><strong>City:</strong> {ideaForFundManagementTab.beneficiaryCity}</p>
+                                          <p><strong>Branch:</strong> {ideaForFundManagementTab.beneficiaryBranchName}</p>
+                                        </div>
                                         <Button size="sm" variant="outline" className="mt-2" onClick={() => setIsBeneficiaryModalOpen(true)}><Edit2 className="mr-2 h-3 w-3"/>Edit Details</Button>
                                     </div>
                                 ) : (
@@ -1514,14 +1538,29 @@ export default function StudentDashboard() {
 
       {isBeneficiaryModalOpen && ideaForFundManagementTab && (
         <Dialog open={isBeneficiaryModalOpen} onOpenChange={setIsBeneficiaryModalOpen}>
-            <ModalContent>
+            <ModalContent className="sm:max-w-lg">
                 <form onSubmit={handleBeneficiarySubmit(onBeneficiarySubmit)}>
-                <ModalHeader><ModalTitle>Beneficiary Bank Details</ModalTitle><ModalDescription>Enter details for fund disbursement to the team leader/entity.</ModalDescription></ModalHeader>
-                <div className="py-4 space-y-3">
+                <ModalHeader><ModalTitle className="flex items-center"><Landmark className="mr-2 h-5 w-5"/>Beneficiary Bank Details</ModalTitle><ModalDescription>Enter details for fund disbursement to the team leader/entity.</ModalDescription></ModalHeader>
+                <div className="py-4 space-y-3 max-h-[60vh] overflow-y-auto pr-2">
                     <div><Label htmlFor="beneficiaryName">Beneficiary Name</Label><Controller name="beneficiaryName" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryName" {...field} />} />{beneficiaryErrors.beneficiaryName && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryName.message}</p>}</div>
                     <div><Label htmlFor="beneficiaryAccountNo">Account Number</Label><Controller name="beneficiaryAccountNo" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryAccountNo" {...field} />} />{beneficiaryErrors.beneficiaryAccountNo && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryAccountNo.message}</p>}</div>
-                    <div><Label htmlFor="beneficiaryBankName">Bank Name</Label><Controller name="beneficiaryBankName" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryBankName" {...field} />} />{beneficiaryErrors.beneficiaryBankName && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryBankName.message}</p>}</div>
-                    <div><Label htmlFor="beneficiaryIfscCode">IFSC Code</Label><Controller name="beneficiaryIfscCode" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryIfscCode" {...field} />} />{beneficiaryErrors.beneficiaryIfscCode && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryIfscCode.message}</p>}</div>
+                    <div>
+                        <Label htmlFor="beneficiaryAccountType">Account Type</Label>
+                        <Controller name="beneficiaryAccountType" control={beneficiaryControl} render={({field}) => (
+                            <Select onValueChange={field.onChange} value={field.value || undefined}>
+                                <SelectTrigger id="beneficiaryAccountType"><SelectValue placeholder="Select account type" /></SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="SAVINGS">Savings</SelectItem>
+                                    <SelectItem value="CURRENT">Current</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        )} />
+                        {beneficiaryErrors.beneficiaryAccountType && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryAccountType.message}</p>}
+                    </div>
+                    <div><Label htmlFor="beneficiaryBankName">Bank Name</Label><Controller name="beneficiaryBankName" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryBankName" {...field} placeholder="e.g., State Bank of India"/>} />{beneficiaryErrors.beneficiaryBankName && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryBankName.message}</p>}</div>
+                    <div><Label htmlFor="beneficiaryIfscCode">IFSC Code</Label><Controller name="beneficiaryIfscCode" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryIfscCode" {...field} placeholder="e.g., SBIN0001234" />} />{beneficiaryErrors.beneficiaryIfscCode && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryIfscCode.message}</p>}</div>
+                     <div><Label htmlFor="beneficiaryBranchName">Branch Name</Label><Controller name="beneficiaryBranchName" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryBranchName" {...field} placeholder="e.g., Main Branch"/>} />{beneficiaryErrors.beneficiaryBranchName && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryBranchName.message}</p>}</div>
+                    <div><Label htmlFor="beneficiaryCity">City</Label><Controller name="beneficiaryCity" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryCity" {...field} placeholder="e.g., Vadodara" />} />{beneficiaryErrors.beneficiaryCity && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryCity.message}</p>}</div>
                 </div>
                 <ModalFooter><Button type="button" variant="outline" onClick={() => setIsBeneficiaryModalOpen(false)} disabled={isSubmittingBeneficiary}>Cancel</Button><Button type="submit" disabled={isSubmittingBeneficiary}>{isSubmittingBeneficiary && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save Details</Button></ModalFooter>
                 </form>

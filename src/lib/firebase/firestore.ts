@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -504,6 +504,9 @@ export const createIdeaFromProfile = async (
             beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
             beneficiaryBankName: data.beneficiaryBankName ?? null,
             beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+            beneficiaryAccountType: data.beneficiaryAccountType ?? null,
+            beneficiaryCity: data.beneficiaryCity ?? null,
+            beneficiaryBranchName: data.beneficiaryBranchName ?? null,
             sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
             sanction1UtilizationStatus: data.sanction1UtilizationStatus || 'NOT_APPLICABLE',
             sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
@@ -515,6 +518,7 @@ export const createIdeaFromProfile = async (
             sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
             submittedAt: data.submittedAt as Timestamp,
             updatedAt: data.updatedAt as Timestamp,
+            createdAt: data.createdAt as Timestamp, // ensure createdAt is also mapped
             applicantDisplayName: data.applicantDisplayName ?? '',
             applicantEmail: data.applicantEmail ?? '',
         } as IdeaSubmission;
@@ -542,7 +546,8 @@ export const createIdeaFromProfile = async (
       ideaDocRef = doc(db, 'ideas', existingIdeaToUpdate.id!);
       const updateData: Partial<IdeaSubmission> = {
         ...ideaPayloadBase,
-        submittedAt: existingIdeaToUpdate.submittedAt,
+        submittedAt: existingIdeaToUpdate.submittedAt, // Preserve original submission time on update
+        createdAt: existingIdeaToUpdate.createdAt, // Preserve original creation time
         status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status,
         programPhase: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.programPhase,
         cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
@@ -573,6 +578,9 @@ export const createIdeaFromProfile = async (
         beneficiaryAccountNo: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryAccountNo ?? null),
         beneficiaryBankName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryBankName ?? null),
         beneficiaryIfscCode: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryIfscCode ?? null),
+        beneficiaryAccountType: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryAccountType ?? null),
+        beneficiaryCity: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryCity ?? null),
+        beneficiaryBranchName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryBranchName ?? null),
         sanction1AppliedForNext: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? false : (existingIdeaToUpdate.sanction1AppliedForNext ?? false),
         sanction1UtilizationStatus: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'NOT_APPLICABLE' : (existingIdeaToUpdate.sanction1UtilizationStatus || 'NOT_APPLICABLE'),
         sanction1UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1UtilizationRemarks ?? null),
@@ -592,7 +600,9 @@ export const createIdeaFromProfile = async (
       );
     } else {
       const newIdeaData: Omit<IdeaSubmission, 'id'> = {
-        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'createdAt'>),
+        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'createdAt'>), // Cast to ensure correct type for spread
+        createdAt: serverTimestamp() as Timestamp, // Ensure createdAt is set for new ideas
+        submittedAt: serverTimestamp() as Timestamp,
         structuredTeamMembers: [],
         teamMemberEmails: [],
         status: 'SUBMITTED',
@@ -622,6 +632,9 @@ export const createIdeaFromProfile = async (
         beneficiaryAccountNo: null,
         beneficiaryBankName: null,
         beneficiaryIfscCode: null,
+        beneficiaryAccountType: null,
+        beneficiaryCity: null,
+        beneficiaryBranchName: null,
         sanction1AppliedForNext: false,
         sanction1UtilizationStatus: 'NOT_APPLICABLE',
         sanction1UtilizationRemarks: null,
@@ -631,8 +644,6 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationRemarks: null,
         sanction2UtilizationReviewedBy: null,
         sanction2UtilizationReviewedAt: null,
-        submittedAt: serverTimestamp() as Timestamp,
-        createdAt: serverTimestamp() as Timestamp, // Ensure createdAt is set on new idea creation
       };
       ideaDocRef = await addDoc(collection(db, 'ideas'), newIdeaData);
       await logUserActivity(
@@ -728,7 +739,6 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       nextPhaseVenue: ideaData.nextPhaseVenue || null,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
-      // Include new funding fields
       totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
       sanction1Amount: ideaData.sanction1Amount ?? null,
       sanction2Amount: ideaData.sanction2Amount ?? null,
@@ -740,6 +750,9 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       beneficiaryAccountNo: ideaData.beneficiaryAccountNo ?? null,
       beneficiaryBankName: ideaData.beneficiaryBankName ?? null,
       beneficiaryIfscCode: ideaData.beneficiaryIfscCode ?? null,
+      beneficiaryAccountType: ideaData.beneficiaryAccountType ?? null,
+      beneficiaryCity: ideaData.beneficiaryCity ?? null,
+      beneficiaryBranchName: ideaData.beneficiaryBranchName ?? null,
       sanction1AppliedForNext: ideaData.sanction1AppliedForNext ?? false,
       sanction1UtilizationStatus: ideaData.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
       sanction1UtilizationRemarks: ideaData.sanction1UtilizationRemarks ?? null,
@@ -828,7 +841,6 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       nextPhaseVenue: ideaData.nextPhaseVenue || null,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
-      // Include new funding fields
       totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
       sanction1Amount: ideaData.sanction1Amount ?? null,
       sanction2Amount: ideaData.sanction2Amount ?? null,
@@ -840,6 +852,9 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       beneficiaryAccountNo: ideaData.beneficiaryAccountNo ?? null,
       beneficiaryBankName: ideaData.beneficiaryBankName ?? null,
       beneficiaryIfscCode: ideaData.beneficiaryIfscCode ?? null,
+      beneficiaryAccountType: ideaData.beneficiaryAccountType ?? null,
+      beneficiaryCity: ideaData.beneficiaryCity ?? null,
+      beneficiaryBranchName: ideaData.beneficiaryBranchName ?? null,
       sanction1AppliedForNext: ideaData.sanction1AppliedForNext ?? false,
       sanction1UtilizationStatus: ideaData.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
       sanction1UtilizationRemarks: ideaData.sanction1UtilizationRemarks ?? null,
@@ -934,7 +949,6 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseEndTime = null;
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
-     // Reset funding fields on archive
     updates.totalFundingAllocated = deleteField();
     updates.sanction1Amount = deleteField();
     updates.sanction2Amount = deleteField();
@@ -946,6 +960,9 @@ export const updateIdeaStatusAndPhase = async (
     updates.beneficiaryAccountNo = deleteField();
     updates.beneficiaryBankName = deleteField();
     updates.beneficiaryIfscCode = deleteField();
+    updates.beneficiaryAccountType = deleteField();
+    updates.beneficiaryCity = deleteField();
+    updates.beneficiaryBranchName = deleteField();
     updates.sanction1AppliedForNext = false;
     updates.sanction1UtilizationStatus = 'NOT_APPLICABLE';
     updates.sanction1UtilizationRemarks = deleteField();
@@ -955,6 +972,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.sanction2UtilizationRemarks = deleteField();
     updates.sanction2UtilizationReviewedBy = deleteField();
     updates.sanction2UtilizationReviewedAt = deleteField();
+    updates.updatedAt = serverTimestamp();
   } else {
     updates.programPhase = null;
     updates.nextPhaseDate = null;
@@ -1090,7 +1108,6 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
-        // Include new funding fields
         totalFundingAllocated: data.totalFundingAllocated ?? null,
         sanction1Amount: data.sanction1Amount ?? null,
         sanction2Amount: data.sanction2Amount ?? null,
@@ -1102,6 +1119,9 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
         beneficiaryBankName: data.beneficiaryBankName ?? null,
         beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+        beneficiaryAccountType: data.beneficiaryAccountType ?? null,
+        beneficiaryCity: data.beneficiaryCity ?? null,
+        beneficiaryBranchName: data.beneficiaryBranchName ?? null,
         sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
         sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
         sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
@@ -1163,7 +1183,6 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     nextPhaseEndTime: null,
     nextPhaseVenue: null,
     nextPhaseGuidelines: null,
-     // Reset funding fields as well when archiving
     totalFundingAllocated: deleteField(),
     sanction1Amount: deleteField(),
     sanction2Amount: deleteField(),
@@ -1175,6 +1194,9 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     beneficiaryAccountNo: deleteField(),
     beneficiaryBankName: deleteField(),
     beneficiaryIfscCode: deleteField(),
+    beneficiaryAccountType: deleteField(),
+    beneficiaryCity: deleteField(),
+    beneficiaryBranchName: deleteField(),
     sanction1AppliedForNext: false,
     sanction1UtilizationStatus: 'NOT_APPLICABLE',
     sanction1UtilizationRemarks: deleteField(),
@@ -1443,7 +1465,6 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
-        // Include new funding fields
         totalFundingAllocated: data.totalFundingAllocated ?? null,
         sanction1Amount: data.sanction1Amount ?? null,
         sanction2Amount: data.sanction2Amount ?? null,
@@ -1455,6 +1476,9 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
         beneficiaryBankName: data.beneficiaryBankName ?? null,
         beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+        beneficiaryAccountType: data.beneficiaryAccountType ?? null,
+        beneficiaryCity: data.beneficiaryCity ?? null,
+        beneficiaryBranchName: data.beneficiaryBranchName ?? null,
         sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
         sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
         sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
@@ -1626,7 +1650,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1647,7 +1671,6 @@ export const createIdeaSubmission = async (
     cohortId: null,
     phase2Marks: {},
     isOutlineAIGenerated: false,
-     // Initialize funding fields
     totalFundingAllocated: null,
     sanction1Amount: null,
     sanction2Amount: null,
@@ -1659,6 +1682,9 @@ export const createIdeaSubmission = async (
     beneficiaryAccountNo: null,
     beneficiaryBankName: null,
     beneficiaryIfscCode: null,
+    beneficiaryAccountType: null,
+    beneficiaryCity: null,
+    beneficiaryBranchName: null,
     sanction1AppliedForNext: false,
     sanction1UtilizationStatus: 'NOT_APPLICABLE',
     sanction1UtilizationRemarks: null,
@@ -1670,7 +1696,7 @@ export const createIdeaSubmission = async (
     sanction2UtilizationReviewedAt: null,
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
-    createdAt: serverTimestamp() as Timestamp, // Ensure createdAt is set for new ideas
+    createdAt: serverTimestamp() as Timestamp,
   };
 
   if (ideaData.fileURL) newIdeaPayload.fileURL = ideaData.fileURL;
@@ -1774,7 +1800,6 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
-        // Include new funding fields
         totalFundingAllocated: data.totalFundingAllocated ?? null,
         sanction1Amount: data.sanction1Amount ?? null,
         sanction2Amount: data.sanction2Amount ?? null,
@@ -1786,6 +1811,9 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
         beneficiaryBankName: data.beneficiaryBankName ?? null,
         beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+        beneficiaryAccountType: data.beneficiaryAccountType ?? null,
+        beneficiaryCity: data.beneficiaryCity ?? null,
+        beneficiaryBranchName: data.beneficiaryBranchName ?? null,
         sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
         sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
         sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
@@ -1895,14 +1923,29 @@ export const updateIdeaFundingDetailsFS = async (
 export const updateIdeaBeneficiaryDetailsFS = async (
     ideaId: string,
     ideaTitle: string,
-    beneficiaryData: { beneficiaryName: string; beneficiaryAccountNo: string; beneficiaryBankName: string; beneficiaryIfscCode: string; },
+    beneficiaryData: { 
+        beneficiaryName: string; 
+        beneficiaryAccountNo: string; 
+        beneficiaryBankName: string; 
+        beneficiaryIfscCode: string;
+        beneficiaryAccountType: BeneficiaryAccountType;
+        beneficiaryCity: string;
+        beneficiaryBranchName: string;
+    },
     userProfile: UserProfile
 ): Promise<void> => {
     const ideaRef = doc(db, 'ideas', ideaId);
-    await updateDoc(ideaRef, {
-        ...beneficiaryData,
+    const updatePayload = {
+        beneficiaryName: beneficiaryData.beneficiaryName,
+        beneficiaryAccountNo: beneficiaryData.beneficiaryAccountNo,
+        beneficiaryBankName: beneficiaryData.beneficiaryBankName,
+        beneficiaryIfscCode: beneficiaryData.beneficiaryIfscCode,
+        beneficiaryAccountType: beneficiaryData.beneficiaryAccountType,
+        beneficiaryCity: beneficiaryData.beneficiaryCity,
+        beneficiaryBranchName: beneficiaryData.beneficiaryBranchName,
         updatedAt: serverTimestamp(),
-    });
+    };
+    await updateDoc(ideaRef, updatePayload);
     await logUserActivity(userProfile.uid, userProfile.displayName || userProfile.fullName, 'IDEA_BENEFICIARY_DETAILS_UPDATED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { beneficiaryName: beneficiaryData.beneficiaryName });
 };
 
@@ -1917,7 +1960,7 @@ export const addExpenseToSanctionFS = async (
     const newExpense: ExpenseEntry = {
         ...expenseData,
         id: nanoid(),
-        uploadedAt: Timestamp.now(), // Use client-side timestamp for arrayUnion
+        uploadedAt: Timestamp.now(),
     };
     const expenseField = sanctionNumber === 1 ? 'sanction1Expenses' : 'sanction2Expenses';
     await updateDoc(ideaRef, {
@@ -1938,7 +1981,7 @@ export const markSanctionAsDisbursedFS = async (
     const utilizationStatusField = sanctionNumber === 1 ? 'sanction1UtilizationStatus' : 'sanction2UtilizationStatus';
     await updateDoc(ideaRef, {
         [disbursementField]: serverTimestamp(),
-        [utilizationStatusField]: 'PENDING', // Set to pending review upon disbursement
+        [utilizationStatusField]: 'PENDING', 
         updatedAt: serverTimestamp(),
     });
     await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_IDEA_SANCTION_DISBURSED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { sanction: sanctionNumber });
@@ -1971,14 +2014,13 @@ export const reviewSanctionUtilizationFS = async (
 export const applyForNextSanctionFS = async (
     ideaId: string,
     ideaTitle: string,
-    currentSanctionNumber: 1, // Currently only S1 applying for S2 is supported this way
+    currentSanctionNumber: 1, 
     userProfile: UserProfile
 ): Promise<void> => {
     const ideaRef = doc(db, 'ideas', ideaId);
     if (currentSanctionNumber === 1) {
         await updateDoc(ideaRef, {
             sanction1AppliedForNext: true,
-            // When user applies for S2, set S1 utilization to PENDING for admin review if it wasn't already.
             sanction1UtilizationStatus: 'PENDING',
             updatedAt: serverTimestamp(),
         });
@@ -2003,4 +2045,5 @@ export const applyForNextSanctionFS = async (
 
 
     
+
 

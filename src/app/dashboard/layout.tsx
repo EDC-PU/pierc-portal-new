@@ -19,7 +19,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History } from 'lucide-react'; // Added History
+import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote } from 'lucide-react'; 
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, userProfile, loading, initialLoadComplete, signOut } = useAuth();
@@ -66,6 +66,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Manage Announcements', href: '/dashboard/admin/manage-announcements', icon: Megaphone, roles: ['ADMIN_FACULTY'] },
     { label: 'View Applications', href: '/dashboard/admin/view-applications', icon: BarChart3, roles: ['ADMIN_FACULTY'] },
     { label: 'Manage Cohorts', href: '/dashboard/admin/manage-cohorts', icon: CohortIcon, roles: ['ADMIN_FACULTY'] },
+    { label: 'Bank Account Details', href: '/dashboard/admin/bank-details', icon: Banknote, roles: ['ADMIN_FACULTY'] },
     { label: 'Activity Logs', href: '/dashboard/admin/activity-logs', icon: History, roles: ['ADMIN_FACULTY'] },
     { label: 'System Settings', href: '/dashboard/admin/system-settings', icon: Settings, roles: ['ADMIN_FACULTY'] },
     { label: 'Platform Analytics', href: '/dashboard/admin/platform-analytics', icon: BarChartBig, roles: ['ADMIN_FACULTY'] },

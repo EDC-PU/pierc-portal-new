@@ -86,6 +86,8 @@ export interface TeamMember {
   enrollmentNumber?: string; 
 }
 
+export type BeneficiaryAccountType = 'SAVINGS' | 'CURRENT';
+
 export interface IdeaSubmission {
   id?: string;
   userId: string; 
@@ -133,18 +135,21 @@ export interface IdeaSubmission {
   sanction2DisbursedAt?: Timestamp | null;
   sanction1Expenses?: ExpenseEntry[];
   sanction2Expenses?: ExpenseEntry[];
+  
   beneficiaryName?: string | null;
   beneficiaryAccountNo?: string | null;
   beneficiaryBankName?: string | null;
   beneficiaryIfscCode?: string | null;
+  beneficiaryAccountType?: BeneficiaryAccountType | null;
+  beneficiaryCity?: string | null;
+  beneficiaryBranchName?: string | null;
+  
   sanction1AppliedForNext?: boolean; // True if user applied for S2 after S1
   sanction1UtilizationStatus?: SanctionApprovalStatus;
   sanction1UtilizationRemarks?: string | null;
   sanction1UtilizationReviewedBy?: string | null; // Admin UID
   sanction1UtilizationReviewedAt?: Timestamp | null;
 
-  // Sanction 2 specific application might not be needed if it's sequential after S1 approval
-  // sanction2AppliedAt?: Timestamp | null; // Or handled by S1 approval
   sanction2UtilizationStatus?: SanctionApprovalStatus;
   sanction2UtilizationRemarks?: string | null;
   sanction2UtilizationReviewedBy?: string | null; // Admin UID
