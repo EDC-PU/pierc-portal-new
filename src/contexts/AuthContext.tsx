@@ -305,7 +305,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return Promise.reject(new Error("No user logged in."));
     }
     setLoading(true);
-    const wasProfileExisting = !!userProfile;
+    
+    const isProfileNew = !userProfile;
     let ideaCreationSuccessfulOrNotApplicable = true;
 
     let actualRole = roleFromForm;
@@ -315,10 +316,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (isSuperAdminContext || isMentorContext) {
       actualRole = 'ADMIN_FACULTY';
     }
+    
+    // Determine if the current context is for a new team member setup
+    // This check is primarily for *new* profile setups.
+    // For existing profiles, `userProfile.isTeamMemberOnly` is the source of truth.
+    const settingUpAsNewTeamMember = isProfileNew && isTeamMemberForIdea !== null;
 
-    const settingUpAsTeamMember = isTeamMemberForIdea !== null && !wasProfileExisting;
-
-    const profileDataForCreation: Partial<UserProfile> = {
+    const profileDataForFirestore: Partial<UserProfile> = {
       role: actualRole,
       isSuperAdmin: isSuperAdminContext,
       fullName: additionalData.fullName,
@@ -326,47 +330,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       enrollmentNumber: additionalData.enrollmentNumber || null,
       college: additionalData.college || null,
       instituteName: additionalData.instituteName || null,
-      isTeamMemberOnly: settingUpAsTeamMember,
+      // Correctly preserve or set isTeamMemberOnly and associated IDs
+      isTeamMemberOnly: isProfileNew ? settingUpAsNewTeamMember : (userProfile?.isTeamMemberOnly || false),
     };
-
-    if (settingUpAsTeamMember && isTeamMemberForIdea) {
-      profileDataForCreation.associatedIdeaId = isTeamMemberForIdea.id;
-      profileDataForCreation.associatedTeamLeaderUid = isTeamMemberForIdea.userId;
-      profileDataForCreation.startupTitle = null;
-      profileDataForCreation.problemDefinition = null;
-      profileDataForCreation.solutionDescription = null;
-      profileDataForCreation.uniqueness = null;
-      profileDataForCreation.applicantCategory = null;
-      profileDataForCreation.currentStage = null;
-      profileDataForCreation.teamMembers = null;
-    } else if (isSuperAdminContext || isMentorContext) {
-        profileDataForCreation.startupTitle = additionalData.startupTitle || (isSuperAdminContext ? 'Administrative Account' : 'Faculty/Mentor Account');
-        profileDataForCreation.problemDefinition = additionalData.problemDefinition || (isSuperAdminContext ? 'Handles portal administration.' : 'Manages portal functions and/or mentorship.');
-        profileDataForCreation.solutionDescription = additionalData.solutionDescription || (isSuperAdminContext ? 'Provides administrative functions and support.' : 'Provides administrative or mentorship support.');
-        profileDataForCreation.uniqueness = additionalData.uniqueness || (isSuperAdminContext ? 'Unique administrative role for system management.' : 'Unique administrative/mentorship role.');
-        profileDataForCreation.currentStage = additionalData.currentStage || 'STARTUP_STAGE';
-        profileDataForCreation.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF';
-        profileDataForCreation.teamMembers = additionalData.teamMembers || '';
-        profileDataForCreation.associatedIdeaId = null;
-        profileDataForCreation.associatedTeamLeaderUid = null;
-    } else {
-      profileDataForCreation.startupTitle = additionalData.startupTitle;
-      profileDataForCreation.problemDefinition = additionalData.problemDefinition;
-      profileDataForCreation.solutionDescription = additionalData.solutionDescription;
-      profileDataForCreation.uniqueness = additionalData.uniqueness;
-      profileDataForCreation.applicantCategory = additionalData.applicantCategory;
-      profileDataForCreation.currentStage = additionalData.currentStage;
-      profileDataForCreation.teamMembers = additionalData.teamMembers || '';
-      profileDataForCreation.associatedIdeaId = null;
-      profileDataForCreation.associatedTeamLeaderUid = null;
+    
+    if (!isProfileNew && userProfile?.isTeamMemberOnly) { // Existing team member updating profile
+        profileDataForFirestore.associatedIdeaId = userProfile.associatedIdeaId;
+        profileDataForFirestore.associatedTeamLeaderUid = userProfile.associatedTeamLeaderUid;
+    } else if (isProfileNew && settingUpAsNewTeamMember && isTeamMemberForIdea) { // New team member profile setup
+        profileDataForFirestore.associatedIdeaId = isTeamMemberForIdea.id;
+        profileDataForFirestore.associatedTeamLeaderUid = isTeamMemberForIdea.userId;
     }
 
 
+    // Add idea-specific fields conditionally based on the final isTeamMemberOnly flag
+    // createUserProfileFS will handle nulling these if isTeamMemberOnly is true
+    if (!profileDataForFirestore.isTeamMemberOnly) {
+        if (isSuperAdminContext || isMentorContext) {
+            profileDataForFirestore.startupTitle = additionalData.startupTitle || (isSuperAdminContext ? 'Administrative Account' : 'Faculty/Mentor Account');
+            profileDataForFirestore.problemDefinition = additionalData.problemDefinition || (isSuperAdminContext ? 'Handles portal administration.' : 'Manages portal functions and/or mentorship.');
+            profileDataForFirestore.solutionDescription = additionalData.solutionDescription || (isSuperAdminContext ? 'Provides administrative functions and support.' : 'Provides administrative or mentorship support.');
+            profileDataForFirestore.uniqueness = additionalData.uniqueness || (isSuperAdminContext ? 'Unique administrative role for system management.' : 'Unique administrative/mentorship role.');
+            profileDataForFirestore.currentStage = additionalData.currentStage || 'STARTUP_STAGE';
+            profileDataForFirestore.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF';
+            profileDataForFirestore.teamMembers = additionalData.teamMembers || '';
+        } else { // Regular idea owner
+            profileDataForFirestore.startupTitle = additionalData.startupTitle;
+            profileDataForFirestore.problemDefinition = additionalData.problemDefinition;
+            profileDataForFirestore.solutionDescription = additionalData.solutionDescription;
+            profileDataForFirestore.uniqueness = additionalData.uniqueness;
+            profileDataForFirestore.applicantCategory = additionalData.applicantCategory;
+            profileDataForFirestore.currentStage = additionalData.currentStage;
+            profileDataForFirestore.teamMembers = additionalData.teamMembers || '';
+        }
+    }
+    // If profileDataForFirestore.isTeamMemberOnly is true, idea fields are not set here;
+    // createUserProfileFS will ensure they are null in Firestore.
+
     try {
-      const createdOrUpdatedProfile = await createUserProfileFS(user.uid, profileDataForCreation);
+      const createdOrUpdatedProfile = await createUserProfileFS(user.uid, profileDataForFirestore);
       setUserProfile(createdOrUpdatedProfile);
 
-      const logAction: ActivityLogAction = wasProfileExisting ? 'USER_PROFILE_UPDATED' : 'USER_PROFILE_CREATED';
+      const logAction: ActivityLogAction = isProfileNew ? 'USER_PROFILE_CREATED' : 'USER_PROFILE_UPDATED';
       await logUserActivity(
         user.uid,
         createdOrUpdatedProfile.displayName || createdOrUpdatedProfile.fullName,
@@ -375,7 +380,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         { role: createdOrUpdatedProfile.role, isTeamMember: createdOrUpdatedProfile.isTeamMemberOnly }
       );
 
-      if (!wasProfileExisting &&
+      if (isProfileNew &&
           !createdOrUpdatedProfile.isTeamMemberOnly &&
           !(isMentorContext && createdOrUpdatedProfile.startupTitle === 'Faculty/Mentor Account') &&
           !(isSuperAdminContext && createdOrUpdatedProfile.startupTitle === 'Administrative Account') &&
@@ -421,7 +426,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         }
       }
 
-      if (settingUpAsTeamMember && createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
+      if (isProfileNew && settingUpAsNewTeamMember && createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
         await updateTeamMemberDetailsInIdeaAfterProfileSetup(
           createdOrUpdatedProfile.associatedIdeaId,
           isTeamMemberForIdea.title,
@@ -440,7 +445,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           const leader = await getUserProfile(updatedIdea.userId);
           setTeamLeaderProfileForMember(leader);
         }
+      } else if (!isProfileNew && createdOrUpdatedProfile.isTeamMemberOnly && createdOrUpdatedProfile.associatedIdeaId && isTeamMemberForIdea) {
+        // Existing team member just updated their profile details (name, contact etc)
+        // We need to re-sync these to the idea's structuredTeamMembers array.
+        await updateTeamMemberDetailsInIdeaAfterProfileSetup(
+          createdOrUpdatedProfile.associatedIdeaId,
+          isTeamMemberForIdea.title, // Assuming isTeamMemberForIdea is still relevant for the title
+          user,
+          {
+            fullName: createdOrUpdatedProfile.fullName,
+            contactNumber: createdOrUpdatedProfile.contactNumber,
+            enrollmentNumber: createdOrUpdatedProfile.enrollmentNumber,
+            college: createdOrUpdatedProfile.college,
+            instituteName: createdOrUpdatedProfile.instituteName,
+          }
+        );
+         const updatedIdea = await getIdeaById(createdOrUpdatedProfile.associatedIdeaId);
+         setIsTeamMemberForIdea(updatedIdea);
       }
+
 
       if (ideaCreationSuccessfulOrNotApplicable) {
           router.push('/dashboard');
@@ -530,4 +553,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-
