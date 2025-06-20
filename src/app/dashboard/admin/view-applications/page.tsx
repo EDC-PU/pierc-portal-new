@@ -37,12 +37,12 @@ import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
-  AlertDialogContent,
+  AlertDialogContent as AlertDialogModalContent, // Renamed to avoid conflict
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger as AlertDialogButtonTrigger, 
+  AlertDialogTrigger as AlertDialogButtonTrigger,
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass } from 'lucide-react';
@@ -146,7 +146,7 @@ export default function ViewApplicationsPage() {
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'submittedAt', direction: 'descending' });
   const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
   const [isBulkActionLoading, setIsBulkActionLoading] = useState(false);
-  const [bulkActionTarget, setBulkActionTarget] = useState<string | null>(null); 
+  const [bulkActionTarget, setBulkActionTarget] = useState<string | null>(null);
   const [isFundingFormOpen, setIsFundingFormOpen] = useState(false);
   const [fundingForm, setFundingForm] = useState<FundingDetailsFormData>({
     totalFundingAllocated: '', sanction1Amount: '', sanction2Amount: ''
@@ -185,7 +185,7 @@ export default function ViewApplicationsPage() {
     if (isDetailModalOpen && selectedApplication?.id) {
         const updatedVersionInList = applications.find(app => app.id === selectedApplication.id);
         if (updatedVersionInList) {
-            const hasRelevantChange = 
+            const hasRelevantChange =
                 updatedVersionInList.programPhase !== selectedApplication.programPhase ||
                 updatedVersionInList.status !== selectedApplication.status ||
                 updatedVersionInList.mentor !== selectedApplication.mentor ||
@@ -216,7 +216,7 @@ export default function ViewApplicationsPage() {
     try {
       const fetchedApplications = await getAllIdeaSubmissionsWithDetails();
       setApplications(fetchedApplications);
-      setSelectedRowIds(new Set()); 
+      setSelectedRowIds(new Set());
     } catch (error) {
       console.error("Error fetching applications:", error);
       toast({ title: "Error", description: "Could not fetch incubation applications.", variant: "destructive" });
@@ -264,7 +264,7 @@ export default function ViewApplicationsPage() {
 
         if (aValue === null || aValue === undefined) return 1;
         if (bValue === null || bValue === undefined) return -1;
-        
+
         let comparison = 0;
         if (typeof aValue === 'string' && typeof bValue === 'string') {
           comparison = aValue.localeCompare(bValue);
@@ -327,10 +327,10 @@ export default function ViewApplicationsPage() {
       try {
         if (action === 'changeStatus' && targetValue) {
           await updateIdeaStatusAndPhase(idea.id!, idea.title, targetValue as IdeaStatus, userProfile, idea.programPhase);
-        } else if (action === 'assignCohort') { 
+        } else if (action === 'assignCohort') {
           if (!userProfile.isSuperAdmin) {
              toast({ title: "Unauthorized", description: "Only Super Admins can assign ideas to cohorts.", variant: "destructive" });
-             errorCount++; 
+             errorCount++;
              continue;
           }
           await assignIdeaToCohortFS(idea.id!, idea.title, targetValue === 'UNASSIGN' ? null : targetValue, userProfile);
@@ -344,8 +344,8 @@ export default function ViewApplicationsPage() {
       }
     }
     setIsBulkActionLoading(false);
-    fetchApplications(); 
-    setSelectedRowIds(new Set()); 
+    fetchApplications();
+    setSelectedRowIds(new Set());
     toast({
       title: "Bulk Action Complete",
       description: `${successCount} application(s) processed successfully. ${errorCount > 0 ? `${errorCount} failed.` : ''}`
@@ -369,7 +369,7 @@ export default function ViewApplicationsPage() {
                 startTime: '10:00',
                 endTime: '13:00',
             };
-        case 'COHORT': 
+        case 'COHORT':
             return {
                 venue: 'Founders Studio, BBA Building, Parul University, Vadodara Campus',
                 guidelines: 'Details for the cohort program will be shared upon official assignment.',
@@ -659,7 +659,7 @@ export default function ViewApplicationsPage() {
         toast({ title: "Disbursement Error", description: error.message || `Could not mark Sanction ${sanctionNumber} as disbursed.`, variant: "destructive" });
     }
   };
-  
+
   const openSanctionReviewForm = (sanction: 'SANCTION_1' | 'SANCTION_2') => {
     if (!selectedApplication) return;
     setSanctionToReview(sanction);
@@ -700,7 +700,7 @@ export default function ViewApplicationsPage() {
       case 'SUBMITTED': return 'secondary';
       case 'UNDER_REVIEW': return 'outline';
       case 'IN_EVALUATION': return 'outline';
-      case 'ARCHIVED_BY_ADMIN': return 'outline'; 
+      case 'ARCHIVED_BY_ADMIN': return 'outline';
       case 'NOT_SELECTED': return 'destructive';
       default: return 'secondary';
     }
@@ -783,7 +783,7 @@ export default function ViewApplicationsPage() {
             `Member ${i} Institute`, `Member ${i} Department`, `Member ${i} Enrollment No.`
         );
     }
-    
+
     const maxS1Expenses = Math.max(0, ...applications.map(app => app.sanction1Expenses?.length || 0));
     for (let i = 1; i <= maxS1Expenses; i++) {
         headers.push(`S1 Expense ${i} Desc`, `S1 Expense ${i} Amt`, `S1 Expense ${i} Proof`);
@@ -852,7 +852,7 @@ export default function ViewApplicationsPage() {
             member?.institute || '', member?.department || '', member?.enrollmentNumber || ''
         );
       }
-      
+
       for (let i = 0; i < maxS1Expenses; i++) {
         const expense = app.sanction1Expenses?.[i];
         rowValues.push(expense?.description || '', expense?.amount || '', expense?.proofUrl || '');
@@ -922,8 +922,8 @@ export default function ViewApplicationsPage() {
             </div>
             <div className="flex-grow min-w-[150px]">
               <Label htmlFor="statusFilter" className="text-xs">Status</Label>
-              <Select 
-                value={filters.status || ALL_STATUSES_FILTER_VALUE} 
+              <Select
+                value={filters.status || ALL_STATUSES_FILTER_VALUE}
                 onValueChange={(value) => setFilters(prev => ({ ...prev, status: value === ALL_STATUSES_FILTER_VALUE ? '' : value as IdeaStatus | '' }))}
               >
                 <SelectTrigger id="statusFilter" className="h-9 text-xs"><SelectValue placeholder="All Statuses" /></SelectTrigger>
@@ -935,8 +935,8 @@ export default function ViewApplicationsPage() {
             </div>
             <div className="flex-grow min-w-[150px]">
               <Label htmlFor="phaseFilter" className="text-xs">Program Phase</Label>
-              <Select 
-                value={filters.programPhase || ALL_PHASES_FILTER_VALUE} 
+              <Select
+                value={filters.programPhase || ALL_PHASES_FILTER_VALUE}
                 onValueChange={(value) => setFilters(prev => ({ ...prev, programPhase: value === ALL_PHASES_FILTER_VALUE ? '' : value as ProgramPhase | ''}))}
               >
                 <SelectTrigger id="phaseFilter" className="h-9 text-xs"><SelectValue placeholder="All Phases" /></SelectTrigger>
@@ -948,9 +948,9 @@ export default function ViewApplicationsPage() {
             </div>
             <div className="flex-grow min-w-[150px]">
               <Label htmlFor="cohortFilter" className="text-xs">Cohort</Label>
-              <Select 
-                value={filters.cohortId || ALL_COHORTS_FILTER_VALUE} 
-                onValueChange={(value) => setFilters(prev => ({ ...prev, cohortId: value === ALL_COHORTS_FILTER_VALUE ? '' : value as string | ''}))} 
+              <Select
+                value={filters.cohortId || ALL_COHORTS_FILTER_VALUE}
+                onValueChange={(value) => setFilters(prev => ({ ...prev, cohortId: value === ALL_COHORTS_FILTER_VALUE ? '' : value as string | ''}))}
                 disabled={loadingCohorts}
               >
                 <SelectTrigger id="cohortFilter" className="h-9 text-xs">
@@ -977,7 +977,7 @@ export default function ViewApplicationsPage() {
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="text-xs px-2">Change Status to</DropdownMenuLabel>
-                    {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => ( 
+                    {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => (
                         <AlertDialogButtonTrigger asChild key={`status-${status}`}>
                             <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(status); }}>
                                 {status.replace(/_/g, ' ')}
@@ -1144,17 +1144,18 @@ export default function ViewApplicationsPage() {
                         <Button variant="outline" size="sm" onClick={() => openDetailModal(app)}>
                           <Eye className="mr-1 h-3.5 w-3.5" /> Details
                         </Button>
-                        <AlertDialogButtonTrigger asChild>
-                            <Button variant="destructive" size="sm" onClick={() => setApplicationToArchive(app)}>
-                               <Archive className="mr-1 h-3.5 w-3.5" /> Archive
-                            </Button>
-                        </AlertDialogButtonTrigger>
+                        <AlertDialog open={applicationToArchive?.id === app.id} onOpenChange={(isOpen) => { if (!isOpen) setApplicationToArchive(null); }}>
+                            <AlertDialogButtonTrigger asChild>
+                                <Button variant="destructive" size="sm" onClick={() => setApplicationToArchive(app)}>
+                                   <Archive className="mr-1 h-3.5 w-3.5" /> Archive
+                                </Button>
+                            </AlertDialogButtonTrigger>
                            {applicationToArchive && applicationToArchive.id === app.id && (
-                            <AlertDialogContent>
+                            <AlertDialogModalContent>
                                 <AlertDialogHeader>
                                 <AlertDialogTitle>Confirm Archive for Revision</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                    This will archive the idea "{applicationToArchive.title}", allowing the user to edit and resubmit it. 
+                                    This will archive the idea "{applicationToArchive.title}", allowing the user to edit and resubmit it.
                                     It will be removed from active review processes.
                                 </AlertDialogDescription>
                                 </AlertDialogHeader>
@@ -1164,9 +1165,9 @@ export default function ViewApplicationsPage() {
                                     Archive Idea
                                 </AlertDialogAction>
                                 </AlertDialogFooter>
-                            </AlertDialogContent>
+                            </AlertDialogModalContent>
                            )}
-                        
+                        </AlertDialog>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1178,7 +1179,7 @@ export default function ViewApplicationsPage() {
       </Card>
 
       <AlertDialog open={!!bulkActionTarget && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen) setBulkActionTarget(null); }}>
-        <AlertDialogContent>
+        <AlertDialogModalContent>
             <AlertDialogHeader>
                 <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -1195,7 +1196,7 @@ export default function ViewApplicationsPage() {
                             handleBulkAction('archive');
                         } else if (ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus)) {
                             handleBulkAction('changeStatus', bulkActionTarget);
-                        } else if (bulkActionTarget) { 
+                        } else if (bulkActionTarget) {
                             handleBulkAction('assignCohort', bulkActionTarget);
                         }
                         setBulkActionTarget(null);
@@ -1205,7 +1206,7 @@ export default function ViewApplicationsPage() {
                     Proceed
                 </AlertDialogAction>
             </AlertDialogFooter>
-        </AlertDialogContent>
+        </AlertDialogModalContent>
       </AlertDialog>
 
       {selectedApplication && userProfile && (
@@ -1294,7 +1295,7 @@ export default function ViewApplicationsPage() {
                                     setFundingForm({ totalFundingAllocated: selectedApplication?.totalFundingAllocated || '', sanction1Amount: selectedApplication?.sanction1Amount || '', sanction2Amount: selectedApplication?.sanction2Amount || '' });
                                     setIsFundingFormOpen(true);
                                 }} variant="outline" size="sm"><DollarSign className="mr-2 h-4 w-4" />Set/Update Funding Allocation</Button>
-                                
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <Card>
                                         <CardHeader className="pb-2 pt-3 px-3"><CardTitle className="text-sm font-semibold">Sanction 1</CardTitle></CardHeader>
@@ -1347,7 +1348,7 @@ export default function ViewApplicationsPage() {
             <DialogContent className="sm:max-w-lg"><DialogHeader><DialogTitle className="flex items-center"><CalendarIcon className="h-5 w-5 mr-2 text-primary"/> Set Meeting Details for {getProgramPhaseLabel(currentPhaseForDialog)}</DialogTitle><DialogDescription>Provide date, time, venue, and guidelines for <span className="font-semibold">{currentIdeaForPhaseDetails.title}</span>.</DialogDescription></DialogHeader><div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto pr-2"><div><Label htmlFor="phaseDate">Date</Label><Popover><PopoverTrigger asChild><Button id="phaseDate" variant={"outline"} className={cn("w-full justify-start text-left font-normal",!phaseDetailsForm.date && "text-muted-foreground")}><CalendarIcon className="mr-2 h-4 w-4" />{phaseDetailsForm.date ? format(phaseDetailsForm.date, "PPP") : <span>Pick a date</span>}</Button></PopoverTrigger><PopoverContent className="w-auto p-0"><Calendar mode="single" selected={phaseDetailsForm.date || undefined} onSelect={(date) => setPhaseDetailsForm(prev => ({...prev, date: date || null}))} initialFocus /></PopoverContent></Popover></div><div className="grid grid-cols-2 gap-4"><div><Label htmlFor="phaseStartTime">Start Time</Label><Input id="phaseStartTime" type="time" value={phaseDetailsForm.startTime} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, startTime: e.target.value}))}/></div><div><Label htmlFor="phaseEndTime">End Time</Label><Input id="phaseEndTime" type="time" value={phaseDetailsForm.endTime} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, endTime: e.target.value}))}/></div></div><div><Label htmlFor="phaseVenue">Venue</Label><Input id="phaseVenue" value={phaseDetailsForm.venue} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, venue: e.target.value}))} placeholder="e.g., PIERC Office, BBA Building"/></div><div><Label htmlFor="phaseGuidelines">Guidelines</Label><Textarea id="phaseGuidelines" value={phaseDetailsForm.guidelines} onChange={(e) => setPhaseDetailsForm(prev => ({...prev, guidelines: e.target.value}))} placeholder="Enter guidelines for this phase meeting..." rows={4}/></div></div><DialogFooter><Button variant="outline" onClick={() => { setIsPhaseDetailsDialogVisible(false); setCurrentIdeaForPhaseDetails(null); setCurrentPhaseForDialog(null); fetchApplications(); }}>Cancel</Button><Button onClick={handleSubmitPhaseDetails}>Save Details</Button></DialogFooter></DialogContent>
         </Dialog>
       )}
-      
+
       {isFundingFormOpen && selectedApplication && userProfile?.isSuperAdmin && (
         <Dialog open={isFundingFormOpen} onOpenChange={(isOpen) => { if(!isOpen) setIsFundingFormOpen(false); }}>
             <DialogContent className="sm:max-w-md">
