@@ -380,7 +380,7 @@ export default function ViewApplicationsPage() {
                 startTime: 'N/A',
                 endTime: 'N/A',
             };
-        case 'INCUBATED': // This case may not be used if dialog is skipped, but good to have defaults
+        case 'INCUBATED': 
              return {
                 venue: 'PIERC Office / Remote Coordination',
                 guidelines: 'Funding disbursement and milestone tracking will be managed through the portal and direct communication.',
@@ -426,21 +426,26 @@ export default function ViewApplicationsPage() {
             openPhaseDetailsDialog(idea, actualNewPhase);
         } else if (actualNewPhase === 'INCUBATED') {
             try {
+                // Directly update and then open funding form
                 await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
                 toast({ title: "Update Successful", description: `Application moved to ${getProgramPhaseLabel(actualNewPhase)}.` });
                 
+                // Fetch the latest version of applications to ensure `selectedApplication` (if used) is up-to-date
                 const updatedApps = await getAllIdeaSubmissionsWithDetails();
-                setApplications(updatedApps);
+                setApplications(updatedApps); // Update the main list
+                
+                // Find the specific idea from the fresh list to populate the funding form
                 const freshlyFetchedIdea = updatedApps.find(app => app.id === idea.id);
 
                 if (freshlyFetchedIdea) {
-                    setSelectedApplication(freshlyFetchedIdea);
+                    setSelectedApplication(freshlyFetchedIdea); // Update selectedApplication for the modal context
                     setFundingForm({
                         totalFundingAllocated: freshlyFetchedIdea.totalFundingAllocated || '',
                         sanction1Amount: freshlyFetchedIdea.sanction1Amount || '',
                         sanction2Amount: freshlyFetchedIdea.sanction2Amount || '',
                     });
                 } else {
+                    // Fallback if the idea isn't found in the fresh list (should be rare)
                     setSelectedApplication(idea); 
                     setFundingForm({
                         totalFundingAllocated: idea.totalFundingAllocated || '',
@@ -454,7 +459,7 @@ export default function ViewApplicationsPage() {
             } catch (error) {
                 console.error("Error updating status/phase to INCUBATED:", error);
                 toast({ title: "Update Error", description: "Could not update application to Incubated.", variant: "destructive" });
-                fetchApplications();
+                fetchApplications(); // Refresh on error
             }
         } else if (actualNewPhase === 'COHORT') {
             try {
@@ -464,7 +469,7 @@ export default function ViewApplicationsPage() {
             } catch (error) {
                 console.error("Error updating status/phase to COHORT:", error);
                 toast({ title: "Update Error", description: "Could not update application to Cohort.", variant: "destructive" });
-                fetchApplications();
+                fetchApplications(); // Refresh on error
             }
         }
     } else if (newStatus === 'NOT_SELECTED') {
@@ -472,6 +477,7 @@ export default function ViewApplicationsPage() {
         setRejectionRemarksInput(idea.rejectionRemarks || '');
         setIsRejectionDialogVisible(true);
     } else {
+        // For other status changes or if phase is not applicable/changed
         try {
           await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
           toast({ title: "Update Successful", description: `Application updated.` });
@@ -479,7 +485,7 @@ export default function ViewApplicationsPage() {
         } catch (error) {
           console.error("Error updating status/phase:", error);
           toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-          fetchApplications();
+          fetchApplications(); // Refresh on error
         }
     }
   };
@@ -495,11 +501,11 @@ export default function ViewApplicationsPage() {
         await updateIdeaStatusAndPhase(
             currentIdeaForPhaseDetails.id!,
             currentIdeaForPhaseDetails.title,
-            'SELECTED', // Status remains 'SELECTED'
+            'SELECTED', 
             userProfile,
             currentPhaseForDialog,
-            undefined, // No rejection remarks
-            { // Pass phase details
+            undefined, 
+            { 
                 date: Timestamp.fromDate(phaseDetailsForm.date),
                 startTime: phaseDetailsForm.startTime,
                 endTime: phaseDetailsForm.endTime,
@@ -508,27 +514,15 @@ export default function ViewApplicationsPage() {
             }
         );
         toast({ title: "Phase Details Saved", description: `${getProgramPhaseLabel(currentPhaseForDialog)} details saved.` });
-        fetchApplications(); // Refresh data
+        fetchApplications(); 
         setIsPhaseDetailsDialogVisible(false);
         
-        // This block below will now only be relevant if INCUBATED was somehow set through phase details dialog, which it won't be.
-        // if (currentPhaseForDialog === 'INCUBATED') {
-        //     const updatedIdea = applications.find(app => app.id === currentIdeaForPhaseDetails.id);
-        //     if (updatedIdea) setSelectedApplication(updatedIdea); 
-        //     setFundingForm({
-        //         totalFundingAllocated: currentIdeaForPhaseDetails.totalFundingAllocated || '',
-        //         sanction1Amount: currentIdeaForPhaseDetails.sanction1Amount || '',
-        //         sanction2Amount: currentIdeaForPhaseDetails.sanction2Amount || '',
-        //     });
-        //     setIsFundingFormOpen(true);
-        // }
-
         setCurrentIdeaForPhaseDetails(null);
         setCurrentPhaseForDialog(null);
     } catch (error) {
         console.error("Error saving phase details:", error);
         toast({ title: "Save Error", description: "Could not save phase details.", variant: "destructive" });
-        fetchApplications(); // Refresh on error too
+        fetchApplications(); 
     }
   };
 
@@ -545,7 +539,7 @@ export default function ViewApplicationsPage() {
             currentIdeaForRejection.title,
             'NOT_SELECTED',
             userProfile,
-            null, // No new phase when rejecting
+            null, 
             rejectionRemarksInput
         );
         toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
@@ -681,7 +675,7 @@ export default function ViewApplicationsPage() {
         return;
     }
     try {
-        await updateIdeaFundingDetailsFS(selectedApplication.id, selectedApplication.title, {total, sanction1Amount: s1, sanction2Amount: s2}, userProfile);
+        await updateIdeaFundingDetailsFS(selectedApplication.id, selectedApplication.title, { totalFundingAllocated: total, sanction1Amount: s1, sanction2Amount: s2 }, userProfile);
         toast({ title: "Funding Details Saved", description: "Funding allocation has been updated."});
         fetchApplications();
         setIsFundingFormOpen(false);
