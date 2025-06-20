@@ -267,6 +267,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       await createUserWithEmailAndPassword(auth, email, password);
+      // After successful creation, Firebase automatically signs the user in.
+      // Now, sign them out.
+      await firebaseSignOut(auth);
+      // The onAuthStateChanged listener will handle setUser(null) and setUserProfile(null).
+      toast({
+        title: "Sign Up Successful",
+        description: "Your account has been created. Please log in with your new credentials.",
+      });
+      router.push('/login'); // Redirect to login page so they can log in.
     } catch (error: any) {
       handleAuthError(error, "sign-up");
     } finally {
@@ -357,7 +366,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             profileDataForFirestore.uniqueness = additionalData.uniqueness || (isSuperAdminContext ? 'Unique administrative role for system management.' : 'Unique administrative/mentorship role.');
             profileDataForFirestore.currentStage = additionalData.currentStage || 'STARTUP_STAGE';
             profileDataForFirestore.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF';
-            // profileDataForFirestore.teamMembers = additionalData.teamMembers || ''; // Removed
         } else { // Regular idea owner
             profileDataForFirestore.startupTitle = additionalData.startupTitle;
             profileDataForFirestore.problemDefinition = additionalData.problemDefinition;
@@ -365,7 +373,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             profileDataForFirestore.uniqueness = additionalData.uniqueness;
             profileDataForFirestore.applicantCategory = additionalData.applicantCategory;
             profileDataForFirestore.currentStage = additionalData.currentStage;
-            // profileDataForFirestore.teamMembers = additionalData.teamMembers || ''; // Removed
         }
     }
     // If profileDataForFirestore.isTeamMemberOnly is true, idea fields are not set here;
@@ -399,7 +406,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               uniqueness: createdOrUpdatedProfile.uniqueness!,
               currentStage: createdOrUpdatedProfile.currentStage!,
               applicantCategory: createdOrUpdatedProfile.applicantCategory!,
-              // teamMembers: createdOrUpdatedProfile.teamMembers || '', // Removed
           };
           const idea = await createIdeaFromProfile(user.uid, profileIdeaDataForCreation);
           if (idea && idea.id) {
@@ -580,3 +586,4 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
+
