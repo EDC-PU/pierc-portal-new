@@ -784,16 +784,16 @@ export default function StudentDashboard() {
                     <CardDescription>Overview of your idea's funding from PIERC.</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                    <p><strong>Total Allocated:</strong> {isTeamMemberForIdea.totalFundingAllocated ? `₹${isTeamMemberForIdea.totalFundingAllocated.toLocaleString()}` : 'Not Set'}</p>
-                    <p><strong>Sanction 1 Amount:</strong> {isTeamMemberForIdea.sanction1Amount ? `₹${isTeamMemberForIdea.sanction1Amount.toLocaleString()}` : 'Not Set'}</p>
-                    <p><strong>Sanction 1 Disbursed:</strong> {isTeamMemberForIdea.sanction1DisbursedAt ? formatDate(isTeamMemberForIdea.sanction1DisbursedAt) : 'Pending'}</p>
-                    <p><strong>Sanction 1 Utilization:</strong> {isTeamMemberForIdea.sanction1UtilizationStatus || 'Pending Review'}</p>
-                    {isTeamMemberForIdea.sanction1UtilizationRemarks && <p className="text-xs text-muted-foreground italic">Admin Remarks (S1): {isTeamMemberForIdea.sanction1UtilizationRemarks}</p>}
+                    <div><strong>Total Allocated:</strong> {isTeamMemberForIdea.totalFundingAllocated ? `₹${isTeamMemberForIdea.totalFundingAllocated.toLocaleString()}` : 'Not Set'}</div>
+                    <div><strong>Sanction 1 Amount:</strong> {isTeamMemberForIdea.sanction1Amount ? `₹${isTeamMemberForIdea.sanction1Amount.toLocaleString()}` : 'Not Set'}</div>
+                    <div><strong>Sanction 1 Disbursed:</strong> {isTeamMemberForIdea.sanction1DisbursedAt ? formatDate(isTeamMemberForIdea.sanction1DisbursedAt) : <Badge variant="outline">Pending</Badge>}</div>
+                    <div><strong>Sanction 1 Utilization:</strong> <Badge variant={isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (isTeamMemberForIdea.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{isTeamMemberForIdea.sanction1UtilizationStatus || 'Pending Review'}</Badge></div>
+                    {isTeamMemberForIdea.sanction1UtilizationRemarks && <div className="text-xs text-muted-foreground italic">Admin Remarks (S1): {isTeamMemberForIdea.sanction1UtilizationRemarks}</div>}
                     <hr className="my-2"/>
-                    <p><strong>Sanction 2 Amount:</strong> {isTeamMemberForIdea.sanction2Amount ? `₹${isTeamMemberForIdea.sanction2Amount.toLocaleString()}` : 'Not Set'}</p>
-                    <p><strong>Sanction 2 Disbursed:</strong> {isTeamMemberForIdea.sanction2DisbursedAt ? formatDate(isTeamMemberForIdea.sanction2DisbursedAt) : (isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? 'Pending Disbursement' : 'Awaiting S1 Approval')}</p>
-                     <p><strong>Sanction 2 Utilization:</strong> {isTeamMemberForIdea.sanction2UtilizationStatus || 'Pending Review'}</p>
-                    {isTeamMemberForIdea.sanction2UtilizationRemarks && <p className="text-xs text-muted-foreground italic">Admin Remarks (S2): {isTeamMemberForIdea.sanction2UtilizationRemarks}</p>}
+                    <div><strong>Sanction 2 Amount:</strong> {isTeamMemberForIdea.sanction2Amount ? `₹${isTeamMemberForIdea.sanction2Amount.toLocaleString()}` : 'Not Set'}</div>
+                    <div><strong>Sanction 2 Disbursed:</strong> {isTeamMemberForIdea.sanction2DisbursedAt ? formatDate(isTeamMemberForIdea.sanction2DisbursedAt) : (isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? <Badge variant="outline">Pending</Badge> : <Badge variant="outline">Awaiting S1 Approval</Badge>)}</div>
+                    <div><strong>Sanction 2 Utilization:</strong> <Badge variant={isTeamMemberForIdea.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (isTeamMemberForIdea.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{isTeamMemberForIdea.sanction2UtilizationStatus || 'Pending Review'}</Badge></div>
+                    {isTeamMemberForIdea.sanction2UtilizationRemarks && <div className="text-xs text-muted-foreground italic">Admin Remarks (S2): {isTeamMemberForIdea.sanction2UtilizationRemarks}</div>}
                 </CardContent>
             </Card>
         )}
@@ -1349,10 +1349,10 @@ export default function StudentDashboard() {
                         <AccordionItem value="sanction1">
                             <AccordionTrigger>Sanction 1 Details</AccordionTrigger>
                             <AccordionContent className="pt-2 space-y-3">
-                                <p><strong>Amount:</strong> {ideaForFundManagementTab.sanction1Amount ? `₹${ideaForFundManagementTab.sanction1Amount.toLocaleString()}` : 'Not Set by Admin'}</p>
-                                <p><strong>Disbursed:</strong> {ideaForFundManagementTab.sanction1DisbursedAt ? formatDate(ideaForFundManagementTab.sanction1DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</p>
-                                <p><strong>Utilization Status:</strong> <Badge variant={ideaForFundManagementTab.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (ideaForFundManagementTab.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{ideaForFundManagementTab.sanction1UtilizationStatus || 'Pending Review'}</Badge></p>
-                                {ideaForFundManagementTab.sanction1UtilizationRemarks && <p className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {ideaForFundManagementTab.sanction1UtilizationRemarks}</p>}
+                                <div><strong>Amount:</strong> {ideaForFundManagementTab.sanction1Amount ? `₹${ideaForFundManagementTab.sanction1Amount.toLocaleString()}` : 'Not Set by Admin'}</div>
+                                <div><strong>Disbursed:</strong> {ideaForFundManagementTab.sanction1DisbursedAt ? formatDate(ideaForFundManagementTab.sanction1DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</div>
+                                <div><strong>Utilization Status:</strong> <Badge variant={ideaForFundManagementTab.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (ideaForFundManagementTab.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{ideaForFundManagementTab.sanction1UtilizationStatus || 'Pending Review'}</Badge></div>
+                                {ideaForFundManagementTab.sanction1UtilizationRemarks && <div className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {ideaForFundManagementTab.sanction1UtilizationRemarks}</div>}
 
                                 {ideaForFundManagementTab.sanction1DisbursedAt && ideaForFundManagementTab.sanction1UtilizationStatus !== 'APPROVED' && (
                                     <Button size="sm" onClick={() => { setCurrentSanctionForExpense(1); setIsExpenseModalOpen(true); resetExpenseForm(); }}><FileUp className="mr-2 h-4 w-4"/>Upload S1 Expense</Button>
@@ -1397,10 +1397,10 @@ export default function StudentDashboard() {
                                     <p className="text-sm text-muted-foreground">Sanction 1 utilization must be approved before Sanction 2 details are available.</p>
                                 ) : (
                                     <>
-                                        <p><strong>Amount:</strong> {ideaForFundManagementTab.sanction2Amount ? `₹${ideaForFundManagementTab.sanction2Amount.toLocaleString()}` : 'Not Set by Admin'}</p>
-                                        <p><strong>Disbursed:</strong> {ideaForFundManagementTab.sanction2DisbursedAt ? formatDate(ideaForFundManagementTab.sanction2DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</p>
-                                        <p><strong>Utilization Status:</strong> <Badge variant={ideaForFundManagementTab.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (ideaForFundManagementTab.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{ideaForFundManagementTab.sanction2UtilizationStatus || 'Pending Review'}</Badge></p>
-                                        {ideaForFundManagementTab.sanction2UtilizationRemarks && <p className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {ideaForFundManagementTab.sanction2UtilizationRemarks}</p>}
+                                        <div><strong>Amount:</strong> {ideaForFundManagementTab.sanction2Amount ? `₹${ideaForFundManagementTab.sanction2Amount.toLocaleString()}` : 'Not Set by Admin'}</div>
+                                        <div><strong>Disbursed:</strong> {ideaForFundManagementTab.sanction2DisbursedAt ? formatDate(ideaForFundManagementTab.sanction2DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</div>
+                                        <div><strong>Utilization Status:</strong> <Badge variant={ideaForFundManagementTab.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (ideaForFundManagementTab.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{ideaForFundManagementTab.sanction2UtilizationStatus || 'Pending Review'}</Badge></div>
+                                        {ideaForFundManagementTab.sanction2UtilizationRemarks && <div className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {ideaForFundManagementTab.sanction2UtilizationRemarks}</div>}
                                         
                                         {ideaForFundManagementTab.sanction2DisbursedAt && ideaForFundManagementTab.sanction2UtilizationStatus !== 'APPROVED' && (
                                             <Button size="sm" onClick={() => { setCurrentSanctionForExpense(2); setIsExpenseModalOpen(true); resetExpenseForm(); }}><FileUp className="mr-2 h-4 w-4"/>Upload S2 Expense</Button>
@@ -1548,3 +1548,4 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
+
