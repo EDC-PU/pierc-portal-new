@@ -1899,8 +1899,7 @@ export const getActivityLogsStream = (
   const logsCol = collection(db, 'activityLogs');
   let q = query(logsCol, orderBy('timestamp', 'desc'), limit(limitCount));
 
-  if (filters.actorName) {
-  }
+  // Apply server-side filter for actionType if provided
   if (filters.actionType) {
     q = query(q, where('action', '==', filters.actionType));
   }
@@ -1911,14 +1910,15 @@ export const getActivityLogsStream = (
       logs.push({ id: doc.id, ...doc.data() } as ActivityLogEntry);
     });
 
+    // Apply client-side filter for actorName if provided
     if (filters.actorName) {
       const searchTerm = filters.actorName.toLowerCase();
       logs = logs.filter(log =>
-        log.actorDisplayName?.toLowerCase().includes(searchTerm) ||
+        (log.actorDisplayName && log.actorDisplayName.toLowerCase().includes(searchTerm)) ||
         log.actorUid.toLowerCase().includes(searchTerm)
       );
     }
-
+    
     callback(logs);
   }, (error) => {
     console.error("Error fetching activity logs:", error);
