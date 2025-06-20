@@ -37,12 +37,12 @@ import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
-  AlertDialogContent as AlertDialogModalContent, // Renamed to avoid conflict
+  AlertDialogContent as AlertDialogModalContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger as AlertDialogButtonTrigger,
+  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass } from 'lucide-react';
@@ -978,35 +978,99 @@ export default function ViewApplicationsPage() {
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="text-xs px-2">Change Status to</DropdownMenuLabel>
                     {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => (
-                        <AlertDialogButtonTrigger asChild key={`status-${status}`}>
-                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(status); }}>
+                       <AlertDialog key={`status-alert-${status}`} open={bulkActionTarget === status && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === status) setBulkActionTarget(null); }}>
+                        <AlertDialogTrigger asChild>
+                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget(status); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>
                                 {status.replace(/_/g, ' ')}
                             </DropdownMenuItem>
-                        </AlertDialogButtonTrigger>
+                        </AlertDialogTrigger>
+                        <AlertDialogModalContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                Change status of {selectedRowIds.size} application(s) to "{status.replace(/_/g,' ')}"?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => { handleBulkAction('changeStatus', status); setBulkActionTarget(null); }}>
+                                Proceed
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogModalContent>
+                       </AlertDialog>
                     ))}
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />
                    {userProfile.isSuperAdmin && (
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs px-2">Assign to Cohort</DropdownMenuLabel>
-                      <AlertDialogButtonTrigger asChild key="assign-UNASSIGN">
-                        <DropdownMenuItem onSelect={(e) => {e.preventDefault(); setBulkActionTarget('UNASSIGN'); }}>Unassign Cohort</DropdownMenuItem>
-                      </AlertDialogButtonTrigger>
+                      <AlertDialog key="cohort-alert-UNASSIGN" open={bulkActionTarget === 'UNASSIGN' && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === 'UNASSIGN') setBulkActionTarget(null); }}>
+                        <AlertDialogTrigger asChild>
+                            <DropdownMenuItem onSelect={(e) => {e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget('UNASSIGN'); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>Unassign Cohort</DropdownMenuItem>
+                        </AlertDialogTrigger>
+                        <AlertDialogModalContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                Unassign {selectedRowIds.size} application(s) from any cohort?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => { handleBulkAction('assignCohort', 'UNASSIGN'); setBulkActionTarget(null); }}>
+                                Proceed
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogModalContent>
+                      </AlertDialog>
                       {allCohorts.map(cohort => (
-                        <AlertDialogButtonTrigger asChild key={`cohort-${cohort.id}`}>
-                            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget(cohort.id!); }}>
-                            {cohort.name}
-                            </DropdownMenuItem>
-                        </AlertDialogButtonTrigger>
+                        <AlertDialog key={`cohort-alert-${cohort.id}`} open={bulkActionTarget === cohort.id! && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === cohort.id!) setBulkActionTarget(null); }}>
+                            <AlertDialogTrigger asChild>
+                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget(cohort.id!); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>
+                                {cohort.name}
+                                </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                            <AlertDialogModalContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                    Assign {selectedRowIds.size} application(s) to cohort: "{cohort.name}"?
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => { handleBulkAction('assignCohort', cohort.id!); setBulkActionTarget(null); }}>
+                                    Proceed
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogModalContent>
+                        </AlertDialog>
                       ))}
                     </DropdownMenuGroup>
                   )}
                   <DropdownMenuSeparator />
-                  <AlertDialogButtonTrigger asChild key="archive-selected">
-                    <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setBulkActionTarget('ARCHIVE_BULK'); }} className="text-amber-600 focus:text-amber-700 focus:bg-amber-100">
-                        <Archive className="mr-2 h-4 w-4" /> Archive for User Revision
-                    </DropdownMenuItem>
-                  </AlertDialogButtonTrigger>
+                  <AlertDialog key="archive-alert-BULK" open={bulkActionTarget === 'ARCHIVE_BULK' && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === 'ARCHIVE_BULK') setBulkActionTarget(null); }}>
+                    <AlertDialogTrigger asChild>
+                        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget('ARCHIVE_BULK'); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }} className="text-amber-600 focus:text-amber-700 focus:bg-amber-100">
+                            <Archive className="mr-2 h-4 w-4" /> Archive for User Revision
+                        </DropdownMenuItem>
+                    </AlertDialogTrigger>
+                    <AlertDialogModalContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                            <AlertDialogDescription>
+                            Are you sure you want to archive {selectedRowIds.size} selected application(s) for user revision?
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => { handleBulkAction('archive'); setBulkActionTarget(null); }} className="bg-amber-600 hover:bg-amber-700">
+                            Proceed
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogModalContent>
+                   </AlertDialog>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -1145,11 +1209,11 @@ export default function ViewApplicationsPage() {
                           <Eye className="mr-1 h-3.5 w-3.5" /> Details
                         </Button>
                         <AlertDialog open={applicationToArchive?.id === app.id} onOpenChange={(isOpen) => { if (!isOpen) setApplicationToArchive(null); }}>
-                            <AlertDialogButtonTrigger asChild>
+                            <AlertDialogTrigger asChild>
                                 <Button variant="destructive" size="sm" onClick={() => setApplicationToArchive(app)}>
                                    <Archive className="mr-1 h-3.5 w-3.5" /> Archive
                                 </Button>
-                            </AlertDialogButtonTrigger>
+                            </AlertDialogTrigger>
                            {applicationToArchive && applicationToArchive.id === app.id && (
                             <AlertDialogModalContent>
                                 <AlertDialogHeader>
@@ -1178,36 +1242,7 @@ export default function ViewApplicationsPage() {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!bulkActionTarget && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen) setBulkActionTarget(null); }}>
-        <AlertDialogModalContent>
-            <AlertDialogHeader>
-                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
-                <AlertDialogDescription>
-                    {bulkActionTarget === 'ARCHIVE_BULK' && `Are you sure you want to archive ${selectedRowIds.size} selected application(s) for user revision?`}
-                    {bulkActionTarget && bulkActionTarget !== 'ARCHIVE_BULK' && ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus) && `Change status of ${selectedRowIds.size} application(s) to "${bulkActionTarget.replace(/_/g,' ')}"?`}
-                    {bulkActionTarget && bulkActionTarget !== 'ARCHIVE_BULK' && !ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus) && `Assign ${selectedRowIds.size} application(s) to cohort: "${bulkActionTarget === 'UNASSIGN' ? 'Unassign' : allCohorts.find(c=>c.id===bulkActionTarget)?.name || 'Unknown'}"?`}
-                </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
-                <AlertDialogAction
-                    onClick={() => {
-                        if (bulkActionTarget === 'ARCHIVE_BULK') {
-                            handleBulkAction('archive');
-                        } else if (ALL_IDEA_STATUSES.includes(bulkActionTarget as IdeaStatus)) {
-                            handleBulkAction('changeStatus', bulkActionTarget);
-                        } else if (bulkActionTarget) {
-                            handleBulkAction('assignCohort', bulkActionTarget);
-                        }
-                        setBulkActionTarget(null);
-                    }}
-                    className={bulkActionTarget === 'ARCHIVE_BULK' ? "bg-amber-600 hover:bg-amber-700" : ""}
-                >
-                    Proceed
-                </AlertDialogAction>
-            </AlertDialogFooter>
-        </AlertDialogModalContent>
-      </AlertDialog>
+      {/* Monolithic AlertDialog for bulk actions is removed. Logic is now integrated into DropdownMenuContent items. */}
 
       {selectedApplication && userProfile && (
         <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
