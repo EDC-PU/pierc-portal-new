@@ -54,6 +54,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent as ModalContent, DialogHeader as ModalHeader, DialogTitle as ModalTitle, DialogDescription as ModalDescription, DialogFooter as ModalFooter } from '@/components/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Textarea } from '@/components/ui/textarea';
+import ReactMarkdown from 'react-markdown';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -123,6 +124,15 @@ const expenseSchema = z.object({
     proofFile: z.custom<File | null>((val) => val instanceof File, "Proof file is required.").nullable(),
 });
 type ExpenseFormData = z.infer<typeof expenseSchema>;
+
+const MarkdownDisplayComponents = {
+  p: ({node, ...props}: any) => <p className="mb-2 last:mb-0" {...props} />,
+  ul: ({node, ...props}: any) => <ul className="list-disc pl-5 mb-2" {...props} />,
+  ol: ({node, ...props}: any) => <ol className="list-decimal pl-5 mb-2" {...props} />,
+  li: ({node, ...props}: any) => <li className="mb-1" {...props} />,
+  strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
+  em: ({node, ...props}: any) => <em className="italic" {...props} />,
+};
 
 
 export default function StudentDashboard() {
@@ -629,11 +639,15 @@ export default function StudentDashboard() {
         <CardContent className="space-y-4">
             <div>
             <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
-            <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md shadow-sm">{idea.problem}</p>
+             <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
+                <ReactMarkdown components={MarkdownDisplayComponents}>{idea.problem || ''}</ReactMarkdown>
+            </div>
             </div>
             <div>
             <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
-            <p className="text-sm whitespace-pre-wrap bg-muted/30 p-3 rounded-md shadow-sm">{idea.solution}</p>
+            <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
+                <ReactMarkdown components={MarkdownDisplayComponents}>{idea.solution || ''}</ReactMarkdown>
+            </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             <div>
@@ -929,15 +943,21 @@ export default function StudentDashboard() {
                             )}
                              <div className="mt-2">
                                 <Label className="font-semibold text-muted-foreground">Problem Definition:</Label>
-                                <p className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5">{idea.problem || 'N/A'}</p>
+                                <div className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5 markdown-container">
+                                  <ReactMarkdown components={MarkdownDisplayComponents}>{idea.problem || 'N/A'}</ReactMarkdown>
+                                </div>
                             </div>
                             <div>
                                 <Label className="font-semibold text-muted-foreground">Solution Description:</Label>
-                                <p className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5">{idea.solution || 'N/A'}</p>
+                                <div className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5 markdown-container">
+                                  <ReactMarkdown components={MarkdownDisplayComponents}>{idea.solution || 'N/A'}</ReactMarkdown>
+                                </div>
                             </div>
                             <div>
                                 <Label className="font-semibold text-muted-foreground">Uniqueness:</Label>
-                                <p className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5">{idea.uniqueness || 'N/A'}</p>
+                                <div className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5 markdown-container">
+                                  <ReactMarkdown components={MarkdownDisplayComponents}>{idea.uniqueness || 'N/A'}</ReactMarkdown>
+                                </div>
                             </div>
                         </div>
 
@@ -1299,7 +1319,7 @@ export default function StudentDashboard() {
         </Card>
       </TabsContent>
       
-      {userIdeas.some(idea => idea.programPhase === 'INCUBATED') && ideaForFundManagementTab && (
+      {ideaForFundManagementTab && (
         <TabsContent value="fundManagement" className="space-y-6">
             <Card>
                 <CardHeader>
@@ -1340,9 +1360,26 @@ export default function StudentDashboard() {
                                 {(ideaForFundManagementTab.sanction1Expenses?.length || 0) > 0 && (
                                     <div>
                                         <h4 className="text-sm font-semibold mt-2 mb-1">Uploaded Expenses (Sanction 1):</h4>
-                                        <ul className="list-disc pl-5 text-xs space-y-1">
-                                            {ideaForFundManagementTab.sanction1Expenses?.map(exp => <li key={exp.id}>{exp.description} - ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</li>)}
-                                        </ul>
+                                        <Table>
+                                            <TableHeader>
+                                                <TableRow>
+                                                    <TableHead>Description</TableHead>
+                                                    <TableHead className="text-right">Amount</TableHead>
+                                                    <TableHead>Proof</TableHead>
+                                                    <TableHead className="text-right">Uploaded</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {ideaForFundManagementTab.sanction1Expenses?.map(exp => (
+                                                    <TableRow key={exp.id}>
+                                                        <TableCell className="text-xs">{exp.description}</TableCell>
+                                                        <TableCell className="text-xs text-right">₹{exp.amount.toLocaleString()}</TableCell>
+                                                        <TableCell><a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs">{exp.proofFileName}</a></TableCell>
+                                                        <TableCell className="text-xs text-right">{formatDate(exp.uploadedAt)}</TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
                                     </div>
                                 )}
                                 {ideaForFundManagementTab.sanction1DisbursedAt && ideaForFundManagementTab.sanction1UtilizationStatus === 'APPROVED' && !ideaForFundManagementTab.sanction2DisbursedAt && (
@@ -1369,11 +1406,28 @@ export default function StudentDashboard() {
                                             <Button size="sm" onClick={() => { setCurrentSanctionForExpense(2); setIsExpenseModalOpen(true); resetExpenseForm(); }}><FileUp className="mr-2 h-4 w-4"/>Upload S2 Expense</Button>
                                         )}
                                         {(ideaForFundManagementTab.sanction2Expenses?.length || 0) > 0 && (
-                                            <div>
+                                           <div>
                                                 <h4 className="text-sm font-semibold mt-2 mb-1">Uploaded Expenses (Sanction 2):</h4>
-                                                <ul className="list-disc pl-5 text-xs space-y-1">
-                                                    {ideaForFundManagementTab.sanction2Expenses?.map(exp => <li key={exp.id}>{exp.description} - ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</li>)}
-                                                </ul>
+                                                <Table>
+                                                    <TableHeader>
+                                                        <TableRow>
+                                                            <TableHead>Description</TableHead>
+                                                            <TableHead className="text-right">Amount</TableHead>
+                                                            <TableHead>Proof</TableHead>
+                                                            <TableHead className="text-right">Uploaded</TableHead>
+                                                        </TableRow>
+                                                    </TableHeader>
+                                                    <TableBody>
+                                                        {ideaForFundManagementTab.sanction2Expenses?.map(exp => (
+                                                            <TableRow key={exp.id}>
+                                                                <TableCell className="text-xs">{exp.description}</TableCell>
+                                                                <TableCell className="text-xs text-right">₹{exp.amount.toLocaleString()}</TableCell>
+                                                                <TableCell><a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs">{exp.proofFileName}</a></TableCell>
+                                                                <TableCell className="text-xs text-right">{formatDate(exp.uploadedAt)}</TableCell>
+                                                            </TableRow>
+                                                        ))}
+                                                    </TableBody>
+                                                </Table>
                                             </div>
                                         )}
                                     </>
@@ -1456,7 +1510,7 @@ export default function StudentDashboard() {
                 </ModalFooter>
             </ModalContent>
         </Dialog>
-    
+      )}
 
       {isBeneficiaryModalOpen && ideaForFundManagementTab && (
         <Dialog open={isBeneficiaryModalOpen} onOpenChange={setIsBeneficiaryModalOpen}>
@@ -1494,5 +1548,3 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
-
-    

@@ -141,52 +141,48 @@ export function AdminEditUserProfileForm({ targetUserProfile, onSave, onCancel }
             {isTargetTeamMemberOnly && targetUserProfile.associatedIdeaId && <p className="text-sm text-muted-foreground">Team Member for an idea.</p>}
         </div>
         <div>
-            <Label htmlFor="fullName">Full Name *</Label>
-            <Controller name="fullName" control={control} render={({ field }) => <Input id="fullName" placeholder="Full name" {...field} />} />
+            <Label htmlFor="fullNameAdmin">Full Name *</Label>
+            <Controller name="fullName" control={control} render={({ field }) => <Input id="fullNameAdmin" placeholder="Full name" {...field} />} />
             {errors.fullName && <p className="text-sm text-destructive mt-1">{errors.fullName.message}</p>}
         </div>
         <div>
-            <Label htmlFor="contactNumber">Contact Number *</Label>
-            <Controller name="contactNumber" control={control} render={({ field }) => <Input id="contactNumber" type="tel" placeholder="+91 XXXXXXXXXX" {...field} />} />
+            <Label htmlFor="contactNumberAdmin">Contact Number *</Label>
+            <Controller name="contactNumber" control={control} render={({ field }) => <Input id="contactNumberAdmin" type="tel" placeholder="+91 XXXXXXXXXX" {...field} />} />
             {errors.contactNumber && <p className="text-sm text-destructive mt-1">{errors.contactNumber.message}</p>}
         </div>
 
-        {/* Conditional fields based on Parul email or specific applicant categories (if idea owner) */}
         {isTargetParulEmail && (
             <>
             <div>
-                <Label htmlFor="enrollmentNumber">Enrollment Number</Label>
-                <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Parul Enrollment Number" {...field} value={field.value || ''} />} />
+                <Label htmlFor="enrollmentNumberAdmin">Enrollment Number</Label>
+                <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumberAdmin" placeholder="Parul Enrollment Number" {...field} value={field.value || ''} />} />
                 {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
             </div>
             <div>
-                <Label htmlFor="college">College/Faculty at Parul University</Label>
-                <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
+                <Label htmlFor="collegeAdmin">College/Faculty at Parul University</Label>
+                <Controller name="college" control={control} render={({ field }) => <Input id="collegeAdmin" placeholder="e.g., Parul Institute of Engineering & Technology" {...field} value={field.value || ''} />} />
                 {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
             </div>
             </>
         )}
 
-        {/* Institute name for non-Parul emails or "OTHERS" category if idea owner */}
         {(!isTargetParulEmail || (!isTargetTeamMemberOnly && selectedApplicantCategory === 'OTHERS')) && (
              <div>
-                <Label htmlFor="instituteName">Institute/Organization Name</Label>
-                <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Institute/Organization name" {...field} value={field.value || ''} />} />
+                <Label htmlFor="instituteNameAdmin">Institute/Organization Name</Label>
+                <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteNameAdmin" placeholder="Institute/Organization name" {...field} value={field.value || ''} />} />
                 {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
             </div>
         )}
         
-        {/* College for Staff/Alumni if idea owner */}
         {!isTargetTeamMemberOnly && (selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI') && !isTargetParulEmail && (
             <div>
-                <Label htmlFor="college">College/Department/Last Affiliated College at PU</Label>
-                <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Dept of CS / PIET" {...field} value={field.value || ''} />} />
+                <Label htmlFor="collegeAdminStaffAlumni">College/Department/Last Affiliated College at PU</Label>
+                <Controller name="college" control={control} render={({ field }) => <Input id="collegeAdminStaffAlumni" placeholder="e.g., Dept of CS / PIET" {...field} value={field.value || ''} />} />
                 {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
             </div>
         )}
 
 
-        {/* Idea Owner Specific Fields */}
         {!isTargetTeamMemberOnly && (
             <>
                 <hr className="my-6" />
@@ -196,12 +192,11 @@ export function AdminEditUserProfileForm({ targetUserProfile, onSave, onCancel }
                   <Controller
                     name="applicantCategory"
                     control={control}
-                    // Cast to 'any' because Controller's name type is strict. This field only exists on ideaOwnerEditableSchema.
                     render={({ field }: any) => (
                       <RadioGroup onValueChange={field.onChange} value={field.value as ApplicantCategory | undefined} className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
                         {applicantCategories.map(({value, label}) => (
-                          <Label key={value} htmlFor={`admin-ac-${value}`} className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm">
-                            <RadioGroupItem value={value} id={`admin-ac-${value}`} className="sr-only" /> {label}
+                          <Label key={value} htmlFor={`admin-edit-ac-${value}`} className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm">
+                            <RadioGroupItem value={value} id={`admin-edit-ac-${value}`} className="sr-only" /> {label}
                           </Label>
                         ))}
                       </RadioGroup>
@@ -209,29 +204,32 @@ export function AdminEditUserProfileForm({ targetUserProfile, onSave, onCancel }
                   {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{(errors.applicantCategory as any).message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="startupTitle">Title of the Startup/Idea *</Label>
-                  <Controller name="startupTitle" control={control} render={({ field }: any) => <Input id="startupTitle" placeholder="Startup/Idea title" {...field} />} />
+                  <Label htmlFor="startupTitleAdmin">Title of the Startup/Idea *</Label>
+                  <Controller name="startupTitle" control={control} render={({ field }: any) => <Input id="startupTitleAdmin" placeholder="Startup/Idea title" {...field} />} />
                   {errors.startupTitle && <p className="text-sm text-destructive mt-1">{(errors.startupTitle as any).message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="teamMembers">Team Members (Names, comma-separated, if any)</Label>
-                  <Controller name="teamMembers" control={control} render={({ field }: any) => <Input id="teamMembers" placeholder="e.g., John Doe, Jane Smith" {...field} value={field.value || ''}/>} />
+                  <Label htmlFor="teamMembersAdmin">Team Members (Names, comma-separated, if any)</Label>
+                  <Controller name="teamMembers" control={control} render={({ field }: any) => <Input id="teamMembersAdmin" placeholder="e.g., John Doe, Jane Smith" {...field} value={field.value || ''}/>} />
                   {errors.teamMembers && <p className="text-sm text-destructive mt-1">{(errors.teamMembers as any).message}</p>}
                 </div>
                 <div>
-                  <Label htmlFor="problemDefinition">Define the Problem *</Label>
-                  <Controller name="problemDefinition" control={control} render={({ field }: any) => <Textarea id="problemDefinition" placeholder="Problem definition" {...field} rows={3}/>} />
+                  <Label htmlFor="problemDefinitionAdmin">Define the Problem *</Label>
+                  <Controller name="problemDefinition" control={control} render={({ field }: any) => <Textarea id="problemDefinitionAdmin" placeholder="Problem definition" {...field} rows={3}/>} />
                   {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{(errors.problemDefinition as any).message}</p>}
+                  <p className="text-xs text-muted-foreground mt-1">Users can use Markdown for basic formatting.</p>
                 </div>
                 <div>
-                  <Label htmlFor="solutionDescription">Describe the Solution *</Label>
-                  <Controller name="solutionDescription" control={control} render={({ field }: any) => <Textarea id="solutionDescription" placeholder="Solution description" {...field} rows={3}/>} />
+                  <Label htmlFor="solutionDescriptionAdmin">Describe the Solution *</Label>
+                  <Controller name="solutionDescription" control={control} render={({ field }: any) => <Textarea id="solutionDescriptionAdmin" placeholder="Solution description" {...field} rows={3}/>} />
                   {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{(errors.solutionDescription as any).message}</p>}
+                  <p className="text-xs text-muted-foreground mt-1">Users can use Markdown for basic formatting.</p>
                 </div>
                 <div>
-                  <Label htmlFor="uniqueness">Explain Uniqueness *</Label>
-                  <Controller name="uniqueness" control={control} render={({ field }: any) => <Textarea id="uniqueness" placeholder="Uniqueness/Distinctiveness" {...field} rows={3}/>} />
+                  <Label htmlFor="uniquenessAdmin">Explain Uniqueness *</Label>
+                  <Controller name="uniqueness" control={control} render={({ field }: any) => <Textarea id="uniquenessAdmin" placeholder="Uniqueness/Distinctiveness" {...field} rows={3}/>} />
                   {errors.uniqueness && <p className="text-sm text-destructive mt-1">{(errors.uniqueness as any).message}</p>}
+                  <p className="text-xs text-muted-foreground mt-1">Users can use Markdown for basic formatting.</p>
                 </div>
                 <div>
                   <Label>Current Stage of Idea/Startup *</Label>
@@ -241,8 +239,8 @@ export function AdminEditUserProfileForm({ targetUserProfile, onSave, onCancel }
                     render={({ field }: any) => (
                       <RadioGroup onValueChange={field.onChange} value={field.value as CurrentStage | undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-2">
                         {currentStages.map(({value, label}) => (
-                          <Label key={value} htmlFor={`admin-cs-${value}`} className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
-                            <RadioGroupItem value={value} id={`admin-cs-${value}`} className="sr-only" /> {label}
+                          <Label key={value} htmlFor={`admin-edit-cs-${value}`} className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
+                            <RadioGroupItem value={value} id={`admin-edit-cs-${value}`} className="sr-only" /> {label}
                           </Label>
                         ))}
                       </RadioGroup>
@@ -264,5 +262,3 @@ export function AdminEditUserProfileForm({ targetUserProfile, onSave, onCancel }
     </form>
   );
 }
-
-    

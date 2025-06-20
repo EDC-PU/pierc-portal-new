@@ -455,16 +455,19 @@ export default function ProfileSetupPage() {
                             <Label htmlFor="problemDefinition">Define the Problem you are solving *</Label>
                             <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} value={field.value || ''} rows={3}/>} />
                             {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{errors.problemDefinition.message}</p>}
+                            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting (e.g., **bold**, *italic*, lists).</p>
                         </div>
                         <div>
                             <Label htmlFor="solutionDescription">Describe your Solution *</Label>
                             <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="Explain your proposed solution in detail" {...field} value={field.value || ''} rows={3}/>} />
                             {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{errors.solutionDescription.message}</p>}
+                            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting.</p>
                         </div>
                         <div>
                             <Label htmlFor="uniqueness">What is Unique/Distinctive about your idea? *</Label>
                             <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="Highlight the novelty and competitive advantage" {...field} value={field.value || ''} rows={3}/>} />
                             {errors.uniqueness && <p className="text-sm text-destructive mt-1">{errors.uniqueness.message}</p>}
+                            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting.</p>
                         </div>
                         <div>
                             <Label>Current Stage of your Idea/Startup *</Label>

@@ -52,6 +52,7 @@ import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
+import ReactMarkdown from 'react-markdown';
 
 
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
@@ -104,6 +105,15 @@ interface ApplicationFilters {
   programPhase: ProgramPhase | '';
   cohortId: string | '';
 }
+
+const MarkdownDisplayComponents = {
+  p: ({node, ...props}: any) => <p className="mb-2 last:mb-0" {...props} />,
+  ul: ({node, ...props}: any) => <ul className="list-disc pl-5 mb-2" {...props} />,
+  ol: ({node, ...props}: any) => <ol className="list-decimal pl-5 mb-2" {...props} />,
+  li: ({node, ...props}: any) => <li className="mb-1" {...props} />,
+  strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
+  em: ({node, ...props}: any) => <em className="italic" {...props} />,
+};
 
 export default function ViewApplicationsPage() {
   const { userProfile, loading: authLoading, initialLoadComplete } = useAuth();
@@ -426,26 +436,22 @@ export default function ViewApplicationsPage() {
             openPhaseDetailsDialog(idea, actualNewPhase);
         } else if (actualNewPhase === 'INCUBATED') {
             try {
-                // Directly update and then open funding form
                 await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
                 toast({ title: "Update Successful", description: `Application moved to ${getProgramPhaseLabel(actualNewPhase)}.` });
                 
-                // Fetch the latest version of applications to ensure `selectedApplication` (if used) is up-to-date
                 const updatedApps = await getAllIdeaSubmissionsWithDetails();
-                setApplications(updatedApps); // Update the main list
+                setApplications(updatedApps); 
                 
-                // Find the specific idea from the fresh list to populate the funding form
                 const freshlyFetchedIdea = updatedApps.find(app => app.id === idea.id);
 
                 if (freshlyFetchedIdea) {
-                    setSelectedApplication(freshlyFetchedIdea); // Update selectedApplication for the modal context
+                    setSelectedApplication(freshlyFetchedIdea); 
                     setFundingForm({
                         totalFundingAllocated: freshlyFetchedIdea.totalFundingAllocated || '',
                         sanction1Amount: freshlyFetchedIdea.sanction1Amount || '',
                         sanction2Amount: freshlyFetchedIdea.sanction2Amount || '',
                     });
                 } else {
-                    // Fallback if the idea isn't found in the fresh list (should be rare)
                     setSelectedApplication(idea); 
                     setFundingForm({
                         totalFundingAllocated: idea.totalFundingAllocated || '',
@@ -459,7 +465,7 @@ export default function ViewApplicationsPage() {
             } catch (error) {
                 console.error("Error updating status/phase to INCUBATED:", error);
                 toast({ title: "Update Error", description: "Could not update application to Incubated.", variant: "destructive" });
-                fetchApplications(); // Refresh on error
+                fetchApplications(); 
             }
         } else if (actualNewPhase === 'COHORT') {
             try {
@@ -469,7 +475,7 @@ export default function ViewApplicationsPage() {
             } catch (error) {
                 console.error("Error updating status/phase to COHORT:", error);
                 toast({ title: "Update Error", description: "Could not update application to Cohort.", variant: "destructive" });
-                fetchApplications(); // Refresh on error
+                fetchApplications(); 
             }
         }
     } else if (newStatus === 'NOT_SELECTED') {
@@ -477,7 +483,6 @@ export default function ViewApplicationsPage() {
         setRejectionRemarksInput(idea.rejectionRemarks || '');
         setIsRejectionDialogVisible(true);
     } else {
-        // For other status changes or if phase is not applicable/changed
         try {
           await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
           toast({ title: "Update Successful", description: `Application updated.` });
@@ -485,7 +490,7 @@ export default function ViewApplicationsPage() {
         } catch (error) {
           console.error("Error updating status/phase:", error);
           toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-          fetchApplications(); // Refresh on error
+          fetchApplications(); 
         }
     }
   };
@@ -1322,9 +1327,9 @@ export default function ViewApplicationsPage() {
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">AI Generated Outline?</h4><p>{selectedApplication.isOutlineAIGenerated ? <span className="flex items-center text-green-600"><Sparkles className="h-4 w-4 mr-1"/>Yes</span> : 'No'}</p></div>
                             </div>
                             <div className="space-y-2 pt-2">
-                                <div><h4 className="font-semibold text-muted-foreground text-xs">Problem Definition</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.problem}</p></div>
-                                <div><h4 className="font-semibold text-muted-foreground text-xs">Proposed Solution</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.solution}</p></div>
-                                <div><h4 className="font-semibold text-muted-foreground text-xs">Uniqueness/Distinctiveness</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.uniqueness}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Problem Definition</h4><div className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm markdown-container"><ReactMarkdown components={MarkdownDisplayComponents}>{selectedApplication.problem || ''}</ReactMarkdown></div></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Proposed Solution</h4><div className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm markdown-container"><ReactMarkdown components={MarkdownDisplayComponents}>{selectedApplication.solution || ''}</ReactMarkdown></div></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Uniqueness/Distinctiveness</h4><div className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm markdown-container"><ReactMarkdown components={MarkdownDisplayComponents}>{selectedApplication.uniqueness || ''}</ReactMarkdown></div></div>
                                 {selectedApplication.fileURL && (<div><h4 className="font-semibold text-muted-foreground text-xs">Attachment (Pitch Deck)</h4><a href={selectedApplication.fileURL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{selectedApplication.fileName || 'View Attachment'}</a></div>)}
                                 {selectedApplication.studioLocation && (<div><h4 className="font-semibold text-muted-foreground text-xs">Preferred Studio Location</h4><p>{selectedApplication.studioLocation}</p></div>)}
                                 {selectedApplication.status === 'NOT_SELECTED' && selectedApplication.rejectionRemarks && (<div><h4 className="font-semibold text-muted-foreground text-xs text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4><p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90 text-sm">{selectedApplication.rejectionRemarks}</p>{selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByDisplayName || `UID ${selectedApplication.rejectedByUid.substring(0,5)}...`} on {formatDateOnly(selectedApplication.rejectedAt)}</p>}</div>)}
@@ -1472,4 +1477,3 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
-    
