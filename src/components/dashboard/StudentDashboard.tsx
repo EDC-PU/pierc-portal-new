@@ -1456,7 +1456,7 @@ export default function StudentDashboard() {
                 </ModalFooter>
             </ModalContent>
         </Dialog>
-      )}
+    
 
       {isBeneficiaryModalOpen && ideaForFundManagementTab && (
         <Dialog open={isBeneficiaryModalOpen} onOpenChange={setIsBeneficiaryModalOpen}>
