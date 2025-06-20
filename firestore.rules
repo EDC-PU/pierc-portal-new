@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -33,15 +32,28 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    // Predefined Mentor Emails
+    function MENTOR_EMAILS() {
+      return [
+        'prashant.khanna8747@paruluniversity.ac.in',
+        'riddhi.bagha29080@paruluniversity.ac.in',
+        'nikhil.jumade24167@paruluniversity.ac.in',
+        'jay.sudani@paruluniversity.ac.in',
+        'hardik.kharva2899@paruluniversity.ac.in',
+        'sonal.sudani23321@paruluniversity.ac.in',
+        'panchamkumar.baraiya28771@paruluniversity.ac.in',
+        'juned.shaikh32161@paruluniversity.ac.in'
+      ];
+    }
+
     // --- User Profile Rules ---
     function isValidUserProfileOnCreate(data, request) {
       return data.uid == request.auth.uid
           && data.email == request.auth.token.email
           && (data.photoURL == request.auth.token.picture || data.photoURL == null)
-          // role can be null initially, or pre-set if admin/mentor
           && (data.role == null || (data.role == 'ADMIN_FACULTY' && (data.email == 'pranavrathi07@gmail.com' || MENTOR_EMAILS().hasAny([data.email]))))
-          && data.fullName == '' // Must be empty on creation, set via profile setup
-          && data.contactNumber == '' // Must be empty on creation
+          && data.fullName == ''
+          && data.contactNumber == ''
           && data.applicantCategory == null
           && data.currentStage == null
           && data.startupTitle == null
@@ -55,92 +67,44 @@ service cloud.firestore {
           && data.createdAt == request.time
           && data.updatedAt == request.time
           && ((data.email == 'pranavrathi07@gmail.com' && data.isSuperAdmin == true) || data.isSuperAdmin == false)
-          && data.isTeamMemberOnly == false // Default to false, can be set true by admin or system
+          && data.isTeamMemberOnly == false
           && data.associatedIdeaId == null
           && data.associatedTeamLeaderUid == null;
     }
 
     function isValidUserProfileUpdate(newData, oldData, request) {
-      let commonChecks = newData.uid == oldData.uid
-          && newData.email == oldData.email // Email cannot be changed by user
-          && newData.createdAt.toMillis() == oldData.createdAt.toMillis() // createdAt immutable
-          && newData.updatedAt == request.time;
-
-      let profileCompletionFields = [
-        'fullName', 'contactNumber', 'applicantCategory', 'currentStage',
-        'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness',
-        'teamMembers', 'enrollmentNumber', 'college', 'instituteName', 'photoURL', 'displayName'
-      ];
-
-      let allowedFieldsForUserEdit = profileCompletionFields;
-      // Admins can change role and isSuperAdmin (if they are super admin)
-      if (isAdmin()) {
-        allowedFieldsForUserEdit = allowedFieldsForUserEdit.concat(['role', 'isSuperAdmin']);
-      }
-
-      let userCanOnlyUpdateAllowedFields = newData.keys().hasOnly(oldData.keys().concat(profileCompletionFields).removeAll(['role', 'isSuperAdmin', 'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid']));
-
-      // Specific field validations (string, non-empty etc.)
-      let personalDetailsValid = (newData.fullName is string && newData.fullName.size() > 0)
-                                && (newData.contactNumber is string && newData.contactNumber.size() > 0);
-
-      let ideaDetailsValidOrNull = true; // Assume true if not applicable
-
-      // Team members cannot update idea-specific fields, these are nulled by createUserProfileFS or set via team assignment.
-      // For idea owners, these fields are either null or valid strings.
-      if (!newData.isTeamMemberOnly) {
-          ideaDetailsValidOrNull = (newData.startupTitle is string || newData.startupTitle == null)
-              && (newData.problemDefinition is string || newData.problemDefinition == null)
-              && (newData.solutionDescription is string || newData.solutionDescription == null)
-              && (newData.uniqueness is string || newData.uniqueness == null)
-              && (newData.teamMembers is string || newData.teamMembers == null)
-              && (newData.applicantCategory is string || newData.applicantCategory == null) // enum check happens client-side, here just type
-              && (newData.currentStage is string || newData.currentStage == null); // enum check client-side
-      }
-
-
-      let academicDetailsValidOrNull = (newData.enrollmentNumber is string || newData.enrollmentNumber == null)
-                                     && (newData.college is string || newData.college == null)
-                                     && (newData.instituteName is string || newData.instituteName == null);
-
-      // Role change rules
-      let roleChangeValid = (
-        (newData.role == oldData.role) || // Role not changed
-        (isAdmin() && newData.role in ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY']) // Admin can change role
-      );
-      // isSuperAdmin can only be changed by a super admin, and not for the primary super admin
-      let superAdminChangeValid = (
-        (newData.isSuperAdmin == oldData.isSuperAdmin) ||
-        (isSuperAdmin() && newData.email != 'pranavrathi07@gmail.com')
-      );
-      // isTeamMemberOnly, associatedIdeaId, associatedTeamLeaderUid should not be directly updatable by the user here.
-      // They are managed systemically or by admins.
-      let teamMembershipFlagsValid = (
-        (newData.isTeamMemberOnly == oldData.isTeamMemberOnly) &&
-        (newData.associatedIdeaId == oldData.associatedIdeaId) &&
-        (newData.associatedTeamLeaderUid == oldData.associatedTeamLeaderUid)
-      );
-
-      return commonChecks
-          && personalDetailsValid
-          && ideaDetailsValidOrNull
-          && academicDetailsValidOrNull
-          && roleChangeValid
-          && superAdminChangeValid
-          && teamMembershipFlagsValid;
-          // && userCanOnlyUpdateAllowedFields; // This check is complex to get right with conditional fields for team members
+      return newData.uid == oldData.uid
+          && newData.email == oldData.email
+          && newData.createdAt.toMillis() == oldData.createdAt.toMillis()
+          && newData.updatedAt == request.time
+          && (newData.fullName is string && newData.fullName.size() > 0)
+          && (newData.contactNumber is string && newData.contactNumber.size() > 0)
+          && (newData.startupTitle is string || newData.startupTitle == null)
+          && (newData.problemDefinition is string || newData.problemDefinition == null)
+          && (newData.solutionDescription is string || newData.solutionDescription == null)
+          && (newData.uniqueness is string || newData.uniqueness == null)
+          && (newData.teamMembers is string || newData.teamMembers == null)
+          && (newData.applicantCategory is string || newData.applicantCategory == null)
+          && (newData.currentStage is string || newData.currentStage == null)
+          && (newData.enrollmentNumber is string || newData.enrollmentNumber == null)
+          && (newData.college is string || newData.college == null)
+          && (newData.instituteName is string || newData.instituteName == null)
+          && ((newData.role == oldData.role) || (isAdmin() && newData.role in ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY']))
+          && ((newData.isSuperAdmin == oldData.isSuperAdmin) || (isSuperAdmin() && newData.email != 'pranavrathi07@gmail.com'))
+          && (newData.isTeamMemberOnly == oldData.isTeamMemberOnly)
+          && (newData.associatedIdeaId == oldData.associatedIdeaId)
+          && (newData.associatedTeamLeaderUid == oldData.associatedTeamLeaderUid);
     }
 
     function hasOnlyUserProfileFields() {
-      let allowedFields = [
+      return request.resource.data.keys().hasOnly([
         'uid', 'email', 'displayName', 'photoURL', 'role', 'fullName', 'contactNumber',
         'applicantCategory', 'currentStage', 'startupTitle', 'problemDefinition',
         'solutionDescription', 'uniqueness', 'teamMembers',
         'enrollmentNumber', 'college', 'instituteName',
         'createdAt', 'updatedAt', 'isSuperAdmin',
         'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid'
-      ];
-      return request.resource.data.keys().hasOnly(allowedFields);
+      ]);
     }
 
     // --- Idea Submission Rules ---
@@ -152,8 +116,8 @@ service cloud.firestore {
       return newData.submittedAt == oldData.submittedAt && newData.updatedAt == request.time;
     }
 
-    function isValidInitialOrResubmittedIdeaState(data, request, oldData) { // oldData is null for create
-      let commonChecks = data.status == 'SUBMITTED'
+    function isValidInitialOrResubmittedIdeaState(data, request, oldData) {
+      return data.status == 'SUBMITTED'
           && data.programPhase == null
           && data.cohortId == null
           && data.phase2Marks.size() == 0
@@ -172,7 +136,6 @@ service cloud.firestore {
           && data.nextPhaseGuidelines == null
           && data.structuredTeamMembers.size() == 0
           && data.teamMemberEmails.size() == 0
-          // Funding checks
           && data.totalFundingAllocated == null
           && data.sanction1Amount == null
           && data.sanction2Amount == null
@@ -192,131 +155,44 @@ service cloud.firestore {
           && data.sanction2UtilizationStatus == 'NOT_APPLICABLE'
           && data.sanction2UtilizationRemarks == null
           && data.sanction2UtilizationReviewedBy == null
-          && data.sanction2UtilizationReviewedAt == null;
-
-      if (oldData == null) { // Create operation
-        return commonChecks && isValidInitialTimestamps(data, request);
-      } else { // Update operation (resubmit from archive)
-        return commonChecks && isValidResubmitTimestamps(data, oldData, request);
-      }
+          && data.sanction2UtilizationReviewedAt == null
+          && ((oldData == null && isValidInitialTimestamps(data, request)) || (oldData != null && isValidResubmitTimestamps(data, oldData, request)));
     }
 
-    function isValidIdeaSubmissionOnCreateOrResubmit(data, request) { // For 'create' or when status becomes 'SUBMITTED' on 'update'
+    function isValidIdeaSubmissionOnCreateOrResubmit(data, request) {
       return data.userId == request.auth.uid
           && data.title is string && data.title.size() > 0
           && data.problem is string && data.problem.size() > 0
           && data.solution is string && data.solution.size() > 0
           && data.uniqueness is string && data.uniqueness.size() > 0
-          && data.developmentStage is string // enum check client-side
-          && data.applicantType is string // enum check client-side
-          && (data.teamMembers is string || data.teamMembers == null) // Optional string
+          && data.developmentStage is string
+          && data.applicantType is string
+          && (data.teamMembers is string || data.teamMembers == null)
           && (data.fileURL is string || data.fileURL == null)
           && (data.fileName is string || data.fileName == null)
           && (data.studioLocation is string || data.studioLocation == null);
-          // isValidInitialOrResubmittedIdeaState is called separately by the caller
     }
 
     function isIdeaUpdateSafe(newData, oldData, request) {
-      // User can only update specific fields if idea is not archived by admin
-      // Core idea details (title, problem, solution, uniqueness, devStage, applicantType, teamMembers(string)) can be updated
-      // via profile save, which triggers createIdeaFromProfile's update path.
-      let coreIdeaFieldsSameOrUpdatedByProfileSync =
-          newData.userId == oldData.userId
-          && newData.applicantDisplayName == oldData.applicantDisplayName // Should be updated if profile name changes
-          && newData.applicantEmail == oldData.applicantEmail           // Should be updated if profile email changes (though email usually doesn't change)
-          && (newData.title == oldData.title || newData.title is string && newData.title.size() > 0)
-          && (newData.problem == oldData.problem || newData.problem is string && newData.problem.size() > 0)
-          && (newData.solution == oldData.solution || newData.solution is string && newData.solution.size() > 0)
-          && (newData.uniqueness == oldData.uniqueness || newData.uniqueness is string && newData.uniqueness.size() > 0)
+      return newData.userId == oldData.userId
+          && newData.applicantDisplayName == oldData.applicantDisplayName
+          && newData.applicantEmail == oldData.applicantEmail
+          && (newData.title == oldData.title || (newData.title is string && newData.title.size() > 0))
+          && (newData.problem == oldData.problem || (newData.problem is string && newData.problem.size() > 0))
+          && (newData.solution == oldData.solution || (newData.solution is string && newData.solution.size() > 0))
+          && (newData.uniqueness == oldData.uniqueness || (newData.uniqueness is string && newData.uniqueness.size() > 0))
           && (newData.developmentStage == oldData.developmentStage || newData.developmentStage is string)
           && (newData.applicantType == oldData.applicantType || newData.applicantType is string)
           && (newData.teamMembers == oldData.teamMembers || newData.teamMembers is string || newData.teamMembers == null)
-          && newData.submittedAt.toMillis() == oldData.submittedAt.toMillis(); // submittedAt is immutable after creation
-
-      let statusChangeByAdminOrResubmit = (
-        (isAdmin() && newData.status != oldData.status) || // Admin changing status
-        (newData.status == 'SUBMITTED' && oldData.status == 'ARCHIVED_BY_ADMIN') // User resubmitting
-      );
-
-      let phaseChangeByAdmin = isAdmin() && newData.programPhase != oldData.programPhase;
-      let mentorChangeBySuperAdmin = isSuperAdmin() && newData.mentor != oldData.mentor;
-      let cohortChangeBySuperAdmin = isSuperAdmin() && newData.cohortId != oldData.cohortId;
-      let marksChangeByAdmin = isAdmin() && newData.phase2Marks != oldData.phase2Marks && newData.programPhase == 'PHASE_2';
-      let pptChangeByOwner = isIdeaOwner(oldData.userId) && newData.programPhase == 'PHASE_2' && (newData.phase2PptUrl != oldData.phase2PptUrl || newData.phase2PptFileName != oldData.phase2PptFileName);
-      let aiOutlineFlagChangeByOwner = isIdeaOwner(oldData.userId) && newData.isOutlineAIGenerated != oldData.isOutlineAIGenerated;
-      let nextPhaseDetailsChangeByAdmin = isAdmin() && (
-        newData.nextPhaseDate != oldData.nextPhaseDate ||
-        newData.nextPhaseStartTime != oldData.nextPhaseStartTime ||
-        newData.nextPhaseEndTime != oldData.nextPhaseEndTime ||
-        newData.nextPhaseVenue != oldData.nextPhaseVenue ||
-        newData.nextPhaseGuidelines != oldData.nextPhaseGuidelines
-      );
-      // Beneficiary details change by owner
-      let beneficiaryChangeByOwner = isIdeaOwner(oldData.userId) && newData.programPhase == 'INCUBATED' && (
-        newData.beneficiaryName != oldData.beneficiaryName ||
-        newData.beneficiaryAccountNo != oldData.beneficiaryAccountNo ||
-        newData.beneficiaryBankName != oldData.beneficiaryBankName ||
-        newData.beneficiaryIfscCode != oldData.beneficiaryIfscCode
-      );
-      // Expense upload by owner
-      let expenseChangeByOwner = isIdeaOwner(oldData.userId) && newData.programPhase == 'INCUBATED' &&
-                                 (newData.sanction1Expenses != oldData.sanction1Expenses || newData.sanction2Expenses != oldData.sanction2Expenses);
-      // Apply for next sanction by owner
-      let applyNextSanctionByOwner = isIdeaOwner(oldData.userId) && newData.programPhase == 'INCUBATED' &&
-                                     newData.sanction1AppliedForNext != oldData.sanction1AppliedForNext && newData.sanction1AppliedForNext == true && oldData.sanction1UtilizationStatus == 'APPROVED';
-      // Funding allocation change by super admin
-      let fundingAllocationChangeBySuperAdmin = isSuperAdmin() && newData.programPhase == 'INCUBATED' && (
-        newData.totalFundingAllocated != oldData.totalFundingAllocated ||
-        newData.sanction1Amount != oldData.sanction1Amount ||
-        newData.sanction2Amount != oldData.sanction2Amount
-      );
-      // Sanction disbursement by super admin
-      let sanctionDisbursementChangeBySuperAdmin = isSuperAdmin() && newData.programPhase == 'INCUBATED' && (
-        newData.sanction1DisbursedAt != oldData.sanction1DisbursedAt ||
-        newData.sanction2DisbursedAt != oldData.sanction2DisbursedAt
-      );
-      // Sanction utilization review by super admin
-      let sanctionUtilizationReviewBySuperAdmin = isSuperAdmin() && newData.programPhase == 'INCUBATED' && (
-        newData.sanction1UtilizationStatus != oldData.sanction1UtilizationStatus ||
-        newData.sanction1UtilizationRemarks != oldData.sanction1UtilizationRemarks ||
-        newData.sanction2UtilizationStatus != oldData.sanction2UtilizationStatus ||
-        newData.sanction2UtilizationRemarks != oldData.sanction2UtilizationRemarks
-      );
-      // Team management by owner (structuredTeamMembers, teamMemberEmails)
-      let teamManagementChangeByOwner = isIdeaOwner(oldData.userId) &&
-                                        (newData.structuredTeamMembers != oldData.structuredTeamMembers || newData.teamMemberEmails != oldData.teamMemberEmails);
-
-
-      let isStatusChangeValid =
-          (newData.status == oldData.status) || // Status not changed
-          (isAdmin() && newData.status in ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED', 'ARCHIVED_BY_ADMIN']) || // Admin can change to any valid status
-          (newData.status == 'SUBMITTED' && oldData.status == 'ARCHIVED_BY_ADMIN' && isValidInitialOrResubmittedIdeaState(newData, request, oldData) && isValidIdeaSubmissionOnCreateOrResubmit(newData, request)); // User resubmitting
-
-      let isPhaseLogicValid = (
-        (newData.programPhase == oldData.programPhase) || // Phase not changed
-        (isAdmin()) // Admin can change phase
-      );
-
-      // If status becomes ARCHIVED_BY_ADMIN, ensure other fields are reset according to archive logic
-      let archiveResetValid = (! (newData.status == 'ARCHIVED_BY_ADMIN' && oldData.status != 'ARCHIVED_BY_ADMIN')) || // Not an archive action OR
-                              (newData.programPhase == null && newData.phase2Marks.size() == 0 && newData.mentor == null && newData.cohortId == null && newData.isOutlineAIGenerated == false && newData.rejectionRemarks == null && newData.rejectedByUid == null && newData.rejectedAt == null && newData.nextPhaseDate == null && newData.nextPhaseStartTime == null && newData.nextPhaseEndTime == null && newData.nextPhaseVenue == null && newData.nextPhaseGuidelines == null && newData.totalFundingAllocated == null && newData.sanction1Amount == null && newData.sanction2Amount == null && newData.sanction1DisbursedAt == null && newData.sanction2DisbursedAt == null && newData.sanction1Expenses.size() == 0 && newData.sanction2Expenses.size() == 0 && newData.beneficiaryName == null && newData.beneficiaryAccountNo == null && newData.beneficiaryBankName == null && newData.beneficiaryIfscCode == null && newData.sanction1AppliedForNext == false && newData.sanction1UtilizationStatus == 'NOT_APPLICABLE' && newData.sanction2UtilizationStatus == 'NOT_APPLICABLE');
-
-
-      let allowedChanges = statusChangeByAdminOrResubmit || phaseChangeByAdmin || mentorChangeBySuperAdmin || cohortChangeBySuperAdmin || marksChangeByAdmin || pptChangeByOwner || aiOutlineFlagChangeByOwner || nextPhaseDetailsChangeByAdmin || teamManagementChangeByOwner || beneficiaryChangeByOwner || expenseChangeByOwner || applyNextSanctionByOwner || fundingAllocationChangeBySuperAdmin || sanctionDisbursementChangeBySuperAdmin || sanctionUtilizationReviewBySuperAdmin;
-
-      // If only profile sync fields are changing (title, problem etc), that's also allowed
-      let onlyProfileSyncFieldsChanged = newData.title != oldData.title || newData.problem != oldData.problem || newData.solution != oldData.solution || newData.uniqueness != oldData.uniqueness || newData.developmentStage != oldData.developmentStage || newData.applicantType != oldData.applicantType || newData.teamMembers != oldData.teamMembers;
-
-      return coreIdeaFieldsSameOrUpdatedByProfileSync
+          && newData.submittedAt.toMillis() == oldData.submittedAt.toMillis()
           && newData.updatedAt == request.time
-          && isStatusChangeValid
-          && isPhaseLogicValid
-          && archiveResetValid
-          && (allowedChanges || onlyProfileSyncFieldsChanged); // Either specific allowed action or just profile data sync
+          && ((newData.status == oldData.status) || (isAdmin() && newData.status in ['SUBMITTED', 'UNDER_REVIEW', 'IN_EVALUATION', 'SELECTED', 'NOT_SELECTED', 'ARCHIVED_BY_ADMIN']) || (newData.status == 'SUBMITTED' && oldData.status == 'ARCHIVED_BY_ADMIN' && isValidInitialOrResubmittedIdeaState(newData, request, oldData) && isValidIdeaSubmissionOnCreateOrResubmit(newData, request)))
+          && ((newData.programPhase == oldData.programPhase) || isAdmin())
+          && (!(newData.status == 'ARCHIVED_BY_ADMIN' && oldData.status != 'ARCHIVED_BY_ADMIN') || (newData.programPhase == null && newData.phase2Marks.size() == 0 && newData.mentor == null && newData.cohortId == null && newData.isOutlineAIGenerated == false && newData.rejectionRemarks == null && newData.rejectedByUid == null && newData.rejectedAt == null && newData.nextPhaseDate == null && newData.nextPhaseStartTime == null && newData.nextPhaseEndTime == null && newData.nextPhaseVenue == null && newData.nextPhaseGuidelines == null && newData.totalFundingAllocated == null && newData.sanction1Amount == null && newData.sanction2Amount == null && newData.sanction1DisbursedAt == null && newData.sanction2DisbursedAt == null && newData.sanction1Expenses.size() == 0 && newData.sanction2Expenses.size() == 0 && newData.beneficiaryName == null && newData.beneficiaryAccountNo == null && newData.beneficiaryBankName == null && newData.beneficiaryIfscCode == null && newData.sanction1AppliedForNext == false && newData.sanction1UtilizationStatus == 'NOT_APPLICABLE' && newData.sanction2UtilizationStatus == 'NOT_APPLICABLE'));
     }
 
     function hasOnlyIdeaFields() {
-      let allowedFields = [
+      return request.resource.data.keys().hasOnly([
         'userId', 'title', 'problem', 'solution', 'uniqueness', 'developmentStage', 'applicantType',
         'teamMembers', 'structuredTeamMembers', 'teamMemberEmails', 'fileURL', 'fileName', 'studioLocation', 'status',
         'programPhase', 'phase2Marks', 'mentor', 'cohortId', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
@@ -324,7 +200,6 @@ service cloud.firestore {
         'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines',
         'submittedAt', 'updatedAt', 'applicantDisplayName', 'applicantEmail',
         'updatedByMentorAssignerUid',
-        // Funding fields
         'totalFundingAllocated', 'sanction1Amount', 'sanction2Amount',
         'sanction1DisbursedAt', 'sanction2DisbursedAt',
         'sanction1Expenses', 'sanction2Expenses',
@@ -332,10 +207,8 @@ service cloud.firestore {
         'sanction1AppliedForNext',
         'sanction1UtilizationStatus', 'sanction1UtilizationRemarks', 'sanction1UtilizationReviewedBy', 'sanction1UtilizationReviewedAt',
         'sanction2UtilizationStatus', 'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt'
-      ];
-      return request.resource.data.keys().hasOnly(allowedFields);
+      ]);
     }
-
 
     // --- Cohort Rules ---
     function isValidCohortData(data, request) {
@@ -345,42 +218,37 @@ service cloud.firestore {
           && data.batchSize is number && data.batchSize > 0
           && data.createdByUid == request.auth.uid
           && data.creatorDisplayName is string
-          && (data.ideaIds is list || data.ideaIds == null) // Can be null on creation
-          && (data.schedule is list || data.schedule == null); // Can be null on creation
+          && (data.ideaIds is list || data.ideaIds == null)
+          && (data.schedule is list || data.schedule == null);
     }
-     function hasOnlyCohortFields() {
-      let allowedFields = [
+
+    function hasOnlyCohortFields() {
+      return request.resource.data.keys().hasOnly([
         'name', 'startDate', 'endDate', 'batchSize', 'ideaIds', 'schedule',
         'createdAt', 'createdByUid', 'creatorDisplayName', 'updatedAt'
-      ];
-      return request.resource.data.keys().hasOnly(allowedFields);
+      ]);
     }
 
     // --- Announcement Rules ---
     function isValidAnnouncementData(data) {
-      let commonChecks = data.title is string && data.title.size() > 0
+      return data.title is string && data.title.size() > 0
           && data.content is string && data.content.size() > 0
           && data.isUrgent is bool
           && data.targetAudience is string && (data.targetAudience == 'ALL' || data.targetAudience == 'SPECIFIC_COHORT')
           && data.createdByUid == request.auth.uid
-          && data.creatorDisplayName is string;
-
-      let cohortCheck = (!(data.targetAudience == 'SPECIFIC_COHORT')) || (data.cohortId is string && data.cohortId.size() > 0);
-
-      return commonChecks && cohortCheck;
+          && data.creatorDisplayName is string
+          && (!(data.targetAudience == 'SPECIFIC_COHORT') || (data.cohortId is string && data.cohortId.size() > 0));
     }
+
     function hasOnlyAnnouncementFields() {
-      let allowedFields = [
+      return request.resource.data.keys().hasOnly([
         'title', 'content', 'isUrgent', 'targetAudience', 'cohortId',
         'attachmentURL', 'attachmentName',
         'createdByUid', 'creatorDisplayName', 'createdAt', 'updatedAt'
-      ];
-      return request.resource.data.keys().hasOnly(allowedFields);
+      ]);
     }
 
-
     // --- System Settings Rules ---
-    // Only one document 'config' in this collection
     function isValidSystemSettingsData(data) {
       return data.portalName is string && data.portalName.size() > 0
           && data.maintenanceMode is bool
@@ -388,22 +256,20 @@ service cloud.firestore {
           && data.defaultCohortSize is number && data.defaultCohortSize > 0
           && data.updatedByUid == request.auth.uid;
     }
+
     function hasOnlySystemSettingsFields() {
-      let allowedFields = [
+      return request.resource.data.keys().hasOnly([
         'portalName', 'maintenanceMode', 'allowNewRegistrations', 'defaultCohortSize',
         'updatedAt', 'updatedByUid'
-      ];
-      return request.resource.data.keys().hasOnly(allowedFields);
+      ]);
     }
 
     // --- Activity Log Rules ---
-    // Logs are append-only, created by system/trusted functions or specific user actions.
-    // No direct client-side updates or deletes.
     function isValidActivityLogData(data, request) {
-      return data.timestamp == request.time // Ensure server timestamp on create
+      return data.timestamp == request.time
           && data.actorUid is string
           && data.actorDisplayName is string
-          && data.action is string // Validate specific actions if needed, for now just string
+          && data.action is string
           && (data.target == null || (
               data.target is map &&
               data.target.type is string && data.target.type.size() > 0 &&
@@ -412,26 +278,10 @@ service cloud.firestore {
             ))
           && (data.details == null || data.details is map);
     }
+
     function hasOnlyActivityLogFields() {
-        let allowedFields = ['timestamp', 'actorUid', 'actorDisplayName', 'action', 'target', 'details'];
-        return request.resource.data.keys().hasOnly(allowedFields);
+      return request.resource.data.keys().hasOnly(['timestamp', 'actorUid', 'actorDisplayName', 'action', 'target', 'details']);
     }
-
-    // Predefined Mentor Emails (mirror from types/index.ts)
-    // This list should be kept in sync with the frontend.
-    function MENTOR_EMAILS() {
-      return [
-        'prashant.khanna8747@paruluniversity.ac.in',
-        'riddhi.bagha29080@paruluniversity.ac.in',
-        'nikhil.jumade24167@paruluniversity.ac.in',
-        'jay.sudani@paruluniversity.ac.in',
-        'hardik.kharva2899@paruluniversity.ac.in',
-        'sonal.sudani23321@paruluniversity.ac.in',
-        'panchamkumar.baraiya28771@paruluniversity.ac.in',
-        'juned.shaikh32161@paruluniversity.ac.in'
-      ];
-    }
-
 
     // --- Path Definitions & Permissions ---
 
@@ -443,9 +293,9 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
                       (
                         (isProfileOwner(userId) && isValidUserProfileUpdate(request.resource.data, resource.data, request)) ||
-                        (isSuperAdmin() && request.auth.uid != userId) // Super admin can update other users (but not primary SA details like role here directly)
+                        (isSuperAdmin() && request.auth.uid != userId)
                       ) && hasOnlyUserProfileFields();
-      allow delete: if isSuperAdmin() && request.auth.uid != userId; // Only Super Admin can delete other users, not themselves via this rule
+      allow delete: if isSuperAdmin() && request.auth.uid != userId;
     }
 
     match /ideas/{ideaId} {
@@ -456,24 +306,23 @@ service cloud.firestore {
                     && hasOnlyIdeaFields();
       allow update: if isSignedIn() &&
                       (
-                        (isIdeaOwner(resource.data.userId)) || // Owner can make certain updates
-                        isAdmin() // Admin can make certain updates
+                        (isIdeaOwner(resource.data.userId)) ||
+                        isAdmin()
                       )
                       && isIdeaUpdateSafe(request.resource.data, resource.data, request)
                       && hasOnlyIdeaFields();
-      // No direct client delete for ideas, use admin archival or soft delete
       allow delete: if false;
     }
 
     match /announcements/{announcementId} {
-      allow read: if isSignedIn(); // All signed-in users can read announcements
+      allow read: if isSignedIn();
       allow create: if isAdmin()
                     && isValidAnnouncementData(request.resource.data)
                     && hasOnlyAnnouncementFields()
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.updatedAt == request.time;
       allow update: if isAdmin()
-                    && isValidAnnouncementData(request.resource.data) // Assuming creatorUID doesn't change
+                    && isValidAnnouncementData(request.resource.data)
                     && hasOnlyAnnouncementFields()
                     && request.resource.data.createdAt.toMillis() == resource.data.createdAt.toMillis()
                     && request.resource.data.updatedAt == request.time;
@@ -482,36 +331,34 @@ service cloud.firestore {
 
     match /cohorts/{cohortId} {
       allow read: if isSignedIn();
-      allow create: if isSuperAdmin() // Only super admins can create cohorts
+      allow create: if isSuperAdmin()
                     && isValidCohortData(request.resource.data, request)
                     && hasOnlyCohortFields()
                     && request.resource.data.createdAt == request.time
                     && request.resource.data.updatedAt == request.time;
-      allow update: if isSuperAdmin() // Only super admins can update cohort basic details and schedule
-                    && isValidCohortData(request.resource.data, request) // Validates core fields
+      allow update: if isSuperAdmin()
+                    && isValidCohortData(request.resource.data, request)
                     && hasOnlyCohortFields()
                     && request.resource.data.createdAt.toMillis() == resource.data.createdAt.toMillis()
                     && request.resource.data.updatedAt == request.time;
-      allow delete: if isSuperAdmin() && resource.data.ideaIds.size() == 0; // Only super admins can delete empty cohorts
+      allow delete: if isSuperAdmin() && resource.data.ideaIds.size() == 0;
     }
 
     match /systemSettings/config {
       allow read: if isSignedIn();
-      allow create, update: if isSuperAdmin() // Only Super Admins can change system settings
+      allow create, update: if isSuperAdmin()
                             && isValidSystemSettingsData(request.resource.data)
                             && hasOnlySystemSettingsFields()
                             && request.resource.data.updatedAt == request.time;
-      allow delete: if false; // System settings should not be deleted
+      allow delete: if false;
     }
 
     match /activityLogs/{logId} {
-      allow read: if isAdmin(); // Only admins can read activity logs
-      allow create: if isSignedIn() // Allow any signed-in user/function to create logs
+      allow read: if isAdmin();
+      allow create: if isSignedIn()
                       && isValidActivityLogData(request.resource.data, request)
                       && hasOnlyActivityLogFields();
-      allow update, delete: if false; // Logs are immutable
+      allow update, delete: if false;
     }
   }
 }
-
-    
