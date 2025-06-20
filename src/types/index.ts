@@ -21,6 +21,9 @@ export type MentorName = typeof AVAILABLE_MENTORS_DATA[number]['name'];
 export const AVAILABLE_MENTOR_NAMES: MentorName[] = AVAILABLE_MENTORS_DATA.map(m => m.name);
 export const AVAILABLE_MENTORS = AVAILABLE_MENTOR_NAMES;
 
+export type FundingSource = 'SSIP_PIET' | 'SSIP_PARUL_UNIVERSITY' | 'SSIP_PIMSR' | 'SSIP_PHYSIOTHERAPY';
+export const ALL_FUNDING_SOURCES: FundingSource[] = ['SSIP_PIET', 'SSIP_PARUL_UNIVERSITY', 'SSIP_PIMSR', 'SSIP_PHYSIOTHERAPY'];
+
 
 export interface UserProfile {
   uid: string;
@@ -38,7 +41,7 @@ export interface UserProfile {
   solutionDescription: string;
   uniqueness: string;
 
-  teamMembers: string; 
+  // teamMembers: string; // Removed unstructured team members field
 
   enrollmentNumber?: string;
   college?: string;
@@ -77,30 +80,30 @@ export interface AdminMark {
 }
 
 export interface TeamMember {
-  id: string; 
+  id: string;
   name: string;
   email: string;
   phone: string;
   institute: string;
   department: string;
-  enrollmentNumber?: string; 
+  enrollmentNumber?: string;
 }
 
 export type BeneficiaryAccountType = 'SAVINGS' | 'CURRENT';
 
 export interface IdeaSubmission {
   id?: string;
-  userId: string; 
+  userId: string;
   title: string;
-  category: string; 
+  category: string;
   problem: string;
   solution: string;
   uniqueness: string;
   developmentStage: CurrentStage;
   applicantType?: ApplicantCategory;
-  teamMembers?: string; 
-  structuredTeamMembers?: TeamMember[]; 
-  teamMemberEmails?: string[]; 
+  teamMembers?: string; // Kept for backward compatibility if old data has it, but won't be populated from profile setup
+  structuredTeamMembers?: TeamMember[];
+  teamMemberEmails?: string[];
 
   fileURL?: string;
   fileName?: string;
@@ -109,17 +112,17 @@ export interface IdeaSubmission {
   status: IdeaStatus;
   programPhase: ProgramPhase | null;
   phase2Marks?: { [adminUid: string]: AdminMark };
-  mentor?: MentorName; 
-  cohortId?: string | null; 
+  mentor?: MentorName;
+  cohortId?: string | null;
 
   rejectionRemarks?: string | null;
-  rejectedByUid?: string | null; 
+  rejectedByUid?: string | null;
   rejectedAt?: Timestamp | null;
 
   phase2PptUrl?: string | null;
   phase2PptFileName?: string | null;
   phase2PptUploadedAt?: Timestamp | null;
-  isOutlineAIGenerated?: boolean; 
+  isOutlineAIGenerated?: boolean;
 
   nextPhaseDate?: Timestamp | null;
   nextPhaseStartTime?: string | null;
@@ -128,6 +131,7 @@ export interface IdeaSubmission {
   nextPhaseGuidelines?: string | null;
 
   // Incubation Funding Fields
+  fundingSource?: FundingSource | null; // Added new field
   totalFundingAllocated?: number | null;
   sanction1Amount?: number | null;
   sanction2Amount?: number | null;
@@ -135,7 +139,7 @@ export interface IdeaSubmission {
   sanction2DisbursedAt?: Timestamp | null;
   sanction1Expenses?: ExpenseEntry[];
   sanction2Expenses?: ExpenseEntry[];
-  
+
   beneficiaryName?: string | null;
   beneficiaryAccountNo?: string | null;
   beneficiaryBankName?: string | null;
@@ -143,7 +147,7 @@ export interface IdeaSubmission {
   beneficiaryAccountType?: BeneficiaryAccountType | null;
   beneficiaryCity?: string | null;
   beneficiaryBranchName?: string | null;
-  
+
   sanction1AppliedForNext?: boolean; // True if user applied for S2 after S1
   sanction1UtilizationStatus?: SanctionApprovalStatus;
   sanction1UtilizationRemarks?: string | null;
@@ -163,10 +167,10 @@ export interface IdeaSubmission {
 }
 
 export interface CohortScheduleEntry {
-  id: string; 
-  date: string; 
-  day: string; 
-  time: string; 
+  id: string;
+  date: string;
+  day: string;
+  time: string;
   category: string;
   topicActivity: string;
   content: string;
@@ -178,13 +182,13 @@ export interface Cohort {
   name: string;
   startDate: Timestamp;
   endDate: Timestamp;
-  batchSize: number; 
-  ideaIds: string[]; 
-  schedule?: CohortScheduleEntry[]; 
+  batchSize: number;
+  ideaIds: string[];
+  schedule?: CohortScheduleEntry[];
   createdAt: Timestamp;
-  createdByUid: string; 
+  createdByUid: string;
   creatorDisplayName: string | null;
-  updatedAt?: Timestamp; 
+  updatedAt?: Timestamp;
 }
 
 export interface Announcement {
@@ -193,7 +197,7 @@ export interface Announcement {
   content: string;
   isUrgent: boolean;
   targetAudience: 'ALL' | 'SPECIFIC_COHORT';
-  cohortId?: string | null; 
+  cohortId?: string | null;
   attachmentURL?: string;
   attachmentName?: string;
   createdByUid: string;
@@ -214,15 +218,15 @@ export interface SystemSettings {
 
 export type ActivityLogAction =
   | 'USER_PROFILE_CREATED'
-  | 'USER_PROFILE_UPDATED' 
+  | 'USER_PROFILE_UPDATED'
   | 'USER_SIGNED_IN'
   | 'USER_SIGNED_OUT'
   | 'USER_PASSWORD_RESET_REQUESTED'
   | 'USER_ACCOUNT_DELETED_SELF'
   | 'USER_ACCOUNT_DELETED_BY_ADMIN'
-  | 'IDEA_SUBMITTED' 
-  | 'IDEA_PROFILE_DATA_UPDATED' 
-  | 'IDEA_RESUBMITTED' 
+  | 'IDEA_SUBMITTED'
+  | 'IDEA_PROFILE_DATA_UPDATED'
+  | 'IDEA_RESUBMITTED'
   | 'IDEA_PPT_UPLOADED'
   | 'IDEA_TEAM_MEMBER_ADDED'
   | 'IDEA_TEAM_MEMBER_UPDATED'
@@ -244,8 +248,8 @@ export type ActivityLogAction =
   | 'ADMIN_ANNOUNCEMENT_UPDATED'
   | 'ADMIN_ANNOUNCEMENT_DELETED'
   | 'ADMIN_COHORT_CREATED'
-  | 'ADMIN_COHORT_UPDATED' 
-  | 'ADMIN_COHORT_SCHEDULE_UPDATED' 
+  | 'ADMIN_COHORT_UPDATED'
+  | 'ADMIN_COHORT_SCHEDULE_UPDATED'
   | 'ADMIN_COHORT_DELETED'
   | 'ADMIN_SYSTEM_SETTINGS_UPDATED';
 
@@ -265,18 +269,18 @@ export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
 ];
 
 export interface ActivityLogTarget {
-  type: string; 
+  type: string;
   id: string;
-  displayName?: string; 
+  displayName?: string;
 }
 
 export interface ActivityLogEntry {
-  id?: string; 
+  id?: string;
   timestamp: Timestamp;
-  actorUid: string; 
+  actorUid: string;
   actorDisplayName: string | null;
   action: ActivityLogAction;
   target?: ActivityLogTarget;
-  details?: Record<string, any>; 
+  details?: Record<string, any>;
 }
     

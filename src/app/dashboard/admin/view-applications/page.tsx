@@ -16,8 +16,8 @@ import {
     markSanctionAsDisbursedFS,
     reviewSanctionUtilizationFS,
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry } from '@/types';
-import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry, FundingSource } from '@/types'; // Added FundingSource
+import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES, ALL_FUNDING_SOURCES } from '@/types'; // Added ALL_FUNDING_SOURCES
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -37,12 +37,12 @@ import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
-  AlertDialogContent as AlertDialogModalContent, 
+  AlertDialogContent as AlertDialogModalContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger as AlertDialogButtonTrigger, 
+  AlertDialogTrigger as AlertDialogButtonTrigger,
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass, Sparkles } from 'lucide-react';
@@ -86,6 +86,7 @@ interface FundingDetailsFormData {
     totalFundingAllocated: number | string;
     sanction1Amount: number | string;
     sanction2Amount: number | string;
+    fundingSource: FundingSource | ''; // Added
 }
 
 interface SanctionReviewFormData {
@@ -113,6 +114,13 @@ const MarkdownDisplayComponents = {
   li: ({node, ...props}: any) => <li className="mb-1" {...props} />,
   strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
   em: ({node, ...props}: any) => <em className="italic" {...props} />,
+};
+
+const fundingSourceLabels: Record<FundingSource, string> = {
+  SSIP_PIET: "SSIP PIET",
+  SSIP_PARUL_UNIVERSITY: "SSIP Parul University",
+  SSIP_PIMSR: "SSIP PIMSR",
+  SSIP_PHYSIOTHERAPY: "SSIP PHYSIOTHERAPY",
 };
 
 export default function ViewApplicationsPage() {
@@ -159,7 +167,7 @@ export default function ViewApplicationsPage() {
   const [bulkActionTarget, setBulkActionTarget] = useState<string | null>(null);
   const [isFundingFormOpen, setIsFundingFormOpen] = useState(false);
   const [fundingForm, setFundingForm] = useState<FundingDetailsFormData>({
-    totalFundingAllocated: '', sanction1Amount: '', sanction2Amount: ''
+    totalFundingAllocated: '', sanction1Amount: '', sanction2Amount: '', fundingSource: ''
   });
   const [isSanctionReviewFormOpen, setIsSanctionReviewFormOpen] = useState(false);
   const [sanctionToReview, setSanctionToReview] = useState<'SANCTION_1' | 'SANCTION_2' | null>(null);
@@ -202,6 +210,7 @@ export default function ViewApplicationsPage() {
                 updatedVersionInList.cohortId !== selectedApplication.cohortId ||
                 updatedVersionInList.isOutlineAIGenerated !== selectedApplication.isOutlineAIGenerated ||
                 JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks) ||
+                updatedVersionInList.fundingSource !== selectedApplication.fundingSource || // Added
                 updatedVersionInList.totalFundingAllocated !== selectedApplication.totalFundingAllocated ||
                 updatedVersionInList.sanction1Amount !== selectedApplication.sanction1Amount ||
                 updatedVersionInList.sanction2Amount !== selectedApplication.sanction2Amount ||
@@ -390,7 +399,7 @@ export default function ViewApplicationsPage() {
                 startTime: 'N/A',
                 endTime: 'N/A',
             };
-        case 'INCUBATED': 
+        case 'INCUBATED':
              return {
                 venue: 'PIERC Office / Remote Coordination',
                 guidelines: 'Funding disbursement and milestone tracking will be managed through the portal and direct communication.',
@@ -431,41 +440,32 @@ export default function ViewApplicationsPage() {
         actualNewPhase = newPhaseInputValue as ProgramPhase;
     }
 
-    if (newStatus === 'SELECTED' && actualNewPhase) {
+    if (newStatus === 'SELECTED') {
         if (actualNewPhase === 'PHASE_1' || actualNewPhase === 'PHASE_2') {
             openPhaseDetailsDialog(idea, actualNewPhase);
         } else if (actualNewPhase === 'INCUBATED') {
             try {
                 await updateIdeaStatusAndPhase(idea.id!, idea.title, newStatus, userProfile, actualNewPhase, undefined, undefined);
                 toast({ title: "Update Successful", description: `Application moved to ${getProgramPhaseLabel(actualNewPhase)}.` });
-                
-                const updatedApps = await getAllIdeaSubmissionsWithDetails();
-                setApplications(updatedApps); 
-                
-                const freshlyFetchedIdea = updatedApps.find(app => app.id === idea.id);
 
-                if (freshlyFetchedIdea) {
-                    setSelectedApplication(freshlyFetchedIdea); 
-                    setFundingForm({
-                        totalFundingAllocated: freshlyFetchedIdea.totalFundingAllocated || '',
-                        sanction1Amount: freshlyFetchedIdea.sanction1Amount || '',
-                        sanction2Amount: freshlyFetchedIdea.sanction2Amount || '',
-                    });
-                } else {
-                    setSelectedApplication(idea); 
-                    setFundingForm({
-                        totalFundingAllocated: idea.totalFundingAllocated || '',
-                        sanction1Amount: idea.sanction1Amount || '',
-                        sanction2Amount: idea.sanction2Amount || '',
-                    });
-                    toast({ title: "Notice", description: "Could not get latest idea details before opening funding form. Displaying current data.", variant: "default"});
-                }
+                const updatedApps = await getAllIdeaSubmissionsWithDetails();
+                setApplications(updatedApps);
+
+                const freshlyFetchedIdea = updatedApps.find(app => app.id === idea.id);
+                setSelectedApplication(freshlyFetchedIdea || idea); // Update selectedApplication with fresh data or fallback
+
+                setFundingForm({
+                    totalFundingAllocated: freshlyFetchedIdea?.totalFundingAllocated || idea.totalFundingAllocated || '',
+                    sanction1Amount: freshlyFetchedIdea?.sanction1Amount || idea.sanction1Amount || '',
+                    sanction2Amount: freshlyFetchedIdea?.sanction2Amount || idea.sanction2Amount || '',
+                    fundingSource: freshlyFetchedIdea?.fundingSource || idea.fundingSource || '',
+                });
                 setIsFundingFormOpen(true);
 
             } catch (error) {
                 console.error("Error updating status/phase to INCUBATED:", error);
                 toast({ title: "Update Error", description: "Could not update application to Incubated.", variant: "destructive" });
-                fetchApplications(); 
+                fetchApplications();
             }
         } else if (actualNewPhase === 'COHORT') {
             try {
@@ -475,7 +475,7 @@ export default function ViewApplicationsPage() {
             } catch (error) {
                 console.error("Error updating status/phase to COHORT:", error);
                 toast({ title: "Update Error", description: "Could not update application to Cohort.", variant: "destructive" });
-                fetchApplications(); 
+                fetchApplications();
             }
         }
     } else if (newStatus === 'NOT_SELECTED') {
@@ -490,7 +490,7 @@ export default function ViewApplicationsPage() {
         } catch (error) {
           console.error("Error updating status/phase:", error);
           toast({ title: "Update Error", description: "Could not update application.", variant: "destructive" });
-          fetchApplications(); 
+          fetchApplications();
         }
     }
   };
@@ -506,11 +506,11 @@ export default function ViewApplicationsPage() {
         await updateIdeaStatusAndPhase(
             currentIdeaForPhaseDetails.id!,
             currentIdeaForPhaseDetails.title,
-            'SELECTED', 
+            'SELECTED',
             userProfile,
             currentPhaseForDialog,
-            undefined, 
-            { 
+            undefined,
+            {
                 date: Timestamp.fromDate(phaseDetailsForm.date),
                 startTime: phaseDetailsForm.startTime,
                 endTime: phaseDetailsForm.endTime,
@@ -519,15 +519,15 @@ export default function ViewApplicationsPage() {
             }
         );
         toast({ title: "Phase Details Saved", description: `${getProgramPhaseLabel(currentPhaseForDialog)} details saved.` });
-        fetchApplications(); 
+        fetchApplications();
         setIsPhaseDetailsDialogVisible(false);
-        
+
         setCurrentIdeaForPhaseDetails(null);
         setCurrentPhaseForDialog(null);
     } catch (error) {
         console.error("Error saving phase details:", error);
         toast({ title: "Save Error", description: "Could not save phase details.", variant: "destructive" });
-        fetchApplications(); 
+        fetchApplications();
     }
   };
 
@@ -544,7 +544,7 @@ export default function ViewApplicationsPage() {
             currentIdeaForRejection.title,
             'NOT_SELECTED',
             userProfile,
-            null, 
+            null,
             rejectionRemarksInput
         );
         toast({ title: "Rejection Submitted", description: "Rejection remarks saved." });
@@ -670,6 +670,7 @@ export default function ViewApplicationsPage() {
     const total = parseFloat(String(fundingForm.totalFundingAllocated));
     const s1 = parseFloat(String(fundingForm.sanction1Amount));
     const s2 = parseFloat(String(fundingForm.sanction2Amount));
+    const source = fundingForm.fundingSource || null;
 
     if (isNaN(total) || isNaN(s1) || isNaN(s2) || total <= 0 || s1 <= 0 || s2 <= 0) {
         toast({ title: "Invalid Amounts", description: "All funding amounts must be positive numbers.", variant: "destructive" });
@@ -679,8 +680,18 @@ export default function ViewApplicationsPage() {
         toast({ title: "Amount Mismatch", description: "Sanction 1 and Sanction 2 amounts must sum up to the Total Funding Allocated.", variant: "destructive" });
         return;
     }
+    if (!source) {
+        toast({ title: "Funding Source Required", description: "Please select a funding source.", variant: "destructive" });
+        return;
+    }
+
     try {
-        await updateIdeaFundingDetailsFS(selectedApplication.id, selectedApplication.title, { totalFundingAllocated: total, sanction1Amount: s1, sanction2Amount: s2 }, userProfile);
+        await updateIdeaFundingDetailsFS(selectedApplication.id, selectedApplication.title, {
+            totalFundingAllocated: total,
+            sanction1Amount: s1,
+            sanction2Amount: s2,
+            fundingSource: source
+        }, userProfile);
         toast({ title: "Funding Details Saved", description: "Funding allocation has been updated."});
         fetchApplications();
         setIsFundingFormOpen(false);
@@ -809,9 +820,10 @@ export default function ViewApplicationsPage() {
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At',
       // Funding Headers
+      'Funding Source', // Added
       'Total Funding Allocated', 'Sanction 1 Amount', 'Sanction 2 Amount',
       'Sanction 1 Disbursed At', 'Sanction 2 Disbursed At',
-      'Beneficiary Name', 'Account No', 'Bank Name', 'IFSC Code',
+      'Beneficiary Name', 'Account No', 'Bank Name', 'IFSC Code', 'Account Type', 'Branch Name', 'City',
       'Sanction 1 Applied for S2?', 'S1 Utilization Status', 'S1 Utilization Remarks', 'S1 Reviewed By', 'S1 Reviewed At',
       'S2 Utilization Status', 'S2 Utilization Remarks', 'S2 Reviewed By', 'S2 Reviewed At',
     ];
@@ -877,10 +889,11 @@ export default function ViewApplicationsPage() {
         app.nextPhaseStartTime, app.nextPhaseEndTime, app.nextPhaseVenue, app.nextPhaseGuidelines,
         formatDateISO(app.submittedAt), formatDateISO(app.updatedAt),
         // Funding Data
+        app.fundingSource ? fundingSourceLabels[app.fundingSource] : 'N/A', // Added
         app.totalFundingAllocated ?? 'N/A', app.sanction1Amount ?? 'N/A', app.sanction2Amount ?? 'N/A',
         app.sanction1DisbursedAt ? formatDateOnly(app.sanction1DisbursedAt) : 'N/A',
         app.sanction2DisbursedAt ? formatDateOnly(app.sanction2DisbursedAt) : 'N/A',
-        app.beneficiaryName || 'N/A', app.beneficiaryAccountNo || 'N/A', app.beneficiaryBankName || 'N/A', app.beneficiaryIfscCode || 'N/A',
+        app.beneficiaryName || 'N/A', app.beneficiaryAccountNo || 'N/A', app.beneficiaryBankName || 'N/A', app.beneficiaryIfscCode || 'N/A', app.beneficiaryAccountType || 'N/A', app.beneficiaryBranchName || 'N/A', app.beneficiaryCity || 'N/A',
         app.sanction1AppliedForNext ? 'Yes' : 'No',
         app.sanction1UtilizationStatus || 'N/A', app.sanction1UtilizationRemarks || 'N/A', app.sanction1UtilizationReviewedBy || 'N/A', app.sanction1UtilizationReviewedAt ? formatDateOnly(app.sanction1UtilizationReviewedAt) : 'N/A',
         app.sanction2UtilizationStatus || 'N/A', app.sanction2UtilizationRemarks || 'N/A', app.sanction2UtilizationReviewedBy || 'N/A', app.sanction2UtilizationReviewedAt ? formatDateOnly(app.sanction2UtilizationReviewedAt) : 'N/A',
@@ -1325,6 +1338,7 @@ export default function ViewApplicationsPage() {
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Submitted At</h4><p>{formatDate(selectedApplication.submittedAt)}</p></div>
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Last Updated At</h4><p>{formatDate(selectedApplication.updatedAt)}</p></div>
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">AI Generated Outline?</h4><p>{selectedApplication.isOutlineAIGenerated ? <span className="flex items-center text-green-600"><Sparkles className="h-4 w-4 mr-1"/>Yes</span> : 'No'}</p></div>
+                                {selectedApplication.fundingSource && (<div><h4 className="font-semibold text-muted-foreground text-xs">Funding Source</h4><p>{fundingSourceLabels[selectedApplication.fundingSource] || selectedApplication.fundingSource.replace(/_/g, ' ')}</p></div>)}
                             </div>
                             <div className="space-y-2 pt-2">
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Problem Definition</h4><div className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm markdown-container"><ReactMarkdown components={MarkdownDisplayComponents}>{selectedApplication.problem || ''}</ReactMarkdown></div></div>
@@ -1381,7 +1395,7 @@ export default function ViewApplicationsPage() {
                             <AccordionTrigger>Funding & Sanction Management (Admin)</AccordionTrigger>
                             <AccordionContent className="space-y-4">
                                 <Button onClick={() => {
-                                    setFundingForm({ totalFundingAllocated: selectedApplication?.totalFundingAllocated || '', sanction1Amount: selectedApplication?.sanction1Amount || '', sanction2Amount: selectedApplication?.sanction2Amount || '' });
+                                    setFundingForm({ totalFundingAllocated: selectedApplication?.totalFundingAllocated || '', sanction1Amount: selectedApplication?.sanction1Amount || '', sanction2Amount: selectedApplication?.sanction2Amount || '', fundingSource: selectedApplication?.fundingSource || '' });
                                     setIsFundingFormOpen(true);
                                 }} variant="outline" size="sm"><DollarSign className="mr-2 h-4 w-4" />Set/Update Funding Allocation</Button>
 
@@ -1443,6 +1457,21 @@ export default function ViewApplicationsPage() {
             <DialogContent className="sm:max-w-md">
                 <DialogHeader><DialogTitle className="flex items-center"><DollarSign className="mr-2 h-5 w-5"/>Set Funding Allocation for {selectedApplication.title}</DialogTitle></DialogHeader>
                 <div className="py-4 space-y-3">
+                    <div>
+                        <Label htmlFor="fundingSource">Funding Source</Label>
+                        <Select value={fundingForm.fundingSource} onValueChange={(value) => setFundingForm(prev => ({...prev, fundingSource: value as FundingSource | ''}))}>
+                            <SelectTrigger id="fundingSource">
+                                <SelectValue placeholder="Select funding source" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {ALL_FUNDING_SOURCES.map(source => (
+                                    <SelectItem key={source} value={source}>
+                                        {fundingSourceLabels[source]}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                     <div><Label htmlFor="totalFunding">Total Funding Allocated (INR)</Label><Input id="totalFunding" type="number" value={fundingForm.totalFundingAllocated} onChange={(e) => setFundingForm(prev => ({...prev, totalFundingAllocated: e.target.value}))} placeholder="e.g., 50000" /></div>
                     <div><Label htmlFor="sanction1Amount">Sanction 1 Amount (INR)</Label><Input id="sanction1Amount" type="number" value={fundingForm.sanction1Amount} onChange={(e) => setFundingForm(prev => ({...prev, sanction1Amount: e.target.value}))} placeholder="e.g., 25000" /></div>
                     <div><Label htmlFor="sanction2Amount">Sanction 2 Amount (INR)</Label><Input id="sanction2Amount" type="number" value={fundingForm.sanction2Amount} onChange={(e) => setFundingForm(prev => ({...prev, sanction2Amount: e.target.value}))} placeholder="e.g., 25000" /></div>
@@ -1477,3 +1506,4 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+    

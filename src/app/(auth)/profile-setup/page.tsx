@@ -28,6 +28,16 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import ReactMarkdown from 'react-markdown';
+
+const MarkdownDisplayComponents = {
+  p: ({node, ...props}: any) => <p className="mb-2 last:mb-0" {...props} />,
+  ul: ({node, ...props}: any) => <ul className="list-disc pl-5 mb-2" {...props} />,
+  ol: ({node, ...props}: any) => <ol className="list-decimal pl-5 mb-2" {...props} />,
+  li: ({node, ...props}: any) => <li className="mb-1" {...props} />,
+  strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
+  em: ({node, ...props}: any) => <em className="italic" {...props} />,
+};
 
 
 const applicantCategories: { value: ApplicantCategory; label: string }[] = [
@@ -44,15 +54,15 @@ const currentStages: { value: CurrentStage; label: string }[] = [
 ];
 
 const rolesForSelection: { value: Role; label: string }[] = [
-  { value: 'STUDENT', label: 'Student / Innovator' }, 
-  { value: 'EXTERNAL_USER', label: 'External User / Collaborator' }, 
+  { value: 'STUDENT', label: 'Student / Innovator' },
+  { value: 'EXTERNAL_USER', label: 'External User / Collaborator' },
 ];
 
 const profileSetupSchemaBase = z.object({
   fullName: z.string().min(3, 'Full name must be at least 3 characters').max(100),
   contactNumber: z.string().min(10, 'Contact number must be at least 10 digits').max(15, 'Contact number seems too long')
     .regex(/^(\+\d{1,3}[- ]?)?\d{10,14}$/, 'Invalid phone number format'),
-  role: z.custom<Role>().optional(), 
+  role: z.custom<Role>().optional(),
 
   enrollmentNumber: z.string().max(50).optional(),
   college: z.string().max(100).optional(),
@@ -64,11 +74,11 @@ const profileSetupSchemaBase = z.object({
   solutionDescription: z.string().max(2000).optional(),
   uniqueness: z.string().max(2000).optional(),
   currentStage: z.custom<CurrentStage>().optional(),
-  teamMembers: z.string().max(500).optional(), 
+  // teamMembers: z.string().max(500).optional(), // Removed this field
 });
 
 const profileSetupSchemaForIdeaOwners = profileSetupSchemaBase.superRefine((data, ctx) => {
-  const isAdministrativeContext = data.role === 'ADMIN_FACULTY' && 
+  const isAdministrativeContext = data.role === 'ADMIN_FACULTY' &&
                                  (data.startupTitle === 'Administrative Account' || data.startupTitle === 'Faculty/Mentor Account');
 
   const isIdeaOwnerValidationContext = !isAdministrativeContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
@@ -142,7 +152,7 @@ export default function ProfileSetupPage() {
       solutionDescription: '',
       uniqueness: '',
       currentStage: undefined,
-      teamMembers: '',
+      // teamMembers: '', // Removed
     },
   });
 
@@ -171,7 +181,7 @@ export default function ProfileSetupPage() {
         enrollmentNumber: '',
         college: '',
         instituteName: '',
-        teamMembers: '',
+        // teamMembers: '', // Removed
         applicantCategory: undefined,
         startupTitle: undefined,
         problemDefinition: undefined,
@@ -196,7 +206,7 @@ export default function ProfileSetupPage() {
           solutionDescription: userProfile.solutionDescription || '',
           uniqueness: userProfile.uniqueness || '',
           currentStage: userProfile.currentStage || undefined,
-          teamMembers: userProfile.teamMembers || '',
+          // teamMembers: userProfile.teamMembers || '', // Removed
         };
       } else { // New user setup
         setIsEditing(false);
@@ -220,7 +230,7 @@ export default function ProfileSetupPage() {
           defaultVals.uniqueness = undefined;
           defaultVals.applicantCategory = undefined;
           defaultVals.currentStage = undefined;
-          defaultVals.teamMembers = undefined;
+          // defaultVals.teamMembers = undefined; // Removed
         }
       }
       reset(defaultVals);
@@ -255,7 +265,7 @@ export default function ProfileSetupPage() {
       solutionDescription: data.solutionDescription,
       uniqueness: data.uniqueness,
       currentStage: data.currentStage,
-      teamMembers: data.teamMembers,
+      // teamMembers: data.teamMembers, // Removed
     };
 
     try {
@@ -419,7 +429,7 @@ export default function ProfileSetupPage() {
                     </h3>
                 </div>
                  <p className="text-xs text-muted-foreground -mt-3">
-                    {isEditing ? "Manage your existing startup/idea information." : 
+                    {isEditing ? "Manage your existing startup/idea information." :
                      (isNewAdminOrMentorSetup ? "These are placeholder details for your account." : "Tell us about your innovative concept.")}
                  </p>
 
@@ -446,11 +456,7 @@ export default function ProfileSetupPage() {
                         <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your brilliant startup/idea name" {...field} value={field.value || ''} />} />
                         {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
                         </div>
-                         <div>
-                            <Label htmlFor="teamMembers">Team Members (Names, comma-separated, if any)</Label>
-                            <Controller name="teamMembers" control={control} render={({ field }) => <Input id="teamMembers" placeholder="e.g., John Doe, Jane Smith (or 'Solo Innovator')" {...field} value={field.value || ''}/>} />
-                            {errors.teamMembers && <p className="text-sm text-destructive mt-1">{errors.teamMembers.message}</p>}
-                        </div>
+                        {/* Removed TeamMembers Input Field from here */}
                         <div>
                             <Label htmlFor="problemDefinition">Define the Problem you are solving *</Label>
                             <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} value={field.value || ''} rows={3}/>} />
@@ -486,12 +492,12 @@ export default function ProfileSetupPage() {
                             {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
                         </div>
                     </>
-                ) : ( 
+                ) : (
                     <>
                         <div><Label>Account Type</Label><Input value={isSuperAdminEmail ? "Super Admin Placeholder" : "Faculty/Mentor Placeholder"} disabled /></div>
                         <Controller name="applicantCategory" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
                         <Controller name="startupTitle" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <Controller name="teamMembers" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                        {/* <Controller name="teamMembers" control={control} render={({ field }) => <Input type="hidden" {...field} />} /> Removed */}
                         <Controller name="problemDefinition" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
                         <Controller name="solutionDescription" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
                         <Controller name="uniqueness" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
@@ -538,3 +544,4 @@ export default function ProfileSetupPage() {
     </div>
   );
 }
+    

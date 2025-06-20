@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -59,7 +59,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     profileDataForWrite.uniqueness = data.uniqueness || null;
     profileDataForWrite.applicantCategory = data.applicantCategory || null;
     profileDataForWrite.currentStage = data.currentStage || null;
-    profileDataForWrite.teamMembers = data.teamMembers || '';
+    // profileDataForWrite.teamMembers = data.teamMembers || ''; // Removed
     profileDataForWrite.associatedIdeaId = null;
     profileDataForWrite.associatedTeamLeaderUid = null;
   } else {
@@ -71,7 +71,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     profileDataForWrite.uniqueness = null;
     profileDataForWrite.applicantCategory = null;
     profileDataForWrite.currentStage = null;
-    profileDataForWrite.teamMembers = null;
+    // profileDataForWrite.teamMembers = null; // Removed
   }
 
   const existingProfileSnap = await getDoc(userProfileRef);
@@ -104,7 +104,7 @@ export const createUserProfileFS = async (userId: string, data: Partial<UserProf
     problemDefinition: rawData.problemDefinition ?? null,
     solutionDescription: rawData.solutionDescription ?? null,
     uniqueness: rawData.uniqueness ?? null,
-    teamMembers: rawData.teamMembers ?? '',
+    // teamMembers: rawData.teamMembers ?? '', // Removed
     enrollmentNumber: rawData.enrollmentNumber ?? null,
     college: rawData.college ?? null,
     instituteName: rawData.instituteName ?? null,
@@ -137,7 +137,7 @@ export const getUserProfile = async (userId: string): Promise<UserProfile | null
         problemDefinition: data.problemDefinition ?? null,
         solutionDescription: data.solutionDescription ?? null,
         uniqueness: data.uniqueness ?? null,
-        teamMembers: data.teamMembers ?? '',
+        // teamMembers: data.teamMembers ?? '', // Removed
         enrollmentNumber: data.enrollmentNumber || null,
         college: data.college || null,
         instituteName: data.instituteName || null,
@@ -221,7 +221,7 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
         problemDefinition: data.problemDefinition ?? null,
         solutionDescription: data.solutionDescription ?? null,
         uniqueness: data.uniqueness ?? null,
-        teamMembers: data.teamMembers ?? '',
+        // teamMembers: data.teamMembers ?? '', // Removed
         enrollmentNumber: data.enrollmentNumber || null,
         college: data.college || null,
         instituteName: data.instituteName || null,
@@ -433,7 +433,7 @@ export const deleteAnnouncement = async (announcementId: string, adminProfile: U
 // Idea Submission functions
 export const createIdeaFromProfile = async (
   userId: string,
-  profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory' | 'teamMembers'>
+  profileData: Pick<UserProfile, 'startupTitle' | 'problemDefinition' | 'solutionDescription' | 'uniqueness' | 'currentStage' | 'applicantCategory'>
 ): Promise<IdeaSubmission | null> => {
   const userProfile = await getUserProfile(userId);
   if (!userProfile) {
@@ -493,6 +493,7 @@ export const createIdeaFromProfile = async (
             nextPhaseEndTime: data.nextPhaseEndTime || null,
             nextPhaseVenue: data.nextPhaseVenue || null,
             nextPhaseGuidelines: data.nextPhaseGuidelines || null,
+            fundingSource: data.fundingSource ?? null,
             totalFundingAllocated: data.totalFundingAllocated ?? null,
             sanction1Amount: data.sanction1Amount ?? null,
             sanction2Amount: data.sanction2Amount ?? null,
@@ -537,7 +538,7 @@ export const createIdeaFromProfile = async (
     uniqueness: profileData.uniqueness!,
     developmentStage: profileData.currentStage!,
     applicantType: profileData.applicantCategory,
-    teamMembers: profileData.teamMembers || '',
+    teamMembers: '', // Unstructured field no longer populated from profile
     updatedAt: serverTimestamp() as Timestamp,
   };
 
@@ -567,6 +568,7 @@ export const createIdeaFromProfile = async (
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
+        fundingSource: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.fundingSource ?? null),
         totalFundingAllocated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.totalFundingAllocated ?? null),
         sanction1Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1Amount ?? null),
         sanction2Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2Amount ?? null),
@@ -610,17 +612,7 @@ export const createIdeaFromProfile = async (
         cohortId: null,
         phase2Marks: {},
         isOutlineAIGenerated: false,
-        rejectionRemarks: null,
-        rejectedByUid: null,
-        rejectedAt: null,
-        phase2PptUrl: null,
-        phase2PptFileName: null,
-        phase2PptUploadedAt: null,
-        nextPhaseDate: null,
-        nextPhaseStartTime: null,
-        nextPhaseEndTime: null,
-        nextPhaseVenue: null,
-        nextPhaseGuidelines: null,
+        fundingSource: null,
         totalFundingAllocated: null,
         sanction1Amount: null,
         sanction2Amount: null,
@@ -644,6 +636,24 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationRemarks: null,
         sanction2UtilizationReviewedBy: null,
         sanction2UtilizationReviewedAt: null,
+        rejectionRemarks: null, // ensure all fields from IdeaSubmission are initialized or explicitly set
+        rejectedByUid: null,
+        rejectedAt: null,
+        phase2PptUrl: null,
+        phase2PptFileName: null,
+        phase2PptUploadedAt: null,
+        nextPhaseDate: null,
+        nextPhaseStartTime: null,
+        nextPhaseEndTime: null,
+        nextPhaseVenue: null,
+        nextPhaseGuidelines: null,
+        mentor: undefined,
+        category: '', // Assuming category should be an empty string if not provided
+        fileURL: undefined,
+        fileName: undefined,
+        studioLocation: undefined,
+        applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
+        applicantEmail: userProfile.email || 'N/A',
       };
       ideaDocRef = await addDoc(collection(db, 'ideas'), newIdeaData);
       await logUserActivity(
@@ -739,6 +749,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       nextPhaseVenue: ideaData.nextPhaseVenue || null,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
+      fundingSource: ideaData.fundingSource ?? null,
       totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
       sanction1Amount: ideaData.sanction1Amount ?? null,
       sanction2Amount: ideaData.sanction2Amount ?? null,
@@ -841,6 +852,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       nextPhaseVenue: ideaData.nextPhaseVenue || null,
       nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
       mentor: ideaData.mentor,
+      fundingSource: ideaData.fundingSource ?? null,
       totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
       sanction1Amount: ideaData.sanction1Amount ?? null,
       sanction2Amount: ideaData.sanction2Amount ?? null,
@@ -949,6 +961,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.nextPhaseEndTime = null;
     updates.nextPhaseVenue = null;
     updates.nextPhaseGuidelines = null;
+    updates.fundingSource = deleteField();
     updates.totalFundingAllocated = deleteField();
     updates.sanction1Amount = deleteField();
     updates.sanction2Amount = deleteField();
@@ -1108,6 +1121,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
+        fundingSource: data.fundingSource ?? null,
         totalFundingAllocated: data.totalFundingAllocated ?? null,
         sanction1Amount: data.sanction1Amount ?? null,
         sanction2Amount: data.sanction2Amount ?? null,
@@ -1183,6 +1197,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     nextPhaseEndTime: null,
     nextPhaseVenue: null,
     nextPhaseGuidelines: null,
+    fundingSource: deleteField(),
     totalFundingAllocated: deleteField(),
     sanction1Amount: deleteField(),
     sanction2Amount: deleteField(),
@@ -1465,6 +1480,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
+        fundingSource: data.fundingSource ?? null,
         totalFundingAllocated: data.totalFundingAllocated ?? null,
         sanction1Amount: data.sanction1Amount ?? null,
         sanction2Amount: data.sanction2Amount ?? null,
@@ -1650,7 +1666,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1671,6 +1687,7 @@ export const createIdeaSubmission = async (
     cohortId: null,
     phase2Marks: {},
     isOutlineAIGenerated: false,
+    fundingSource: null,
     totalFundingAllocated: null,
     sanction1Amount: null,
     sanction2Amount: null,
@@ -1800,6 +1817,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         nextPhaseVenue: data.nextPhaseVenue || null,
         nextPhaseGuidelines: data.nextPhaseGuidelines || null,
         mentor: data.mentor,
+        fundingSource: data.fundingSource ?? null,
         totalFundingAllocated: data.totalFundingAllocated ?? null,
         sanction1Amount: data.sanction1Amount ?? null,
         sanction2Amount: data.sanction2Amount ?? null,
@@ -1907,11 +1925,17 @@ export const getActivityLogsStream = (
 export const updateIdeaFundingDetailsFS = async (
     ideaId: string,
     ideaTitle: string,
-    fundingData: { totalFundingAllocated: number; sanction1Amount: number; sanction2Amount: number; },
+    fundingData: {
+        totalFundingAllocated: number;
+        sanction1Amount: number;
+        sanction2Amount: number;
+        fundingSource: FundingSource | null; // Added
+    },
     adminProfile: UserProfile
 ): Promise<void> => {
     const ideaRef = doc(db, 'ideas', ideaId);
     await updateDoc(ideaRef, {
+        fundingSource: fundingData.fundingSource,
         totalFundingAllocated: fundingData.totalFundingAllocated,
         sanction1Amount: fundingData.sanction1Amount,
         sanction2Amount: fundingData.sanction2Amount,
@@ -1923,10 +1947,10 @@ export const updateIdeaFundingDetailsFS = async (
 export const updateIdeaBeneficiaryDetailsFS = async (
     ideaId: string,
     ideaTitle: string,
-    beneficiaryData: { 
-        beneficiaryName: string; 
-        beneficiaryAccountNo: string; 
-        beneficiaryBankName: string; 
+    beneficiaryData: {
+        beneficiaryName: string;
+        beneficiaryAccountNo: string;
+        beneficiaryBankName: string;
         beneficiaryIfscCode: string;
         beneficiaryAccountType: BeneficiaryAccountType;
         beneficiaryCity: string;
@@ -1981,7 +2005,7 @@ export const markSanctionAsDisbursedFS = async (
     const utilizationStatusField = sanctionNumber === 1 ? 'sanction1UtilizationStatus' : 'sanction2UtilizationStatus';
     await updateDoc(ideaRef, {
         [disbursementField]: serverTimestamp(),
-        [utilizationStatusField]: 'PENDING', 
+        [utilizationStatusField]: 'PENDING',
         updatedAt: serverTimestamp(),
     });
     await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_IDEA_SANCTION_DISBURSED', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { sanction: sanctionNumber });
@@ -2014,7 +2038,7 @@ export const reviewSanctionUtilizationFS = async (
 export const applyForNextSanctionFS = async (
     ideaId: string,
     ideaTitle: string,
-    currentSanctionNumber: 1, 
+    currentSanctionNumber: 1,
     userProfile: UserProfile
 ): Promise<void> => {
     const ideaRef = doc(db, 'ideas', ideaId);
@@ -2030,20 +2054,3 @@ export const applyForNextSanctionFS = async (
     }
 };
     
-
-    
-
-
-
-    
-
-
-
-
-    
-
-
-
-    
-
-
