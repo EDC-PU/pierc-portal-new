@@ -41,8 +41,6 @@ export interface UserProfile {
   solutionDescription: string;
   uniqueness: string;
 
-  // teamMembers: string; // Removed unstructured team members field
-
   enrollmentNumber?: string;
   college?: string;
   instituteName?: string;
@@ -101,7 +99,6 @@ export interface IdeaSubmission {
   uniqueness: string;
   developmentStage: CurrentStage;
   applicantType?: ApplicantCategory;
-  teamMembers?: string; // Kept for backward compatibility if old data has it, but won't be populated from profile setup
   structuredTeamMembers?: TeamMember[];
   teamMemberEmails?: string[];
 

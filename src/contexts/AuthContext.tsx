@@ -57,6 +57,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt' | 'isTeamMemberOnly' | 'associatedIdeaId' | 'associatedTeamLeaderUid'>) => Promise<void>;
   deleteCurrentUserAccount: () => Promise<void>;
+  sendPasswordReset: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -237,6 +238,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         case 'auth/wrong-password':
           message = 'Invalid email or password. Please check your credentials and try again.';
           break;
+        case 'auth/requires-recent-login':
+            message = 'This operation is sensitive and requires recent authentication. Please sign out and sign back in to continue.';
+            break;
         default:
           message = `An error occurred during ${action}. Code: ${error.code}`;
       }
@@ -353,7 +357,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             profileDataForFirestore.uniqueness = additionalData.uniqueness || (isSuperAdminContext ? 'Unique administrative role for system management.' : 'Unique administrative/mentorship role.');
             profileDataForFirestore.currentStage = additionalData.currentStage || 'STARTUP_STAGE';
             profileDataForFirestore.applicantCategory = additionalData.applicantCategory || 'PARUL_STAFF';
-            profileDataForFirestore.teamMembers = additionalData.teamMembers || '';
+            // profileDataForFirestore.teamMembers = additionalData.teamMembers || ''; // Removed
         } else { // Regular idea owner
             profileDataForFirestore.startupTitle = additionalData.startupTitle;
             profileDataForFirestore.problemDefinition = additionalData.problemDefinition;
@@ -361,7 +365,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             profileDataForFirestore.uniqueness = additionalData.uniqueness;
             profileDataForFirestore.applicantCategory = additionalData.applicantCategory;
             profileDataForFirestore.currentStage = additionalData.currentStage;
-            profileDataForFirestore.teamMembers = additionalData.teamMembers || '';
+            // profileDataForFirestore.teamMembers = additionalData.teamMembers || ''; // Removed
         }
     }
     // If profileDataForFirestore.isTeamMemberOnly is true, idea fields are not set here;
@@ -395,7 +399,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               uniqueness: createdOrUpdatedProfile.uniqueness!,
               currentStage: createdOrUpdatedProfile.currentStage!,
               applicantCategory: createdOrUpdatedProfile.applicantCategory!,
-              teamMembers: createdOrUpdatedProfile.teamMembers || '',
+              // teamMembers: createdOrUpdatedProfile.teamMembers || '', // Removed
           };
           const idea = await createIdeaFromProfile(user.uid, profileIdeaDataForCreation);
           if (idea && idea.id) {
@@ -514,6 +518,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const sendPasswordReset = async () => {
+    if (!user || !user.email) {
+      toast({ title: "Error", description: "No authenticated user or email found.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      toast({ title: "Password Reset Email Sent", description: `A password reset link has been sent to ${user.email}. Please check your inbox.` });
+      await logUserActivity(
+        user.uid,
+        userProfile?.displayName || userProfile?.fullName,
+        'USER_PASSWORD_RESET_REQUESTED',
+        { type: 'USER_PROFILE', id: user.uid, displayName: userProfile?.displayName || userProfile?.fullName || undefined }
+      );
+    } catch (error: any) {
+      handleAuthError(error, "sending password reset email");
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   if (!isMounted) {
     return (
@@ -539,7 +565,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signInWithEmailPassword,
       signOut,
       setRoleAndCompleteProfile,
-      deleteCurrentUserAccount
+      deleteCurrentUserAccount,
+      sendPasswordReset
     }}>
       {children}
     </AuthContext.Provider>

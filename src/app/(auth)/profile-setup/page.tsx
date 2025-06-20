@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import type { UserProfile, Role, ApplicantCategory, CurrentStage } from '@/types';
-import { UserCircle, Briefcase, Lightbulb, CheckSquare, XSquare, AlertTriangle, Trash2 } from 'lucide-react';
+import { UserCircle, Briefcase, Lightbulb, CheckSquare, XSquare, AlertTriangle, Trash2, KeyRound, ShieldCheck } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,7 +74,6 @@ const profileSetupSchemaBase = z.object({
   solutionDescription: z.string().max(2000).optional(),
   uniqueness: z.string().max(2000).optional(),
   currentStage: z.custom<CurrentStage>().optional(),
-  // teamMembers: z.string().max(500).optional(), // Removed this field
 });
 
 const profileSetupSchemaForIdeaOwners = profileSetupSchemaBase.superRefine((data, ctx) => {
@@ -118,13 +117,15 @@ export default function ProfileSetupPage() {
     teamLeaderProfileForMember,
     preFilledTeamMemberDataFromLeader,
     deleteCurrentUserAccount,
-    isMentorEmail
+    isMentorEmail,
+    sendPasswordReset,
   } = authContext;
   const router = useRouter();
   const { toast } = useToast();
 
   const [pageLoading, setPageLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
 
   const isSuperAdminEmail = useMemo(() => user?.email === 'pranavrathi07@gmail.com', [user?.email]);
   const isCurrentMentorEmail = useMemo(() => isMentorEmail(user?.email), [user?.email, isMentorEmail]);
@@ -152,7 +153,6 @@ export default function ProfileSetupPage() {
       solutionDescription: '',
       uniqueness: '',
       currentStage: undefined,
-      // teamMembers: '', // Removed
     },
   });
 
@@ -181,7 +181,6 @@ export default function ProfileSetupPage() {
         enrollmentNumber: '',
         college: '',
         instituteName: '',
-        // teamMembers: '', // Removed
         applicantCategory: undefined,
         startupTitle: undefined,
         problemDefinition: undefined,
@@ -206,7 +205,6 @@ export default function ProfileSetupPage() {
           solutionDescription: userProfile.solutionDescription || '',
           uniqueness: userProfile.uniqueness || '',
           currentStage: userProfile.currentStage || undefined,
-          // teamMembers: userProfile.teamMembers || '', // Removed
         };
       } else { // New user setup
         setIsEditing(false);
@@ -230,7 +228,6 @@ export default function ProfileSetupPage() {
           defaultVals.uniqueness = undefined;
           defaultVals.applicantCategory = undefined;
           defaultVals.currentStage = undefined;
-          // defaultVals.teamMembers = undefined; // Removed
         }
       }
       reset(defaultVals);
@@ -265,13 +262,24 @@ export default function ProfileSetupPage() {
       solutionDescription: data.solutionDescription,
       uniqueness: data.uniqueness,
       currentStage: data.currentStage,
-      // teamMembers: data.teamMembers, // Removed
     };
 
     try {
       await setRoleAndCompleteProfile(roleToSubmit!, formDataForContext);
     } catch (error) {
       console.error("Profile setup submission error:", error);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    setIsSendingResetEmail(true);
+    try {
+      await sendPasswordReset();
+      // Success toast is handled by AuthContext
+    } catch (error) {
+      // Error toast is handled by AuthContext
+    } finally {
+      setIsSendingResetEmail(false);
     }
   };
 
@@ -456,7 +464,6 @@ export default function ProfileSetupPage() {
                         <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your brilliant startup/idea name" {...field} value={field.value || ''} />} />
                         {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
                         </div>
-                        {/* Removed TeamMembers Input Field from here */}
                         <div>
                             <Label htmlFor="problemDefinition">Define the Problem you are solving *</Label>
                             <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} value={field.value || ''} rows={3}/>} />
@@ -497,7 +504,6 @@ export default function ProfileSetupPage() {
                         <div><Label>Account Type</Label><Input value={isSuperAdminEmail ? "Super Admin Placeholder" : "Faculty/Mentor Placeholder"} disabled /></div>
                         <Controller name="applicantCategory" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
                         <Controller name="startupTitle" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        {/* <Controller name="teamMembers" control={control} render={({ field }) => <Input type="hidden" {...field} />} /> Removed */}
                         <Controller name="problemDefinition" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
                         <Controller name="solutionDescription" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
                         <Controller name="uniqueness" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
@@ -507,12 +513,38 @@ export default function ProfileSetupPage() {
                 )}
               </section>
             )}
+
+            {isEditing && userProfile && user?.providerData.some(p => p.providerId === 'password') && (
+              <section className="space-y-4 pt-4">
+                <h3 className="font-semibold text-lg text-primary border-t pt-4 flex items-center">
+                  <ShieldCheck className="h-5 w-5 mr-2"/> Security
+                </h3>
+                 <div>
+                  <Label htmlFor="changePassword">Password</Label>
+                   <Button
+                    id="changePassword"
+                    type="button"
+                    variant="outline"
+                    onClick={handleChangePassword}
+                    disabled={isSendingResetEmail}
+                    className="w-full sm:w-auto"
+                  >
+                    {isSendingResetEmail && <LoadingSpinner className="mr-2" size={16} />}
+                    <KeyRound className="mr-2 h-4 w-4" /> Send Password Reset Email
+                  </Button>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Click to send a password reset link to your registered email: {user.email}.
+                  </p>
+                </div>
+              </section>
+            )}
+
           </CardContent>
 
           <CardFooter className="flex flex-col sm:flex-row justify-between items-center pt-6 border-t">
             <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting || pageLoading}>
               {(isSubmitting || pageLoading) && <LoadingSpinner className="mr-2" />}
-              {isEditing ? 'Save Changes' : 'Save Profile & Proceed'}
+              {isEditing ? 'Save Profile Changes' : 'Save Profile & Proceed'}
             </Button>
             {isEditing && user?.email !== 'pranavrathi07@gmail.com' && !isCurrentMentorEmail && (
                 <AlertDialog>
