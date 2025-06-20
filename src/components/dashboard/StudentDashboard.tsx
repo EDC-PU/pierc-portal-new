@@ -750,6 +750,19 @@ export default function StudentDashboard() {
                     </CardContent>
                 </Card>
             )}
+            {idea.programPhase === 'PHASE_2' && idea.phase2Marks && Object.keys(idea.phase2Marks).length > 0 && userProfile && idea.phase2Marks[userProfile.uid] && (
+                <Card className="mt-3 border-green-500/50 bg-green-500/5 shadow-md">
+                    <CardHeader className="pb-2 pt-4 px-4">
+                        <CardTitle className="text-base font-semibold text-green-700 dark:text-green-400 flex items-center">
+                        <FileCheck2 className="h-4 w-4 mr-2"/> Your Phase 2 Marks (Submitted)
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="text-sm px-4 pb-3">
+                        <p>Your mark: <span className="font-bold">{idea.phase2Marks[userProfile.uid].mark ?? 'N/A'}</span> / 100</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">Submitted on {formatDate(idea.phase2Marks[userProfile.uid].markedAt)}</p>
+                    </CardContent>
+                </Card>
+            )}
              {idea.status === 'ARCHIVED_BY_ADMIN' && (
                 <Card className="mt-3 bg-yellow-500/10 border-yellow-500/30">
                     <CardHeader className="pb-2 pt-3 px-4">
@@ -939,9 +952,9 @@ export default function StudentDashboard() {
                                       {getProgramPhaseLabel(idea.programPhase)}
                                   </Badge>
                               )}
-                              {idea.programPhase === 'PHASE_2' && idea.phase2Marks && (
+                              {idea.programPhase === 'PHASE_2' && idea.phase2Marks && userProfile && idea.phase2Marks[userProfile.uid] && (
                               <Badge variant="outline" className="text-xs py-1 px-2.5">
-                                      {Object.keys(idea.phase2Marks).length > 0 ? `Marked` : 'Awaiting Marks'}
+                                      <FileCheck2 className="h-3 w-3 mr-1 text-green-500"/> Your Mark: {idea.phase2Marks[userProfile.uid].mark ?? 'N/A'}
                               </Badge>
                               )}
                           </div>
@@ -1588,3 +1601,6 @@ export default function StudentDashboard() {
   );
 }
 
+
+
+    

@@ -99,6 +99,7 @@ export interface IdeaSubmission {
   uniqueness: string;
   developmentStage: CurrentStage;
   applicantType?: ApplicantCategory;
+  teamMembers?: string; // Legacy text field for team members
   structuredTeamMembers?: TeamMember[];
   teamMemberEmails?: string[];
 
@@ -108,8 +109,8 @@ export interface IdeaSubmission {
 
   status: IdeaStatus;
   programPhase: ProgramPhase | null;
-  phase2Marks?: { [adminUid: string]: AdminMark };
-  mentor?: MentorName;
+  phase2Marks?: { [adminUid: string]: AdminMark }; // Added for Phase 2 marking
+  mentor?: MentorName | null; // Added for mentor assignment
   cohortId?: string | null;
 
   rejectionRemarks?: string | null;
@@ -128,7 +129,7 @@ export interface IdeaSubmission {
   nextPhaseGuidelines?: string | null;
 
   // Incubation Funding Fields
-  fundingSource?: FundingSource | null; // Added new field
+  fundingSource?: FundingSource | null;
   totalFundingAllocated?: number | null;
   sanction1Amount?: number | null;
   sanction2Amount?: number | null;
@@ -145,7 +146,7 @@ export interface IdeaSubmission {
   beneficiaryCity?: string | null;
   beneficiaryBranchName?: string | null;
 
-  sanction1AppliedForNext?: boolean; // True if user applied for S2 after S1
+  sanction1AppliedForNext?: boolean;
   sanction1UtilizationStatus?: SanctionApprovalStatus;
   sanction1UtilizationRemarks?: string | null;
   sanction1UtilizationReviewedBy?: string | null; // Admin UID
@@ -158,7 +159,9 @@ export interface IdeaSubmission {
 
   submittedAt: Timestamp;
   updatedAt: Timestamp;
+  createdAt: Timestamp; // Added for consistency if needed on new ideas
 
+  // Denormalized applicant info for easier display if profile is not fetched
   applicantDisplayName?: string;
   applicantEmail?: string;
 }
@@ -234,8 +237,8 @@ export type ActivityLogAction =
   | 'IDEA_APPLIED_FOR_NEXT_SANCTION'
   | 'ADMIN_USER_ROLE_UPDATED'
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
-  | 'ADMIN_IDEA_MENTOR_ASSIGNED'
-  | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
+  | 'ADMIN_IDEA_MENTOR_ASSIGNED'           // New action
+  | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'     // New action
   | 'ADMIN_IDEA_ARCHIVED_FOR_REVISION'
   | 'ADMIN_IDEA_ASSIGNED_TO_COHORT'
   | 'ADMIN_IDEA_FUNDING_DETAILS_SET'
@@ -280,4 +283,6 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>;
 }
+    
+
     

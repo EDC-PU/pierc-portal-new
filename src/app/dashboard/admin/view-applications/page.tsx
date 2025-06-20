@@ -9,15 +9,15 @@ import {
     updateIdeaStatusAndPhase,
     archiveIdeaSubmissionForUserRevisionFS,
     submitOrUpdatePhase2Mark,
-    assignMentorToIdea as assignMentorFS,
+    assignMentorToIdea as assignMentorFS, // Renamed for clarity
     getAllCohortsStream,
     assignIdeaToCohortFS,
     updateIdeaFundingDetailsFS,
     markSanctionAsDisbursedFS,
     reviewSanctionUtilizationFS,
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry, FundingSource } from '@/types'; // Added FundingSource
-import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES, ALL_FUNDING_SOURCES } from '@/types'; // Added ALL_FUNDING_SOURCES
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry, FundingSource } from '@/types';
+import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES, ALL_FUNDING_SOURCES } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -86,7 +86,7 @@ interface FundingDetailsFormData {
     totalFundingAllocated: number | string;
     sanction1Amount: number | string;
     sanction2Amount: number | string;
-    fundingSource: FundingSource | ''; // Added
+    fundingSource: FundingSource | '';
 }
 
 interface SanctionReviewFormData {
@@ -210,7 +210,7 @@ export default function ViewApplicationsPage() {
                 updatedVersionInList.cohortId !== selectedApplication.cohortId ||
                 updatedVersionInList.isOutlineAIGenerated !== selectedApplication.isOutlineAIGenerated ||
                 JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks) ||
-                updatedVersionInList.fundingSource !== selectedApplication.fundingSource || // Added
+                updatedVersionInList.fundingSource !== selectedApplication.fundingSource ||
                 updatedVersionInList.totalFundingAllocated !== selectedApplication.totalFundingAllocated ||
                 updatedVersionInList.sanction1Amount !== selectedApplication.sanction1Amount ||
                 updatedVersionInList.sanction2Amount !== selectedApplication.sanction2Amount ||
@@ -820,7 +820,7 @@ export default function ViewApplicationsPage() {
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At',
       // Funding Headers
-      'Funding Source', // Added
+      'Funding Source',
       'Total Funding Allocated', 'Sanction 1 Amount', 'Sanction 2 Amount',
       'Sanction 1 Disbursed At', 'Sanction 2 Disbursed At',
       'Beneficiary Name', 'Account No', 'Bank Name', 'IFSC Code', 'Account Type', 'Branch Name', 'City',
@@ -889,11 +889,11 @@ export default function ViewApplicationsPage() {
         app.nextPhaseStartTime, app.nextPhaseEndTime, app.nextPhaseVenue, app.nextPhaseGuidelines,
         formatDateISO(app.submittedAt), formatDateISO(app.updatedAt),
         // Funding Data
-        app.fundingSource ? fundingSourceLabels[app.fundingSource] : 'N/A', // Added
+        app.fundingSource ? fundingSourceLabels[app.fundingSource] : 'N/A', 
         app.totalFundingAllocated ?? 'N/A', app.sanction1Amount ?? 'N/A', app.sanction2Amount ?? 'N/A',
         app.sanction1DisbursedAt ? formatDateOnly(app.sanction1DisbursedAt) : 'N/A',
         app.sanction2DisbursedAt ? formatDateOnly(app.sanction2DisbursedAt) : 'N/A',
-        app.beneficiaryName || 'N/A', app.beneficiaryAccountNo || 'N/A', app.beneficiaryBankName || 'N/A', app.beneficiaryIfscCode || 'N/A', app.beneficiaryAccountType || 'N/A', app.beneficiaryBranchName || 'N/A', app.beneficiaryCity || 'N/A',
+        app.beneficiaryName || 'N/A', app.beneficiaryAccountNo || 'N/A', app.beneficiaryBankName || 'N/A', app.beneficiaryIfscCode || 'N/A', app.beneficiaryAccountType || 'N/A', app.beneficiaryCity || 'N/A', app.beneficiaryBranchName || 'N/A',
         app.sanction1AppliedForNext ? 'Yes' : 'No',
         app.sanction1UtilizationStatus || 'N/A', app.sanction1UtilizationRemarks || 'N/A', app.sanction1UtilizationReviewedBy || 'N/A', app.sanction1UtilizationReviewedAt ? formatDateOnly(app.sanction1UtilizationReviewedAt) : 'N/A',
         app.sanction2UtilizationStatus || 'N/A', app.sanction2UtilizationRemarks || 'N/A', app.sanction2UtilizationReviewedBy || 'N/A', app.sanction2UtilizationReviewedAt ? formatDateOnly(app.sanction2UtilizationReviewedAt) : 'N/A',
@@ -1506,4 +1506,6 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
+    
+
     

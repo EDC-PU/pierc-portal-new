@@ -1021,7 +1021,7 @@ export const updateIdeaStatusAndPhase = async (
   );
 };
 
-export const assignMentorToIdea = async (ideaId: string, ideaTitle: string, mentorName: MentorName | null, adminProfile: UserProfile): Promise<void> => {
+export const assignMentorFS = async (ideaId: string, ideaTitle: string, mentorName: MentorName | null, adminProfile: UserProfile): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const oldIdeaSnap = await getDoc(ideaRef);
   const oldMentor = oldIdeaSnap.exists() ? oldIdeaSnap.data().mentor : null;
@@ -1934,7 +1934,7 @@ export const updateIdeaFundingDetailsFS = async (
         totalFundingAllocated: number;
         sanction1Amount: number;
         sanction2Amount: number;
-        fundingSource: FundingSource | null; // Added
+        fundingSource: FundingSource | null; 
     },
     adminProfile: UserProfile
 ): Promise<void> => {
@@ -2050,7 +2050,7 @@ export const applyForNextSanctionFS = async (
     if (currentSanctionNumber === 1) {
         await updateDoc(ideaRef, {
             sanction1AppliedForNext: true,
-            sanction1UtilizationStatus: 'PENDING',
+            sanction1UtilizationStatus: 'PENDING', // Set to PENDING when applying, admin will review then approve/reject
             updatedAt: serverTimestamp(),
         });
         await logUserActivity(userProfile.uid, userProfile.displayName || userProfile.fullName, 'IDEA_APPLIED_FOR_NEXT_SANCTION', { type: 'IDEA', id: ideaId, displayName: ideaTitle }, { appliedForSanction: 2 });
@@ -2058,4 +2058,6 @@ export const applyForNextSanctionFS = async (
         throw new Error("Application for sanctions beyond Sanction 2 via this method is not supported.");
     }
 };
+    
+
     
