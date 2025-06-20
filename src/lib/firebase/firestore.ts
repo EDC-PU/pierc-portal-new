@@ -519,9 +519,10 @@ export const createIdeaFromProfile = async (
             sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
             submittedAt: data.submittedAt as Timestamp,
             updatedAt: data.updatedAt as Timestamp,
-            createdAt: data.createdAt as Timestamp, // ensure createdAt is also mapped
+            createdAt: data.createdAt as Timestamp, 
             applicantDisplayName: data.applicantDisplayName ?? '',
             applicantEmail: data.applicantEmail ?? '',
+            category: data.category ?? '', // Ensure category is handled
         } as IdeaSubmission;
     });
     existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') ||
@@ -538,7 +539,7 @@ export const createIdeaFromProfile = async (
     uniqueness: profileData.uniqueness!,
     developmentStage: profileData.currentStage!,
     applicantType: profileData.applicantCategory,
-    teamMembers: '', // Unstructured field no longer populated from profile
+    teamMembers: '', 
     updatedAt: serverTimestamp() as Timestamp,
   };
 
@@ -547,13 +548,14 @@ export const createIdeaFromProfile = async (
       ideaDocRef = doc(db, 'ideas', existingIdeaToUpdate.id!);
       const updateData: Partial<IdeaSubmission> = {
         ...ideaPayloadBase,
-        submittedAt: existingIdeaToUpdate.submittedAt, // Preserve original submission time on update
-        createdAt: existingIdeaToUpdate.createdAt, // Preserve original creation time
+        submittedAt: existingIdeaToUpdate.submittedAt, 
+        createdAt: existingIdeaToUpdate.createdAt, 
         status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status,
         programPhase: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.programPhase,
         cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
         phase2Marks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? {} : existingIdeaToUpdate.phase2Marks,
         mentor: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.mentor,
+        category: existingIdeaToUpdate.category || '', // Ensure category is preserved or defaulted
         isOutlineAIGenerated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? false : (existingIdeaToUpdate.isOutlineAIGenerated || false),
         rejectionRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectionRemarks,
         rejectedByUid: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedByUid,
@@ -568,6 +570,9 @@ export const createIdeaFromProfile = async (
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
+        fileURL: existingIdeaToUpdate.fileURL || null,
+        fileName: existingIdeaToUpdate.fileName || null,
+        studioLocation: existingIdeaToUpdate.studioLocation || null,
         fundingSource: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.fundingSource ?? null),
         totalFundingAllocated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.totalFundingAllocated ?? null),
         sanction1Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1Amount ?? null),
@@ -602,8 +607,8 @@ export const createIdeaFromProfile = async (
       );
     } else {
       const newIdeaData: Omit<IdeaSubmission, 'id'> = {
-        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'createdAt'>), // Cast to ensure correct type for spread
-        createdAt: serverTimestamp() as Timestamp, // Ensure createdAt is set for new ideas
+        ...(ideaPayloadBase as Omit<IdeaSubmission, 'id' | 'submittedAt' | 'createdAt'>),
+        createdAt: serverTimestamp() as Timestamp,
         submittedAt: serverTimestamp() as Timestamp,
         structuredTeamMembers: [],
         teamMemberEmails: [],
@@ -636,7 +641,7 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationRemarks: null,
         sanction2UtilizationReviewedBy: null,
         sanction2UtilizationReviewedAt: null,
-        rejectionRemarks: null, // ensure all fields from IdeaSubmission are initialized or explicitly set
+        rejectionRemarks: null, 
         rejectedByUid: null,
         rejectedAt: null,
         phase2PptUrl: null,
@@ -647,11 +652,11 @@ export const createIdeaFromProfile = async (
         nextPhaseEndTime: null,
         nextPhaseVenue: null,
         nextPhaseGuidelines: null,
-        mentor: undefined,
-        category: '', // Assuming category should be an empty string if not provided
-        fileURL: undefined,
-        fileName: undefined,
-        studioLocation: undefined,
+        mentor: null, // Explicitly set to null
+        category: '', // Explicitly set to empty string
+        fileURL: null, // Explicitly set to null
+        fileName: null, // Explicitly set to null
+        studioLocation: null, // Explicitly set to null
         applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
         applicantEmail: userProfile.email || 'N/A',
       };
@@ -1984,7 +1989,7 @@ export const addExpenseToSanctionFS = async (
     const newExpense: ExpenseEntry = {
         ...expenseData,
         id: nanoid(),
-        uploadedAt: Timestamp.now(),
+        uploadedAt: Timestamp.now(), // Use client-side timestamp for array elements
     };
     const expenseField = sanctionNumber === 1 ? 'sanction1Expenses' : 'sanction2Expenses';
     await updateDoc(ideaRef, {
