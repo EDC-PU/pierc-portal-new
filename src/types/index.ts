@@ -117,6 +117,7 @@ export interface IdeaSubmission {
   phase2PptUrl?: string | null;
   phase2PptFileName?: string | null;
   phase2PptUploadedAt?: Timestamp | null;
+  isOutlineAIGenerated?: boolean; 
 
   nextPhaseDate?: Timestamp | null;
   nextPhaseStartTime?: string | null;

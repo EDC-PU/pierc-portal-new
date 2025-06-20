@@ -37,15 +37,15 @@ import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
-  AlertDialogContent as AlertDialogModalContent,
+  AlertDialogContent as AlertDialogModalContent, 
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
+  AlertDialogTrigger as AlertDialogButtonTrigger, 
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass, Sparkles } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -93,7 +93,7 @@ interface SanctionReviewFormData {
 }
 
 
-type SortableKeys = 'title' | 'applicantDisplayName' | 'submittedAt' | 'status' | 'programPhase';
+type SortableKeys = 'title' | 'applicantDisplayName' | 'submittedAt' | 'status' | 'programPhase' | 'isOutlineAIGenerated';
 interface SortConfig {
   key: SortableKeys;
   direction: 'ascending' | 'descending';
@@ -190,6 +190,7 @@ export default function ViewApplicationsPage() {
                 updatedVersionInList.status !== selectedApplication.status ||
                 updatedVersionInList.mentor !== selectedApplication.mentor ||
                 updatedVersionInList.cohortId !== selectedApplication.cohortId ||
+                updatedVersionInList.isOutlineAIGenerated !== selectedApplication.isOutlineAIGenerated ||
                 JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks) ||
                 updatedVersionInList.totalFundingAllocated !== selectedApplication.totalFundingAllocated ||
                 updatedVersionInList.sanction1Amount !== selectedApplication.sanction1Amount ||
@@ -272,7 +273,10 @@ export default function ViewApplicationsPage() {
           comparison = aValue.toMillis() - bValue.toMillis();
         } else if (typeof aValue === 'number' && typeof bValue === 'number') {
           comparison = aValue - bValue;
-        } else {
+        } else if (typeof aValue === 'boolean' && typeof bValue === 'boolean') {
+          comparison = (aValue === bValue) ? 0 : (aValue ? -1 : 1); // true before false for descending (AI generated first)
+        }
+         else {
           const strA = String(aValue).toLowerCase();
           const strB = String(bValue).toLowerCase();
           comparison = strA.localeCompare(strB);
@@ -764,7 +768,7 @@ export default function ViewApplicationsPage() {
     let headers = [
       'ID', 'Title', 'Applicant Name', 'Applicant Email', 'Applicant Category', 'Team Members (Free Text)',
       'Development Stage', 'Problem Definition', 'Solution Description', 'Uniqueness',
-      'Status', 'Program Phase', 'Assigned Mentor', 'Assigned Cohort', 'Rejection Remarks', 'Studio Location',
+      'Status', 'Program Phase', 'Assigned Mentor', 'Assigned Cohort', 'AI Generated Outline', 'Rejection Remarks', 'Studio Location',
       'Attachment URL', 'Attachment Name', 'Phase 2 PPT Name', 'Phase 2 PPT URL',
       'Next Phase Date', 'Next Phase Start Time', 'Next Phase End Time', 'Next Phase Venue', 'Next Phase Guidelines',
       'Submitted At', 'Last Updated At',
@@ -830,6 +834,7 @@ export default function ViewApplicationsPage() {
         app.status.replace(/_/g, ' '), app.programPhase ? getProgramPhaseLabel(app.programPhase) : 'N/A',
         app.mentor || 'N/A',
         assignedCohort ? assignedCohort.name : (app.cohortId ? 'Cohort ID: '+app.cohortId : 'N/A'),
+        app.isOutlineAIGenerated ? 'Yes' : 'No',
         app.rejectionRemarks, app.studioLocation,
         app.fileURL, app.fileName, app.phase2PptFileName, app.phase2PptUrl,
         app.nextPhaseDate ? formatDateOnly(app.nextPhaseDate) : 'N/A',
@@ -978,26 +983,28 @@ export default function ViewApplicationsPage() {
                   <DropdownMenuGroup>
                     <DropdownMenuLabel className="text-xs px-2">Change Status to</DropdownMenuLabel>
                     {ALL_IDEA_STATUSES.filter(s => s !== 'ARCHIVED_BY_ADMIN').map(status => (
-                       <AlertDialog key={`status-alert-${status}`} open={bulkActionTarget === status && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === status) setBulkActionTarget(null); }}>
-                        <AlertDialogTrigger asChild>
+                       <AlertDialog key={`status-alert-${status}`}>
+                        <AlertDialogButtonTrigger asChild>
                             <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget(status); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>
                                 {status.replace(/_/g, ' ')}
                             </DropdownMenuItem>
-                        </AlertDialogTrigger>
-                        <AlertDialogModalContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                Change status of {selectedRowIds.size} application(s) to "{status.replace(/_/g,' ')}"?
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => { handleBulkAction('changeStatus', status); setBulkActionTarget(null); }}>
-                                Proceed
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogModalContent>
+                        </AlertDialogButtonTrigger>
+                        {bulkActionTarget === status && selectedRowIds.size > 0 && (
+                            <AlertDialogModalContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                    Change status of {selectedRowIds.size} application(s) to "{status.replace(/_/g,' ')}"?
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => { handleBulkAction('changeStatus', status); setBulkActionTarget(null); }}>
+                                    Proceed
+                                    </AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogModalContent>
+                        )}
                        </AlertDialog>
                     ))}
                   </DropdownMenuGroup>
@@ -1005,71 +1012,77 @@ export default function ViewApplicationsPage() {
                    {userProfile.isSuperAdmin && (
                     <DropdownMenuGroup>
                       <DropdownMenuLabel className="text-xs px-2">Assign to Cohort</DropdownMenuLabel>
-                      <AlertDialog key="cohort-alert-UNASSIGN" open={bulkActionTarget === 'UNASSIGN' && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === 'UNASSIGN') setBulkActionTarget(null); }}>
-                        <AlertDialogTrigger asChild>
+                      <AlertDialog key="cohort-alert-UNASSIGN">
+                        <AlertDialogButtonTrigger asChild>
                             <DropdownMenuItem onSelect={(e) => {e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget('UNASSIGN'); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>Unassign Cohort</DropdownMenuItem>
-                        </AlertDialogTrigger>
-                        <AlertDialogModalContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                Unassign {selectedRowIds.size} application(s) from any cohort?
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => { handleBulkAction('assignCohort', 'UNASSIGN'); setBulkActionTarget(null); }}>
-                                Proceed
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogModalContent>
-                      </AlertDialog>
-                      {allCohorts.map(cohort => (
-                        <AlertDialog key={`cohort-alert-${cohort.id}`} open={bulkActionTarget === cohort.id! && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === cohort.id!) setBulkActionTarget(null); }}>
-                            <AlertDialogTrigger asChild>
-                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget(cohort.id!); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>
-                                {cohort.name}
-                                </DropdownMenuItem>
-                            </AlertDialogTrigger>
+                        </AlertDialogButtonTrigger>
+                         {bulkActionTarget === 'UNASSIGN' && selectedRowIds.size > 0 && (
                             <AlertDialogModalContent>
                                 <AlertDialogHeader>
                                     <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
                                     <AlertDialogDescription>
-                                    Assign {selectedRowIds.size} application(s) to cohort: "{cohort.name}"?
+                                    Unassign {selectedRowIds.size} application(s) from any cohort?
                                     </AlertDialogDescription>
                                 </AlertDialogHeader>
                                 <AlertDialogFooter>
                                     <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => { handleBulkAction('assignCohort', cohort.id!); setBulkActionTarget(null); }}>
+                                    <AlertDialogAction onClick={() => { handleBulkAction('assignCohort', 'UNASSIGN'); setBulkActionTarget(null); }}>
                                     Proceed
                                     </AlertDialogAction>
                                 </AlertDialogFooter>
                             </AlertDialogModalContent>
+                         )}
+                      </AlertDialog>
+                      {allCohorts.map(cohort => (
+                        <AlertDialog key={`cohort-alert-${cohort.id}`}>
+                            <AlertDialogButtonTrigger asChild>
+                                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget(cohort.id!); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }}>
+                                {cohort.name}
+                                </DropdownMenuItem>
+                            </AlertDialogButtonTrigger>
+                            {bulkActionTarget === cohort.id! && selectedRowIds.size > 0 && (
+                                <AlertDialogModalContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                        Assign {selectedRowIds.size} application(s) to cohort: "{cohort.name}"?
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => { handleBulkAction('assignCohort', cohort.id!); setBulkActionTarget(null); }}>
+                                        Proceed
+                                        </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogModalContent>
+                            )}
                         </AlertDialog>
                       ))}
                     </DropdownMenuGroup>
                   )}
                   <DropdownMenuSeparator />
-                  <AlertDialog key="archive-alert-BULK" open={bulkActionTarget === 'ARCHIVE_BULK' && selectedRowIds.size > 0} onOpenChange={(isOpen) => { if (!isOpen && bulkActionTarget === 'ARCHIVE_BULK') setBulkActionTarget(null); }}>
-                    <AlertDialogTrigger asChild>
+                  <AlertDialog key="archive-alert-BULK">
+                    <AlertDialogButtonTrigger asChild>
                         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (selectedRowIds.size > 0) setBulkActionTarget('ARCHIVE_BULK'); else toast({ title: "No Selection", description: "Please select applications for bulk action.", variant: "default" }); }} className="text-amber-600 focus:text-amber-700 focus:bg-amber-100">
                             <Archive className="mr-2 h-4 w-4" /> Archive for User Revision
                         </DropdownMenuItem>
-                    </AlertDialogTrigger>
-                    <AlertDialogModalContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
-                            <AlertDialogDescription>
-                            Are you sure you want to archive {selectedRowIds.size} selected application(s) for user revision?
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                            <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => { handleBulkAction('archive'); setBulkActionTarget(null); }} className="bg-amber-600 hover:bg-amber-700">
-                            Proceed
-                            </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogModalContent>
+                    </AlertDialogButtonTrigger>
+                     {bulkActionTarget === 'ARCHIVE_BULK' && selectedRowIds.size > 0 && (
+                        <AlertDialogModalContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Confirm Bulk Action</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                Are you sure you want to archive {selectedRowIds.size} selected application(s) for user revision?
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel onClick={() => setBulkActionTarget(null)}>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => { handleBulkAction('archive'); setBulkActionTarget(null); }} className="bg-amber-600 hover:bg-amber-700">
+                                Proceed
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogModalContent>
+                    )}
                    </AlertDialog>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1098,6 +1111,9 @@ export default function ViewApplicationsPage() {
                     <TableHead className="hidden md:table-cell cursor-pointer hover:bg-muted/50" onClick={() => handleSort('applicantDisplayName')}>
                       Applicant <SortIcon columnKey="applicantDisplayName" />
                     </TableHead>
+                    <TableHead className="hidden lg:table-cell cursor-pointer hover:bg-muted/50" onClick={() => handleSort('isOutlineAIGenerated')}>
+                      AI Outline <SortIcon columnKey="isOutlineAIGenerated" />
+                    </TableHead>
                     <TableHead className="hidden lg:table-cell cursor-pointer hover:bg-muted/50" onClick={() => handleSort('submittedAt')}>
                       Submitted <SortIcon columnKey="submittedAt" />
                     </TableHead>
@@ -1125,6 +1141,9 @@ export default function ViewApplicationsPage() {
                         {app.title}
                       </TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{app.applicantDisplayName}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-sm">
+                        {app.isOutlineAIGenerated ? <Badge variant="secondary" className="bg-sky-500/20 text-sky-700 dark:text-sky-300 border-sky-500/30"><Sparkles className="h-3 w-3 mr-1"/>Yes</Badge> : <Badge variant="outline">No</Badge>}
+                      </TableCell>
                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
                         {formatDateOnly(app.submittedAt)}
                       </TableCell>
@@ -1209,11 +1228,11 @@ export default function ViewApplicationsPage() {
                           <Eye className="mr-1 h-3.5 w-3.5" /> Details
                         </Button>
                         <AlertDialog open={applicationToArchive?.id === app.id} onOpenChange={(isOpen) => { if (!isOpen) setApplicationToArchive(null); }}>
-                            <AlertDialogTrigger asChild>
+                            <AlertDialogButtonTrigger asChild>
                                 <Button variant="destructive" size="sm" onClick={() => setApplicationToArchive(app)}>
                                    <Archive className="mr-1 h-3.5 w-3.5" /> Archive
                                 </Button>
-                            </AlertDialogTrigger>
+                            </AlertDialogButtonTrigger>
                            {applicationToArchive && applicationToArchive.id === app.id && (
                             <AlertDialogModalContent>
                                 <AlertDialogHeader>
@@ -1242,8 +1261,6 @@ export default function ViewApplicationsPage() {
         </CardContent>
       </Card>
 
-      {/* Monolithic AlertDialog for bulk actions is removed. Logic is now integrated into DropdownMenuContent items. */}
-
       {selectedApplication && userProfile && (
         <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
           <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -1271,6 +1288,7 @@ export default function ViewApplicationsPage() {
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Development Stage</h4><p>{selectedApplication.developmentStage.replace(/_/g, ' ') || 'N/A'}</p></div>
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Submitted At</h4><p>{formatDate(selectedApplication.submittedAt)}</p></div>
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Last Updated At</h4><p>{formatDate(selectedApplication.updatedAt)}</p></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">AI Generated Outline?</h4><p>{selectedApplication.isOutlineAIGenerated ? <span className="flex items-center text-green-600"><Sparkles className="h-4 w-4 mr-1"/>Yes</span> : 'No'}</p></div>
                             </div>
                             <div className="space-y-2 pt-2">
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Problem Definition</h4><p className="whitespace-pre-wrap bg-muted/30 p-2 rounded-md text-sm">{selectedApplication.problem}</p></div>

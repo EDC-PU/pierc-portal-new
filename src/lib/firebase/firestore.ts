@@ -488,6 +488,7 @@ export const createIdeaFromProfile = async (
         cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
         phase2Marks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? {} : existingIdeaToUpdate.phase2Marks,
         mentor: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.mentor,
+        isOutlineAIGenerated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? false : (existingIdeaToUpdate.isOutlineAIGenerated || false),
         rejectionRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectionRemarks,
         rejectedByUid: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedByUid,
         rejectedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.rejectedAt,
@@ -540,6 +541,7 @@ export const createIdeaFromProfile = async (
         cohortId: null,
         phase2Marks: {},
         mentor: null,
+        isOutlineAIGenerated: false, 
         rejectionRemarks: null,
         rejectedByUid: null,
         rejectedAt: null,
@@ -648,6 +650,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       programPhase: ideaData.programPhase || null,
       cohortId: ideaData.cohortId || null,
       phase2Marks: ideaData.phase2Marks || {},
+      isOutlineAIGenerated: ideaData.isOutlineAIGenerated ?? false,
       submittedAt,
       updatedAt,
       applicantDisplayName,
@@ -747,6 +750,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       programPhase: ideaData.programPhase || null,
       cohortId: ideaData.cohortId || null,
       phase2Marks: ideaData.phase2Marks || {},
+      isOutlineAIGenerated: ideaData.isOutlineAIGenerated ?? false,
       submittedAt,
       updatedAt,
       applicantDisplayName,
@@ -863,6 +867,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.phase2Marks = {};
     updates.mentor = deleteField();
     updates.cohortId = deleteField();
+    updates.isOutlineAIGenerated = false; 
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
@@ -1009,6 +1014,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         programPhase: data.programPhase || null,
         cohortId: data.cohortId || null,
         phase2Marks: data.phase2Marks || {},
+        isOutlineAIGenerated: data.isOutlineAIGenerated ?? false,
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
@@ -1090,6 +1096,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     phase2Marks: {},
     mentor: deleteField(),
     cohortId: deleteField(),
+    isOutlineAIGenerated: false, 
     rejectionRemarks: deleteField(),
     rejectedByUid: deleteField(),
     rejectedAt: deleteField(),
@@ -1360,6 +1367,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         programPhase: data.programPhase || null,
         cohortId: data.cohortId || null,
         phase2Marks: data.phase2Marks || {},
+        isOutlineAIGenerated: data.isOutlineAIGenerated ?? false,
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
@@ -1560,7 +1568,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1580,6 +1588,7 @@ export const createIdeaSubmission = async (
     programPhase: null,
     cohortId: null,
     phase2Marks: {},
+    isOutlineAIGenerated: false, 
      // Initialize funding fields
     totalFundingAllocated: null,
     sanction1Amount: null,
@@ -1619,6 +1628,7 @@ export const createIdeaSubmission = async (
     ...newDocSnap.data(),
     structuredTeamMembers: newDocSnap.data()?.structuredTeamMembers || [],
     teamMemberEmails: newDocSnap.data()?.teamMemberEmails || [],
+    isOutlineAIGenerated: newDocSnap.data()?.isOutlineAIGenerated ?? false,
   } as IdeaSubmission;
 
   await logUserActivity(
@@ -1648,6 +1658,28 @@ export const updateIdeaPhase2PptDetails = async (ideaId: string, ideaTitle: stri
   );
 };
 
+export const updateIdeaOutlineAIGeneratedStatus = async (
+  ideaId: string,
+  ideaTitle: string,
+  status: boolean,
+  actorProfile: UserProfile
+): Promise<void> => {
+  const ideaRef = doc(db, 'ideas', ideaId);
+  await updateDoc(ideaRef, {
+    isOutlineAIGenerated: status,
+    updatedAt: serverTimestamp(),
+  });
+
+  await logUserActivity(
+    actorProfile.uid,
+    actorProfile.displayName || actorProfile.fullName,
+    'USER_GENERATED_PITCH_DECK_OUTLINE', 
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { aiGenerated: status }
+  );
+};
+
+
 export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null> => {
   if (!ideaId) return null;
   const ideaRef = doc(db, 'ideas', ideaId);
@@ -1665,6 +1697,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         programPhase: data.programPhase || null,
         cohortId: data.cohortId || null,
         phase2Marks: data.phase2Marks || {},
+        isOutlineAIGenerated: data.isOutlineAIGenerated ?? false,
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],

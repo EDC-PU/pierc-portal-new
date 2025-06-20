@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye, Sparkles } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -21,7 +21,8 @@ import {
   logUserActivity,
   updateIdeaBeneficiaryDetailsFS,
   addExpenseToSanctionFS,
-  applyForNextSanctionFS
+  applyForNextSanctionFS,
+  updateIdeaOutlineAIGeneratedStatus, 
 } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -403,12 +404,11 @@ export default function StudentDashboard() {
       setGeneratedOutline(outline);
       setIsOutlineModalOpen(true);
       toast({ title: "Pitch Deck Outline Generated!", description: "Review the AI-suggested outline." });
-      await logUserActivity(
-        userProfile.uid,
-        userProfile.displayName || userProfile.fullName,
-        'USER_GENERATED_PITCH_DECK_OUTLINE',
-        { type: 'IDEA', id: idea.id, displayName: idea.title }
-      );
+      
+      // Update Firestore that AI generated this outline
+      await updateIdeaOutlineAIGeneratedStatus(idea.id!, idea.title, true, userProfile);
+      fetchUserIdeasAndUpdateState(idea.id); // Refresh to reflect the change if displayed to student
+
     } catch (error) {
       console.error("Error generating pitch deck outline:", error);
       const errorMessage = (error instanceof Error) ? error.message : "Could not generate outline.";
@@ -879,6 +879,11 @@ export default function StudentDashboard() {
                                     <GroupIcon className="h-3.5 w-3.5 mr-1 text-primary"/> <span className="font-medium">Cohort:</span> {assignedCohort.name}
                                 </p>
                               )}
+                              {idea.isOutlineAIGenerated && (
+                                <p className="text-xs text-green-600 mt-1 flex items-center">
+                                    <Sparkles className="h-3.5 w-3.5 mr-1"/> Pitch Deck Outline was AI-assisted
+                                </p>
+                              )}
                           </div>
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
                               <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs py-1 px-2.5">
@@ -1044,7 +1049,7 @@ export default function StudentDashboard() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                    if (canViewOutline) {
+                                    if (canViewOutline || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id)) {
                                         setIsOutlineModalOpen(true);
                                     } else {
                                         handleGenerateOutline(idea);
@@ -1052,8 +1057,8 @@ export default function StudentDashboard() {
                                 }}
                                 disabled={isGeneratingOutline && generatingOutlineIdeaId === idea.id}
                             >
-                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : (canViewOutline ? <Eye className="h-4 w-4 mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>)}
-                                {canViewOutline ? "View AI Pitch Outline" : "Generate Pitch Deck Outline (AI)"}
+                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : (canViewOutline || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ? <Eye className="h-4 w-4 mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>)}
+                                {(canViewOutline || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id)) ? "View AI Pitch Outline" : "Generate Pitch Deck Outline (AI)"}
                             </Button>
                         </div>
                       )}
