@@ -459,7 +459,66 @@ export const createIdeaFromProfile = async (
   let ideaDocRef;
 
   if (!existingIdeasSnap.empty) {
-    const ideas = existingIdeasSnap.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() } as IdeaSubmission));
+    const ideas = existingIdeasSnap.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+            id: docSnap.id,
+            userId: data.userId,
+            title: data.title,
+            problem: data.problem,
+            solution: data.solution,
+            uniqueness: data.uniqueness,
+            developmentStage: data.developmentStage,
+            applicantType: data.applicantType,
+            teamMembers: data.teamMembers || '',
+            structuredTeamMembers: data.structuredTeamMembers || [],
+            teamMemberEmails: data.teamMemberEmails || [],
+            fileURL: data.fileURL ?? null,
+            fileName: data.fileName ?? null,
+            studioLocation: data.studioLocation ?? null,
+            status: data.status,
+            programPhase: data.programPhase || null,
+            phase2Marks: data.phase2Marks || {},
+            mentor: data.mentor ?? null,
+            cohortId: data.cohortId || null,
+            rejectionRemarks: data.rejectionRemarks || null,
+            rejectedByUid: data.rejectedByUid || null,
+            rejectedAt: data.rejectedAt || null,
+            phase2PptUrl: data.phase2PptUrl || null,
+            phase2PptFileName: data.phase2PptFileName || null,
+            phase2PptUploadedAt: data.phase2PptUploadedAt || null,
+            isOutlineAIGenerated: data.isOutlineAIGenerated ?? false,
+            nextPhaseDate: data.nextPhaseDate || null,
+            nextPhaseStartTime: data.nextPhaseStartTime || null,
+            nextPhaseEndTime: data.nextPhaseEndTime || null,
+            nextPhaseVenue: data.nextPhaseVenue || null,
+            nextPhaseGuidelines: data.nextPhaseGuidelines || null,
+            totalFundingAllocated: data.totalFundingAllocated ?? null,
+            sanction1Amount: data.sanction1Amount ?? null,
+            sanction2Amount: data.sanction2Amount ?? null,
+            sanction1DisbursedAt: data.sanction1DisbursedAt ?? null,
+            sanction2DisbursedAt: data.sanction2DisbursedAt ?? null,
+            sanction1Expenses: data.sanction1Expenses || [],
+            sanction2Expenses: data.sanction2Expenses || [],
+            beneficiaryName: data.beneficiaryName ?? null,
+            beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
+            beneficiaryBankName: data.beneficiaryBankName ?? null,
+            beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+            sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
+            sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+            sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
+            sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
+            sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
+            sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+            sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
+            sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
+            sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+            submittedAt: data.submittedAt,
+            updatedAt: data.updatedAt,
+            applicantDisplayName: data.applicantDisplayName,
+            applicantEmail: data.applicantEmail,
+        } as IdeaSubmission;
+    });
     existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') ||
                            ideas.sort((a,b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0))[0];
   }
@@ -503,28 +562,28 @@ export const createIdeaFromProfile = async (
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
         // Reset funding fields if resubmitting archived idea
-        totalFundingAllocated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.totalFundingAllocated,
-        sanction1Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1Amount,
-        sanction2Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2Amount,
-        sanction1DisbursedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1DisbursedAt,
-        sanction2DisbursedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2DisbursedAt,
+        totalFundingAllocated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.totalFundingAllocated ?? null),
+        sanction1Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1Amount ?? null),
+        sanction2Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2Amount ?? null),
+        sanction1DisbursedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1DisbursedAt ?? null),
+        sanction2DisbursedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2DisbursedAt ?? null),
         sanction1Expenses: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.sanction1Expenses || []),
         sanction2Expenses: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.sanction2Expenses || []),
-        beneficiaryName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryName,
-        beneficiaryAccountNo: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryAccountNo,
-        beneficiaryBankName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryBankName,
-        beneficiaryIfscCode: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.beneficiaryIfscCode,
-        sanction1AppliedForNext: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? false : existingIdeaToUpdate.sanction1AppliedForNext,
+        beneficiaryName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryName ?? null),
+        beneficiaryAccountNo: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryAccountNo ?? null),
+        beneficiaryBankName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryBankName ?? null),
+        beneficiaryIfscCode: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.beneficiaryIfscCode ?? null),
+        sanction1AppliedForNext: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? false : (existingIdeaToUpdate.sanction1AppliedForNext ?? false),
         sanction1UtilizationStatus: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'NOT_APPLICABLE' : (existingIdeaToUpdate.sanction1UtilizationStatus || 'NOT_APPLICABLE'),
-        sanction1UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1UtilizationRemarks,
-        sanction1UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1UtilizationReviewedBy,
-        sanction1UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction1UtilizationReviewedAt,
+        sanction1UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1UtilizationRemarks ?? null),
+        sanction1UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1UtilizationReviewedBy ?? null),
+        sanction1UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1UtilizationReviewedAt ?? null),
         sanction2UtilizationStatus: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'NOT_APPLICABLE' : (existingIdeaToUpdate.sanction2UtilizationStatus || 'NOT_APPLICABLE'),
-        sanction2UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationRemarks,
-        sanction2UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationReviewedBy,
-        sanction2UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.sanction2UtilizationReviewedAt,
+        sanction2UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationRemarks ?? null),
+        sanction2UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationReviewedBy ?? null),
+        sanction2UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationReviewedAt ?? null),
       };
-      await updateDoc(ideaDocRef, updateData as any);
+      await updateDoc(ideaDocRef, updateData);
       await logUserActivity(
         userId,
         userProfile.displayName || userProfile.fullName,
@@ -1940,3 +1999,4 @@ export const applyForNextSanctionFS = async (
 
 
     
+
