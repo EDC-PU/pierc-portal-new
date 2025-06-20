@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -374,7 +374,7 @@ export default function StudentDashboard() {
     }
 
     setIsGeneratingOutline(true);
-    setGeneratingOutlineIdeaId(idea.id);
+    setGeneratingOutlineIdeaId(idea.id); // Set which idea we are generating for
     setGeneratedOutline(null);
     setOutlineError(null);
 
@@ -412,11 +412,12 @@ export default function StudentDashboard() {
     } catch (error) {
       console.error("Error generating pitch deck outline:", error);
       const errorMessage = (error instanceof Error) ? error.message : "Could not generate outline.";
-      setOutlineError(errorMessage);
+      setOutlineError(errorMessage); // Store error to display in modal if needed
+      setIsOutlineModalOpen(true); // Open modal even on error to show message
       toast({ title: "Outline Generation Failed", description: errorMessage, variant: "destructive" });
     } finally {
       setIsGeneratingOutline(false);
-      setGeneratingOutlineIdeaId(null);
+      // Keep generatingOutlineIdeaId so the modal knows which idea it's for
     }
   };
 
@@ -823,6 +824,7 @@ export default function StudentDashboard() {
                 <ul className="space-y-4">
                   {userIdeas.map((idea) => {
                     const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null;
+                    const canViewOutline = generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline;
                     return (
                     <li key={idea.id} className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors shadow-sm">
                       <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-2">
@@ -1015,11 +1017,17 @@ export default function StudentDashboard() {
                             <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => handleGenerateOutline(idea)}
+                                onClick={() => {
+                                    if (canViewOutline) {
+                                        setIsOutlineModalOpen(true);
+                                    } else {
+                                        handleGenerateOutline(idea);
+                                    }
+                                }}
                                 disabled={isGeneratingOutline && generatingOutlineIdeaId === idea.id}
                             >
-                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>}
-                                Generate Pitch Deck Outline (AI)
+                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : (canViewOutline ? <Eye className="h-4 w-4 mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>)}
+                                {canViewOutline ? "View AI Pitch Outline" : "Generate Pitch Deck Outline (AI)"}
                             </Button>
                         </div>
                       )}
@@ -1337,12 +1345,14 @@ export default function StudentDashboard() {
       )}
 
 
-      {isOutlineModalOpen && generatedOutline && selectedIdeaForTeamMgmt && (
-        <Dialog open={isOutlineModalOpen} onOpenChange={(isOpen) => {
+      <Dialog open={isOutlineModalOpen} onOpenChange={(isOpen) => {
             if (!isOpen) {
                 setIsOutlineModalOpen(false);
-                setGeneratedOutline(null);
+                setGeneratedOutline(null); // Clear outline when modal closes
+                setGeneratingOutlineIdeaId(null); // Clear which idea it was for
                 setOutlineError(null);
+            } else {
+                setIsOutlineModalOpen(isOpen);
             }
         }}>
             <ModalContent className="sm:max-w-2xl md:max-w-3xl max-h-[90vh]">
@@ -1351,15 +1361,15 @@ export default function StudentDashboard() {
                         <AiIcon className="h-6 w-6 mr-2 text-primary"/> AI Generated Pitch Deck Outline
                     </ModalTitle>
                     <ModalDescription>
-                        For idea: <span className="font-semibold">{selectedIdeaForTeamMgmt.title}</span>.
+                        For idea: <span className="font-semibold">{userIdeas.find(i => i.id === generatingOutlineIdeaId)?.title || 'Selected Idea'}</span>.
                         This is a suggestion to help you get started. Customize it to best fit your vision.
                     </ModalDescription>
                 </ModalHeader>
-                {outlineError ? (
+                {outlineError && !generatedOutline ? ( // Show error only if no outline
                     <div className="py-4 text-destructive text-center">
                         <p>Error generating outline: {outlineError}</p>
                     </div>
-                ) : (
+                ) : generatedOutline ? (
                 <ScrollArea className="max-h-[calc(90vh-12rem)] overflow-y-auto p-1 pr-3">
                     <Accordion type="multiple" defaultValue={Object.keys(generatedOutline).map(key => key)} className="w-full">
                         {Object.entries(generatedOutline).map(([key, slide]) => {
@@ -1382,11 +1392,16 @@ export default function StudentDashboard() {
                         })}
                     </Accordion>
                 </ScrollArea>
+                ) : ( // Case where outline is null and no error (e.g., modal opened but generation failed silently or state issue)
+                     <div className="py-4 text-muted-foreground text-center">
+                        <p>No outline to display. Try generating one.</p>
+                    </div>
                 )}
                 <ModalFooter className="mt-4">
                     <Button variant="outline" onClick={() => {
                         setIsOutlineModalOpen(false);
                         setGeneratedOutline(null);
+                        setGeneratingOutlineIdeaId(null);
                         setOutlineError(null);
                     }}>Close</Button>
                 </ModalFooter>
