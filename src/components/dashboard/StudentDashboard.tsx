@@ -374,7 +374,7 @@ export default function StudentDashboard() {
     }
 
     setIsGeneratingOutline(true);
-    setGeneratingOutlineIdeaId(idea.id); // Set which idea we are generating for
+    setGeneratingOutlineIdeaId(idea.id); 
     setGeneratedOutline(null);
     setOutlineError(null);
 
@@ -412,13 +412,39 @@ export default function StudentDashboard() {
     } catch (error) {
       console.error("Error generating pitch deck outline:", error);
       const errorMessage = (error instanceof Error) ? error.message : "Could not generate outline.";
-      setOutlineError(errorMessage); // Store error to display in modal if needed
-      setIsOutlineModalOpen(true); // Open modal even on error to show message
+      setOutlineError(errorMessage); 
+      setIsOutlineModalOpen(true); 
       toast({ title: "Outline Generation Failed", description: errorMessage, variant: "destructive" });
     } finally {
       setIsGeneratingOutline(false);
-      // Keep generatingOutlineIdeaId so the modal knows which idea it's for
     }
+  };
+
+  const handleDownloadOutline = (outline: GeneratePitchDeckOutlineOutput | null, ideaTitle: string) => {
+    if (!outline) {
+      toast({ title: "No Outline", description: "No outline data to download.", variant: "default"});
+      return;
+    }
+    let textContent = `Pitch Deck Outline for: ${ideaTitle}\n\n`;
+    Object.entries(outline).forEach(([key, slide]) => {
+      if (slide && slide.title && slide.keyPoints) {
+        const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+        textContent += `## ${slide.title || formattedKey}\n`;
+        slide.keyPoints.forEach(point => {
+          textContent += `- ${point}\n`;
+        });
+        textContent += "\n";
+      }
+    });
+
+    const element = document.createElement("a");
+    const file = new Blob([textContent], {type: 'text/plain'});
+    element.href = URL.createObjectURL(file);
+    element.download = `${ideaTitle.replace(/\s+/g, '_')}_pitch_outline.txt`;
+    document.body.appendChild(element); // Required for this to work in FireFox
+    element.click();
+    document.body.removeChild(element);
+    toast({ title: "Download Started", description: "Pitch deck outline is downloading."});
   };
 
 
@@ -1348,8 +1374,8 @@ export default function StudentDashboard() {
       <Dialog open={isOutlineModalOpen} onOpenChange={(isOpen) => {
             if (!isOpen) {
                 setIsOutlineModalOpen(false);
-                setGeneratedOutline(null); // Clear outline when modal closes
-                setGeneratingOutlineIdeaId(null); // Clear which idea it was for
+                setGeneratedOutline(null); 
+                setGeneratingOutlineIdeaId(null); 
                 setOutlineError(null);
             } else {
                 setIsOutlineModalOpen(isOpen);
@@ -1365,12 +1391,12 @@ export default function StudentDashboard() {
                         This is a suggestion to help you get started. Customize it to best fit your vision.
                     </ModalDescription>
                 </ModalHeader>
-                {outlineError && !generatedOutline ? ( // Show error only if no outline
+                {outlineError && !generatedOutline ? ( 
                     <div className="py-4 text-destructive text-center">
                         <p>Error generating outline: {outlineError}</p>
                     </div>
                 ) : generatedOutline ? (
-                <ScrollArea className="max-h-[calc(90vh-12rem)] overflow-y-auto p-1 pr-3">
+                <ScrollArea className="max-h-[calc(90vh-14rem)] overflow-y-auto p-1 pr-3">
                     <Accordion type="multiple" defaultValue={Object.keys(generatedOutline).map(key => key)} className="w-full">
                         {Object.entries(generatedOutline).map(([key, slide]) => {
                             if (!slide || !slide.title || !slide.keyPoints) return null;
@@ -1392,12 +1418,19 @@ export default function StudentDashboard() {
                         })}
                     </Accordion>
                 </ScrollArea>
-                ) : ( // Case where outline is null and no error (e.g., modal opened but generation failed silently or state issue)
+                ) : ( 
                      <div className="py-4 text-muted-foreground text-center">
                         <p>No outline to display. Try generating one.</p>
                     </div>
                 )}
-                <ModalFooter className="mt-4">
+                <ModalFooter className="mt-4 flex justify-between items-center">
+                    <Button 
+                        variant="outline" 
+                        onClick={() => handleDownloadOutline(generatedOutline, userIdeas.find(i => i.id === generatingOutlineIdeaId)?.title || 'MyIdea')}
+                        disabled={!generatedOutline || isGeneratingOutline}
+                    >
+                        <Download className="mr-2 h-4 w-4" /> Download Outline
+                    </Button>
                     <Button variant="outline" onClick={() => {
                         setIsOutlineModalOpen(false);
                         setGeneratedOutline(null);
