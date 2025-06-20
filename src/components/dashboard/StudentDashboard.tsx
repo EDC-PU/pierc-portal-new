@@ -405,9 +405,8 @@ export default function StudentDashboard() {
       setIsOutlineModalOpen(true);
       toast({ title: "Pitch Deck Outline Generated!", description: "Review the AI-suggested outline." });
       
-      // Update Firestore that AI generated this outline
       await updateIdeaOutlineAIGeneratedStatus(idea.id!, idea.title, true, userProfile);
-      fetchUserIdeasAndUpdateState(idea.id); // Refresh to reflect the change if displayed to student
+      fetchUserIdeasAndUpdateState(idea.id); 
 
     } catch (error) {
       console.error("Error generating pitch deck outline:", error);
@@ -441,7 +440,7 @@ export default function StudentDashboard() {
     const file = new Blob([textContent], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
     element.download = `${ideaTitle.replace(/\s+/g, '_')}_pitch_outline.txt`;
-    document.body.appendChild(element); // Required for this to work in FireFox
+    document.body.appendChild(element); 
     element.click();
     document.body.removeChild(element);
     toast({ title: "Download Started", description: "Pitch deck outline is downloading."});
@@ -562,7 +561,7 @@ export default function StudentDashboard() {
     setIsSubmittingExpense(true);
     try {
       const fileDataUri = await fileToDataUri(data.proofFile);
-      const uploadResult = await uploadPresentation({ // Reusing for generic file upload
+      const uploadResult = await uploadPresentation({ 
         ideaId: selectedIdeaForTeamMgmt.id,
         fileName: data.proofFile.name,
         fileDataUri: fileDataUri,
@@ -571,7 +570,7 @@ export default function StudentDashboard() {
       const newExpense: Omit<ExpenseEntry, 'id' | 'uploadedAt'> = {
         description: data.description,
         amount: data.amount,
-        proofUrl: uploadResult.pptUrl, // Simulated URL from the flow
+        proofUrl: uploadResult.pptUrl, 
         proofFileName: uploadResult.pptFileName,
       };
 
@@ -598,7 +597,7 @@ export default function StudentDashboard() {
         return;
     }
     try {
-        await applyForNextSanctionFS(idea.id, idea.title, 1, userProfile); // Applying for S2 after S1
+        await applyForNextSanctionFS(idea.id, idea.title, 1, userProfile); 
         toast({ title: "Application Submitted", description: "Your application for Sanction 2 has been noted for admin review."});
         fetchUserIdeasAndUpdateState(idea.id);
     } catch (error: any) {
@@ -846,7 +845,7 @@ export default function StudentDashboard() {
             ) : userIdeas.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
             ) : (
-              <ScrollArea className="h-auto max-h-[calc(100vh-26rem)] pr-3" key={userIdeas.map(i=>i.id).join(',')}>
+              <ScrollArea className="h-auto pr-3" key={userIdeas.map(i=>i.id).join(',')}>
                 <ul className="space-y-4">
                   {userIdeas.map((idea) => {
                     const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null;
@@ -1049,7 +1048,7 @@ export default function StudentDashboard() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                    if (canViewOutline || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id)) {
+                                    if ( (generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline) || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ) {
                                         setIsOutlineModalOpen(true);
                                     } else {
                                         handleGenerateOutline(idea);
@@ -1057,8 +1056,8 @@ export default function StudentDashboard() {
                                 }}
                                 disabled={isGeneratingOutline && generatingOutlineIdeaId === idea.id}
                             >
-                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : (canViewOutline || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ? <Eye className="h-4 w-4 mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>)}
-                                {(canViewOutline || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id)) ? "View AI Pitch Outline" : "Generate Pitch Deck Outline (AI)"}
+                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : ( (generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline) || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ? <Eye className="h-4 w-4 mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>)}
+                                { ( (generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline) || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ) ? "View AI Pitch Outline" : "Generate Pitch Deck Outline (AI)"}
                             </Button>
                         </div>
                       )}
