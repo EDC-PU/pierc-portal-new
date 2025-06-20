@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -243,16 +243,28 @@ export default function StudentDashboard() {
     }
   }, [selectedIdeaForTeamMgmt, replace, isTeamMemberForIdea]);
   
+  const ideaForFundManagementTab = useMemo(() => {
+    const incubated = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
+    if (incubated.length > 0) {
+      if (selectedIdeaForTeamMgmt && selectedIdeaForTeamMgmt.programPhase === 'INCUBATED') {
+        return selectedIdeaForTeamMgmt;
+      }
+      return incubated[0];
+    }
+    return null;
+  }, [userIdeas, selectedIdeaForTeamMgmt]);
+
+
   useEffect(() => {
-    if (selectedIdeaForTeamMgmt?.programPhase === 'INCUBATED' && isBeneficiaryModalOpen) {
+    if (ideaForFundManagementTab?.programPhase === 'INCUBATED' && isBeneficiaryModalOpen) {
         resetBeneficiaryForm({
-            beneficiaryName: selectedIdeaForTeamMgmt.beneficiaryName || '',
-            beneficiaryAccountNo: selectedIdeaForTeamMgmt.beneficiaryAccountNo || '',
-            beneficiaryBankName: selectedIdeaForTeamMgmt.beneficiaryBankName || '',
-            beneficiaryIfscCode: selectedIdeaForTeamMgmt.beneficiaryIfscCode || '',
+            beneficiaryName: ideaForFundManagementTab.beneficiaryName || '',
+            beneficiaryAccountNo: ideaForFundManagementTab.beneficiaryAccountNo || '',
+            beneficiaryBankName: ideaForFundManagementTab.beneficiaryBankName || '',
+            beneficiaryIfscCode: ideaForFundManagementTab.beneficiaryIfscCode || '',
         });
     }
-  }, [selectedIdeaForTeamMgmt, isBeneficiaryModalOpen, resetBeneficiaryForm]);
+  }, [ideaForFundManagementTab, isBeneficiaryModalOpen, resetBeneficiaryForm]);
 
 
   const getStatusBadgeVariant = (status?: IdeaStatus) => {
@@ -536,15 +548,15 @@ export default function StudentDashboard() {
   };
   
   const onBeneficiarySubmit: SubmitHandler<BeneficiaryFormData> = async (data) => {
-    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !userProfile) {
+    if (!ideaForFundManagementTab || !ideaForFundManagementTab.id || !userProfile) {
       toast({ title: "Error", description: "Idea context or user profile missing.", variant: "destructive" });
       return;
     }
     setIsSubmittingBeneficiary(true);
     try {
-      await updateIdeaBeneficiaryDetailsFS(selectedIdeaForTeamMgmt.id, selectedIdeaForTeamMgmt.title, data, userProfile);
+      await updateIdeaBeneficiaryDetailsFS(ideaForFundManagementTab.id, ideaForFundManagementTab.title, data, userProfile);
       toast({ title: "Beneficiary Details Saved", description: "Your bank details for funding have been updated." });
-      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
+      fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
       setIsBeneficiaryModalOpen(false);
     } catch (error: any) {
       toast({ title: "Save Error", description: error.message || "Could not save beneficiary details.", variant: "destructive" });
@@ -554,7 +566,7 @@ export default function StudentDashboard() {
   };
 
   const onExpenseSubmit: SubmitHandler<ExpenseFormData> = async (data) => {
-    if (!selectedIdeaForTeamMgmt || !selectedIdeaForTeamMgmt.id || !currentSanctionForExpense || !data.proofFile || !userProfile) {
+    if (!ideaForFundManagementTab || !ideaForFundManagementTab.id || !currentSanctionForExpense || !data.proofFile || !userProfile) {
       toast({ title: "Error", description: "Required information for expense submission is missing.", variant: "destructive" });
       return;
     }
@@ -562,7 +574,7 @@ export default function StudentDashboard() {
     try {
       const fileDataUri = await fileToDataUri(data.proofFile);
       const uploadResult = await uploadPresentation({ 
-        ideaId: selectedIdeaForTeamMgmt.id,
+        ideaId: ideaForFundManagementTab.id,
         fileName: data.proofFile.name,
         fileDataUri: fileDataUri,
       });
@@ -574,9 +586,9 @@ export default function StudentDashboard() {
         proofFileName: uploadResult.pptFileName,
       };
 
-      await addExpenseToSanctionFS(selectedIdeaForTeamMgmt.id, selectedIdeaForTeamMgmt.title, currentSanctionForExpense, newExpense, userProfile);
+      await addExpenseToSanctionFS(ideaForFundManagementTab.id, ideaForFundManagementTab.title, currentSanctionForExpense, newExpense, userProfile);
       toast({ title: "Expense Submitted", description: `Expense for Sanction ${currentSanctionForExpense} recorded.` });
-      fetchUserIdeasAndUpdateState(selectedIdeaForTeamMgmt.id);
+      fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
       setIsExpenseModalOpen(false);
       resetExpenseForm({description: '', amount: 0, proofFile: null});
     } catch (error: any) {
@@ -1287,11 +1299,11 @@ export default function StudentDashboard() {
         </Card>
       </TabsContent>
       
-      {selectedIdeaForTeamMgmt && selectedIdeaForTeamMgmt.programPhase === 'INCUBATED' && (
+      {userIdeas.some(idea => idea.programPhase === 'INCUBATED') && ideaForFundManagementTab && (
         <TabsContent value="fundManagement" className="space-y-6">
             <Card>
                 <CardHeader>
-                    <CardTitle className="font-headline text-xl flex items-center"><DollarSign className="mr-2 h-6 w-6 text-primary"/>Fund Management for: {selectedIdeaForTeamMgmt.title}</CardTitle>
+                    <CardTitle className="font-headline text-xl flex items-center"><DollarSign className="mr-2 h-6 w-6 text-primary"/>Fund Management for: {ideaForFundManagementTab.title}</CardTitle>
                     <CardDescription>Manage beneficiary details, track sanctions, and upload expense proofs.</CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -1300,12 +1312,12 @@ export default function StudentDashboard() {
                             <AccordionTrigger>Beneficiary Details</AccordionTrigger>
                             <AccordionContent className="pt-2">
                                 <p className="text-xs text-muted-foreground mb-2">These details will be used for fund disbursement. Ensure they are accurate.</p>
-                                {selectedIdeaForTeamMgmt.beneficiaryName ? (
+                                {ideaForFundManagementTab.beneficiaryName ? (
                                     <div className="space-y-1 text-sm bg-muted/30 p-3 rounded-md">
-                                        <p><strong>Name:</strong> {selectedIdeaForTeamMgmt.beneficiaryName}</p>
-                                        <p><strong>Account No:</strong> {selectedIdeaForTeamMgmt.beneficiaryAccountNo}</p>
-                                        <p><strong>Bank:</strong> {selectedIdeaForTeamMgmt.beneficiaryBankName}</p>
-                                        <p><strong>IFSC:</strong> {selectedIdeaForTeamMgmt.beneficiaryIfscCode}</p>
+                                        <p><strong>Name:</strong> {ideaForFundManagementTab.beneficiaryName}</p>
+                                        <p><strong>Account No:</strong> {ideaForFundManagementTab.beneficiaryAccountNo}</p>
+                                        <p><strong>Bank:</strong> {ideaForFundManagementTab.beneficiaryBankName}</p>
+                                        <p><strong>IFSC:</strong> {ideaForFundManagementTab.beneficiaryIfscCode}</p>
                                         <Button size="sm" variant="outline" className="mt-2" onClick={() => setIsBeneficiaryModalOpen(true)}><Edit2 className="mr-2 h-3 w-3"/>Edit Details</Button>
                                     </div>
                                 ) : (
@@ -1317,50 +1329,50 @@ export default function StudentDashboard() {
                         <AccordionItem value="sanction1">
                             <AccordionTrigger>Sanction 1 Details</AccordionTrigger>
                             <AccordionContent className="pt-2 space-y-3">
-                                <p><strong>Amount:</strong> {selectedIdeaForTeamMgmt.sanction1Amount ? `₹${selectedIdeaForTeamMgmt.sanction1Amount.toLocaleString()}` : 'Not Set by Admin'}</p>
-                                <p><strong>Disbursed:</strong> {selectedIdeaForTeamMgmt.sanction1DisbursedAt ? formatDate(selectedIdeaForTeamMgmt.sanction1DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</p>
-                                <p><strong>Utilization Status:</strong> <Badge variant={selectedIdeaForTeamMgmt.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (selectedIdeaForTeamMgmt.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{selectedIdeaForTeamMgmt.sanction1UtilizationStatus || 'Pending Review'}</Badge></p>
-                                {selectedIdeaForTeamMgmt.sanction1UtilizationRemarks && <p className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {selectedIdeaForTeamMgmt.sanction1UtilizationRemarks}</p>}
+                                <p><strong>Amount:</strong> {ideaForFundManagementTab.sanction1Amount ? `₹${ideaForFundManagementTab.sanction1Amount.toLocaleString()}` : 'Not Set by Admin'}</p>
+                                <p><strong>Disbursed:</strong> {ideaForFundManagementTab.sanction1DisbursedAt ? formatDate(ideaForFundManagementTab.sanction1DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</p>
+                                <p><strong>Utilization Status:</strong> <Badge variant={ideaForFundManagementTab.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (ideaForFundManagementTab.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{ideaForFundManagementTab.sanction1UtilizationStatus || 'Pending Review'}</Badge></p>
+                                {ideaForFundManagementTab.sanction1UtilizationRemarks && <p className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {ideaForFundManagementTab.sanction1UtilizationRemarks}</p>}
 
-                                {selectedIdeaForTeamMgmt.sanction1DisbursedAt && selectedIdeaForTeamMgmt.sanction1UtilizationStatus !== 'APPROVED' && (
+                                {ideaForFundManagementTab.sanction1DisbursedAt && ideaForFundManagementTab.sanction1UtilizationStatus !== 'APPROVED' && (
                                     <Button size="sm" onClick={() => { setCurrentSanctionForExpense(1); setIsExpenseModalOpen(true); resetExpenseForm(); }}><FileUp className="mr-2 h-4 w-4"/>Upload S1 Expense</Button>
                                 )}
-                                {(selectedIdeaForTeamMgmt.sanction1Expenses?.length || 0) > 0 && (
+                                {(ideaForFundManagementTab.sanction1Expenses?.length || 0) > 0 && (
                                     <div>
                                         <h4 className="text-sm font-semibold mt-2 mb-1">Uploaded Expenses (Sanction 1):</h4>
                                         <ul className="list-disc pl-5 text-xs space-y-1">
-                                            {selectedIdeaForTeamMgmt.sanction1Expenses?.map(exp => <li key={exp.id}>{exp.description} - ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</li>)}
+                                            {ideaForFundManagementTab.sanction1Expenses?.map(exp => <li key={exp.id}>{exp.description} - ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</li>)}
                                         </ul>
                                     </div>
                                 )}
-                                {selectedIdeaForTeamMgmt.sanction1DisbursedAt && selectedIdeaForTeamMgmt.sanction1UtilizationStatus === 'APPROVED' && !selectedIdeaForTeamMgmt.sanction2DisbursedAt && (
-                                    <Button size="sm" onClick={() => handleApplyForNextSanction(selectedIdeaForTeamMgmt)} disabled={selectedIdeaForTeamMgmt.sanction1AppliedForNext}>
-                                        {selectedIdeaForTeamMgmt.sanction1AppliedForNext ? 'Applied for Sanction 2' : 'Apply for Sanction 2'}
+                                {ideaForFundManagementTab.sanction1DisbursedAt && ideaForFundManagementTab.sanction1UtilizationStatus === 'APPROVED' && !ideaForFundManagementTab.sanction2DisbursedAt && (
+                                    <Button size="sm" onClick={() => handleApplyForNextSanction(ideaForFundManagementTab)} disabled={ideaForFundManagementTab.sanction1AppliedForNext}>
+                                        {ideaForFundManagementTab.sanction1AppliedForNext ? 'Applied for Sanction 2' : 'Apply for Sanction 2'}
                                     </Button>
                                 )}
                             </AccordionContent>
                         </AccordionItem>
                         
                         <AccordionItem value="sanction2">
-                            <AccordionTrigger disabled={selectedIdeaForTeamMgmt.sanction1UtilizationStatus !== 'APPROVED'}>Sanction 2 Details</AccordionTrigger>
+                            <AccordionTrigger disabled={ideaForFundManagementTab.sanction1UtilizationStatus !== 'APPROVED'}>Sanction 2 Details</AccordionTrigger>
                              <AccordionContent className="pt-2 space-y-3">
-                                {selectedIdeaForTeamMgmt.sanction1UtilizationStatus !== 'APPROVED' ? (
+                                {ideaForFundManagementTab.sanction1UtilizationStatus !== 'APPROVED' ? (
                                     <p className="text-sm text-muted-foreground">Sanction 1 utilization must be approved before Sanction 2 details are available.</p>
                                 ) : (
                                     <>
-                                        <p><strong>Amount:</strong> {selectedIdeaForTeamMgmt.sanction2Amount ? `₹${selectedIdeaForTeamMgmt.sanction2Amount.toLocaleString()}` : 'Not Set by Admin'}</p>
-                                        <p><strong>Disbursed:</strong> {selectedIdeaForTeamMgmt.sanction2DisbursedAt ? formatDate(selectedIdeaForTeamMgmt.sanction2DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</p>
-                                        <p><strong>Utilization Status:</strong> <Badge variant={selectedIdeaForTeamMgmt.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (selectedIdeaForTeamMgmt.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{selectedIdeaForTeamMgmt.sanction2UtilizationStatus || 'Pending Review'}</Badge></p>
-                                        {selectedIdeaForTeamMgmt.sanction2UtilizationRemarks && <p className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {selectedIdeaForTeamMgmt.sanction2UtilizationRemarks}</p>}
+                                        <p><strong>Amount:</strong> {ideaForFundManagementTab.sanction2Amount ? `₹${ideaForFundManagementTab.sanction2Amount.toLocaleString()}` : 'Not Set by Admin'}</p>
+                                        <p><strong>Disbursed:</strong> {ideaForFundManagementTab.sanction2DisbursedAt ? formatDate(ideaForFundManagementTab.sanction2DisbursedAt) : <Badge variant="outline">Pending Disbursement</Badge>}</p>
+                                        <p><strong>Utilization Status:</strong> <Badge variant={ideaForFundManagementTab.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (ideaForFundManagementTab.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{ideaForFundManagementTab.sanction2UtilizationStatus || 'Pending Review'}</Badge></p>
+                                        {ideaForFundManagementTab.sanction2UtilizationRemarks && <p className="text-xs text-muted-foreground italic p-2 bg-muted/20 rounded-md">Admin Remarks: {ideaForFundManagementTab.sanction2UtilizationRemarks}</p>}
                                         
-                                        {selectedIdeaForTeamMgmt.sanction2DisbursedAt && selectedIdeaForTeamMgmt.sanction2UtilizationStatus !== 'APPROVED' && (
+                                        {ideaForFundManagementTab.sanction2DisbursedAt && ideaForFundManagementTab.sanction2UtilizationStatus !== 'APPROVED' && (
                                             <Button size="sm" onClick={() => { setCurrentSanctionForExpense(2); setIsExpenseModalOpen(true); resetExpenseForm(); }}><FileUp className="mr-2 h-4 w-4"/>Upload S2 Expense</Button>
                                         )}
-                                        {(selectedIdeaForTeamMgmt.sanction2Expenses?.length || 0) > 0 && (
+                                        {(ideaForFundManagementTab.sanction2Expenses?.length || 0) > 0 && (
                                             <div>
                                                 <h4 className="text-sm font-semibold mt-2 mb-1">Uploaded Expenses (Sanction 2):</h4>
                                                 <ul className="list-disc pl-5 text-xs space-y-1">
-                                                    {selectedIdeaForTeamMgmt.sanction2Expenses?.map(exp => <li key={exp.id}>{exp.description} - ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</li>)}
+                                                    {ideaForFundManagementTab.sanction2Expenses?.map(exp => <li key={exp.id}>{exp.description} - ₹{exp.amount.toLocaleString()} (<a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">View Proof</a>)</li>)}
                                                 </ul>
                                             </div>
                                         )}
@@ -1446,7 +1458,7 @@ export default function StudentDashboard() {
         </Dialog>
       )}
 
-      {isBeneficiaryModalOpen && selectedIdeaForTeamMgmt && (
+      {isBeneficiaryModalOpen && ideaForFundManagementTab && (
         <Dialog open={isBeneficiaryModalOpen} onOpenChange={setIsBeneficiaryModalOpen}>
             <ModalContent>
                 <form onSubmit={handleBeneficiarySubmit(onBeneficiarySubmit)}>
@@ -1463,7 +1475,7 @@ export default function StudentDashboard() {
         </Dialog>
       )}
       
-      {isExpenseModalOpen && selectedIdeaForTeamMgmt && currentSanctionForExpense && (
+      {isExpenseModalOpen && ideaForFundManagementTab && currentSanctionForExpense && (
         <Dialog open={isExpenseModalOpen} onOpenChange={(isOpen) => {if(!isOpen) setCurrentSanctionForExpense(null); setIsExpenseModalOpen(isOpen);}}>
             <ModalContent>
                 <form onSubmit={handleExpenseSubmit(onExpenseSubmit)}>
