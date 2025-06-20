@@ -463,20 +463,20 @@ export const createIdeaFromProfile = async (
         const data = docSnap.data();
         return {
             id: docSnap.id,
-            userId: data.userId,
-            title: data.title,
-            problem: data.problem,
-            solution: data.solution,
-            uniqueness: data.uniqueness,
-            developmentStage: data.developmentStage,
-            applicantType: data.applicantType,
+            userId: data.userId ?? null,
+            title: data.title ?? '',
+            problem: data.problem ?? '',
+            solution: data.solution ?? '',
+            uniqueness: data.uniqueness ?? '',
+            developmentStage: data.developmentStage ?? null,
+            applicantType: data.applicantType ?? null,
             teamMembers: data.teamMembers || '',
             structuredTeamMembers: data.structuredTeamMembers || [],
             teamMemberEmails: data.teamMemberEmails || [],
             fileURL: data.fileURL ?? null,
             fileName: data.fileName ?? null,
             studioLocation: data.studioLocation ?? null,
-            status: data.status,
+            status: data.status ?? 'SUBMITTED',
             programPhase: data.programPhase || null,
             phase2Marks: data.phase2Marks || {},
             mentor: data.mentor ?? null,
@@ -505,18 +505,18 @@ export const createIdeaFromProfile = async (
             beneficiaryBankName: data.beneficiaryBankName ?? null,
             beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
             sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
-            sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+            sanction1UtilizationStatus: data.sanction1UtilizationStatus || 'NOT_APPLICABLE',
             sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
             sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
             sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
-            sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+            sanction2UtilizationStatus: data.sanction2UtilizationStatus || 'NOT_APPLICABLE',
             sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
             sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
             sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
-            submittedAt: data.submittedAt,
-            updatedAt: data.updatedAt,
-            applicantDisplayName: data.applicantDisplayName,
-            applicantEmail: data.applicantEmail,
+            submittedAt: data.submittedAt as Timestamp,
+            updatedAt: data.updatedAt as Timestamp,
+            applicantDisplayName: data.applicantDisplayName ?? '',
+            applicantEmail: data.applicantEmail ?? '',
         } as IdeaSubmission;
     });
     existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') ||
@@ -542,6 +542,7 @@ export const createIdeaFromProfile = async (
       ideaDocRef = doc(db, 'ideas', existingIdeaToUpdate.id!);
       const updateData: Partial<IdeaSubmission> = {
         ...ideaPayloadBase,
+        submittedAt: existingIdeaToUpdate.submittedAt, // Preserve original submittedAt
         status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status,
         programPhase: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.programPhase,
         cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
@@ -561,7 +562,6 @@ export const createIdeaFromProfile = async (
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
-        // Reset funding fields if resubmitting archived idea
         totalFundingAllocated: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.totalFundingAllocated ?? null),
         sanction1Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction1Amount ?? null),
         sanction2Amount: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2Amount ?? null),
@@ -612,7 +612,6 @@ export const createIdeaFromProfile = async (
         nextPhaseEndTime: null,
         nextPhaseVenue: null,
         nextPhaseGuidelines: null,
-        // Initialize funding fields
         totalFundingAllocated: null,
         sanction1Amount: null,
         sanction2Amount: null,
@@ -2000,3 +1999,6 @@ export const applyForNextSanctionFS = async (
 
     
 
+
+
+    
