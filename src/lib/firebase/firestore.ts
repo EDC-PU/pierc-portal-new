@@ -542,7 +542,7 @@ export const createIdeaFromProfile = async (
       ideaDocRef = doc(db, 'ideas', existingIdeaToUpdate.id!);
       const updateData: Partial<IdeaSubmission> = {
         ...ideaPayloadBase,
-        submittedAt: existingIdeaToUpdate.submittedAt, 
+        submittedAt: existingIdeaToUpdate.submittedAt,
         status: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? 'SUBMITTED' : existingIdeaToUpdate.status,
         programPhase: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.programPhase,
         cohortId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.cohortId,
@@ -599,8 +599,7 @@ export const createIdeaFromProfile = async (
         programPhase: null,
         cohortId: null,
         phase2Marks: {},
-        mentor: null,
-        isOutlineAIGenerated: false, 
+        isOutlineAIGenerated: false,
         rejectionRemarks: null,
         rejectedByUid: null,
         rejectedAt: null,
@@ -926,7 +925,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.phase2Marks = {};
     updates.mentor = deleteField();
     updates.cohortId = deleteField();
-    updates.isOutlineAIGenerated = false; 
+    updates.isOutlineAIGenerated = false;
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
@@ -1155,7 +1154,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     phase2Marks: {},
     mentor: deleteField(),
     cohortId: deleteField(),
-    isOutlineAIGenerated: false, 
+    isOutlineAIGenerated: false,
     rejectionRemarks: deleteField(),
     rejectedByUid: deleteField(),
     rejectedAt: deleteField(),
@@ -1647,7 +1646,7 @@ export const createIdeaSubmission = async (
     programPhase: null,
     cohortId: null,
     phase2Marks: {},
-    isOutlineAIGenerated: false, 
+    isOutlineAIGenerated: false,
      // Initialize funding fields
     totalFundingAllocated: null,
     sanction1Amount: null,
@@ -1733,7 +1732,7 @@ export const updateIdeaOutlineAIGeneratedStatus = async (
   await logUserActivity(
     actorProfile.uid,
     actorProfile.displayName || actorProfile.fullName,
-    'USER_GENERATED_PITCH_DECK_OUTLINE', 
+    'USER_GENERATED_PITCH_DECK_OUTLINE',
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
     { aiGenerated: status }
   );
@@ -1918,7 +1917,7 @@ export const addExpenseToSanctionFS = async (
     const newExpense: ExpenseEntry = {
         ...expenseData,
         id: nanoid(),
-        uploadedAt: serverTimestamp() as Timestamp,
+        uploadedAt: Timestamp.now(), // Use client-side timestamp for arrayUnion
     };
     const expenseField = sanctionNumber === 1 ? 'sanction1Expenses' : 'sanction2Expenses';
     await updateDoc(ideaRef, {
@@ -2004,3 +2003,4 @@ export const applyForNextSanctionFS = async (
 
 
     
+
