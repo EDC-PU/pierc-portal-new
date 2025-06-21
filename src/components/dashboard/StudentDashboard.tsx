@@ -58,6 +58,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { YoutubePlaylist } from './YoutubePlaylist';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -1228,32 +1229,15 @@ export default function StudentDashboard() {
           </CardFooter>
         </Card>
 
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Learning Resources</CardTitle>
-              <BookOpen className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">Explore</div>
-              <p className="text-xs text-muted-foreground">
-                Access workshops & materials (Coming Soon).
-              </p>
-            </CardContent>
-          </Card>
-          <Card className="hover:shadow-lg transition-shadow">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Collaboration Hub</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">Connect</div>
-              <p className="text-xs text-muted-foreground">
-                Find team members & mentors (Coming Soon).
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-headline text-xl">Learning Resources</CardTitle>
+            <CardDescription>A curated playlist to help you on your entrepreneurial journey.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <YoutubePlaylist />
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
@@ -1266,8 +1250,8 @@ export default function StudentDashboard() {
               <Button variant="outline" onClick={() => router.push('/dashboard/announcements')}>
                 Check Announcements <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-              <Button variant="outline" disabled>
-                Research Repository (Coming Soon)
+              <Button variant="outline" onClick={() => router.push('/dashboard/events')}>
+                View Events Calendar <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
               <Button variant="outline" onClick={() => router.push('/profile-setup')}>
                 My Profile <ArrowRight className="ml-2 h-4 w-4" />
