@@ -31,7 +31,7 @@ function ensureAdminInitialized() {
   // Check if all required environment variables are present and throw a clear error if not.
   if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey || !storageBucket) {
     throw new Error(
-      'Firebase admin initialization failed: Missing required environment variables. Ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set in your .env file.'
+      'Firebase Admin initialization failed: Missing required environment variables. Ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set in your .env file.'
     );
   }
   
