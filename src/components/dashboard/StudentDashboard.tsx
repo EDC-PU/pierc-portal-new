@@ -25,6 +25,7 @@ import {
   updateIdeaOutlineAIGeneratedStatus, 
   getDashboardAnnouncementsStream,
   getDashboardEventsStream,
+  updateIncubationDocumentFS,
 } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -33,9 +34,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, Announcement as AnnouncementType, PortalEvent } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, Announcement as AnnouncementType, PortalEvent, IncubationDocumentType } from '@/types';
+import { ALL_INCUBATION_DOCUMENT_TYPES } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
+import { uploadIncubationDocument } from '@/ai/flows/upload-incubation-document-flow';
 import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -54,7 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent as ModalContent, DialogHeader as ModalHeader, DialogTitle as ModalTitle, DialogDescription as ModalDescription, DialogFooter as ModalFooter } from '@/components/ui/dialog';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -154,6 +157,7 @@ export default function StudentDashboard() {
   const [uploadingPptIdeaId, setUploadingPptIdeaId] = useState<string | null>(null);
   const [isUploadingPpt, setIsUploadingPpt] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadingDocType, setUploadingDocType] = useState<IncubationDocumentType | null>(null);
 
   const [selectedIdeaForTeamMgmt, setSelectedIdeaForTeamMgmt] = useState<IdeaSubmission | null>(null);
   const [memberToRemove, setMemberToRemove] = useState<TeamMember | null>(null);
@@ -402,6 +406,35 @@ export default function StudentDashboard() {
         setUploadingPptIdeaId(null);
       }
       setUploadError(null);
+    }
+  };
+  
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>, docType: IncubationDocumentType) => {
+    const file = event.target.files?.[0];
+    if (!file || !ideaForFundManagementTab || !userProfile) {
+        return;
+    }
+
+    setUploadingDocType(docType);
+    try {
+        const fileDataUri = await fileToDataUri(file);
+        const uploadResult = await uploadIncubationDocument({
+            ideaId: ideaForFundManagementTab.id!,
+            docType: docType,
+            fileName: file.name,
+            fileDataUri: fileDataUri,
+        });
+
+        await updateIncubationDocumentFS(ideaForFundManagementTab.id!, ideaForFundManagementTab.title, docType, uploadResult, userProfile);
+        toast({ title: "Document Uploaded", description: `${file.name} has been successfully uploaded.` });
+        await fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
+
+    } catch (error) {
+        console.error(`Error uploading ${docType}:`, error);
+        toast({ title: "Upload Failed", description: (error as Error).message || "Could not upload the document.", variant: "destructive" });
+    } finally {
+        setUploadingDocType(null);
+        event.target.value = '';
     }
   };
 
@@ -908,8 +941,11 @@ export default function StudentDashboard() {
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
         <TabsTrigger value="overview">Overview & Submissions</TabsTrigger>
         <TabsTrigger value="manageTeam">Manage Team (Max 4)</TabsTrigger>
-        {userIdeas.some(idea => idea.programPhase === 'INCUBATED') && (
+        {ideaForFundManagementTab && (
             <TabsTrigger value="fundManagement">Fund Management</TabsTrigger>
+        )}
+        {ideaForFundManagementTab && (
+            <TabsTrigger value="incubationDocuments">Incubation Documents</TabsTrigger>
         )}
       </TabsList>
 
@@ -1548,6 +1584,70 @@ export default function StudentDashboard() {
                             </AccordionContent>
                         </AccordionItem>
                     </Accordion>
+                </CardContent>
+            </Card>
+        </TabsContent>
+      )}
+
+      {ideaForFundManagementTab && (
+        <TabsContent value="incubationDocuments">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="font-headline text-xl flex items-center"><Briefcase className="mr-2 h-6 w-6 text-primary"/>Incubation Document Center</CardTitle>
+                    <CardDescription>Upload the required documents for the incubation process for your idea: <span className="font-semibold">{ideaForFundManagementTab.title}</span></CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <ul className="space-y-4">
+                    {ALL_INCUBATION_DOCUMENT_TYPES.map((docInfo) => {
+                        const uploadedDoc = ideaForFundManagementTab.incubationDocuments?.[docInfo.type];
+                        const isUploadingThis = uploadingDocType === docInfo.type;
+                        
+                        return (
+                            <li key={docInfo.type} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 rounded-md border bg-muted/20">
+                                <div className="flex-grow">
+                                    <h4 className="font-semibold">{docInfo.label}</h4>
+                                    <p className="text-xs text-muted-foreground">{docInfo.description}</p>
+                                    {docInfo.type === 'incubationAgreement' && (
+                                        <Button variant="link" size="sm" asChild className="p-0 h-auto text-xs mt-1">
+                                            <a href="https://firebasestorage.googleapis.com/v0/b/pierc-portal.appspot.com/o/templates%2FINCUBATION%20AGREEMENT%20%5BPIERC%5D.pdf?alt=media&token=80482596-9323-4566-b384-4809f6356767" target="_blank" rel="noopener noreferrer">
+                                                <Download className="mr-1 h-3 w-3" /> Download Template
+                                            </a>
+                                        </Button>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
+                                    {uploadedDoc ? (
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="default" className="bg-green-600 hover:bg-green-700">Uploaded</Badge>
+                                            <Button variant="outline" size="sm" asChild>
+                                                <a href={uploadedDoc.url} target="_blank" rel="noopener noreferrer">
+                                                    <Eye className="mr-2 h-4 w-4"/> View
+                                                </a>
+                                            </Button>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <Badge variant="secondary">Pending</Badge>
+                                            <Button asChild variant="outline" size="sm" disabled={isUploadingThis}>
+                                                <Label htmlFor={`upload-${docInfo.type}`} className="cursor-pointer flex items-center">
+                                                    {isUploadingThis ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileUp className="mr-2 h-4 w-4"/>}
+                                                    {isUploadingThis ? 'Uploading...' : 'Upload'}
+                                                </Label>
+                                            </Button>
+                                            <Input
+                                                id={`upload-${docInfo.type}`}
+                                                type="file"
+                                                className="hidden"
+                                                onChange={(e) => handleDocumentUpload(e, docInfo.type)}
+                                                disabled={isUploadingThis}
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </li>
+                        );
+                    })}
+                    </ul>
                 </CardContent>
             </Card>
         </TabsContent>

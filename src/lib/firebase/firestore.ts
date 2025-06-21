@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocument, IncubationDocumentType } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -634,6 +634,7 @@ export const createIdeaFromProfile = async (
             sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
             sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
             sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+            incubationDocuments: data.incubationDocuments || {},
             submittedAt: data.submittedAt as Timestamp,
             updatedAt: data.updatedAt as Timestamp,
             createdAt: data.createdAt as Timestamp, 
@@ -714,6 +715,7 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationRemarks: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationRemarks ?? null),
         sanction2UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationReviewedBy ?? null),
         sanction2UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationReviewedAt ?? null),
+        incubationDocuments: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? {} : (existingIdeaToUpdate.incubationDocuments || {}),
       };
       await updateDoc(ideaDocRef, updateData);
       await logUserActivity(
@@ -758,6 +760,7 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationRemarks: null,
         sanction2UtilizationReviewedBy: null,
         sanction2UtilizationReviewedAt: null,
+        incubationDocuments: {},
         rejectionRemarks: null, 
         rejectedByUid: null,
         rejectedAt: null,
@@ -798,6 +801,49 @@ export const createIdeaFromProfile = async (
     }
     throw error;
   }
+};
+
+export const getIncubatedIdeas = async (): Promise<IdeaSubmission[]> => {
+  const ideasCol = collection(db, 'ideas');
+  const q = query(ideasCol, where('programPhase', '==', 'INCUBATED'), orderBy('updatedAt', 'desc'));
+  
+  const ideasSnapshot = await getDocs(q);
+
+  if (ideasSnapshot.empty) {
+    return [];
+  }
+  
+  const ideaSubmissions: IdeaSubmission[] = [];
+  ideasSnapshot.docs.forEach(ideaDoc => {
+    const ideaData = ideaDoc.data();
+    ideaSubmissions.push({
+      id: ideaDoc.id,
+      ...ideaData
+    } as IdeaSubmission);
+  });
+  
+   const applicantIds = new Set<string>();
+   ideaSubmissions.forEach(idea => {
+     if (idea.userId) applicantIds.add(idea.userId);
+   });
+   
+   const profilesMap = new Map<string, UserProfile | null>();
+   if (applicantIds.size > 0) {
+      const profilePromises = Array.from(applicantIds).map(id => getUserProfile(id));
+      const profiles = await Promise.all(profilePromises);
+      profiles.forEach((profile, index) => {
+         if (profile) profilesMap.set(Array.from(applicantIds)[index], profile);
+      });
+   }
+   
+   return ideaSubmissions.map(idea => {
+      const profile = idea.userId ? profilesMap.get(idea.userId) : null;
+      return {
+         ...idea,
+         applicantDisplayName: profile ? (profile.displayName || profile.fullName) : idea.applicantDisplayName,
+         applicantEmail: profile ? profile.email : idea.applicantEmail,
+      };
+   });
 };
 
 
@@ -895,6 +941,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
       sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
       sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
+      incubationDocuments: ideaData.incubationDocuments || {},
     } as IdeaSubmission);
   });
 
@@ -998,6 +1045,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
       sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
       sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
+      incubationDocuments: ideaData.incubationDocuments || {},
     } as IdeaSubmission);
   });
 
@@ -1056,6 +1104,7 @@ export const updateIdeaStatusAndPhase = async (
         if (currentData && !currentData.sanction2UtilizationStatus) updates.sanction2UtilizationStatus = 'NOT_APPLICABLE';
         if (currentData && !currentData.sanction1Expenses) updates.sanction1Expenses = [];
         if (currentData && !currentData.sanction2Expenses) updates.sanction2Expenses = [];
+        if (currentData && !currentData.incubationDocuments) updates.incubationDocuments = {};
     }
 
     if (newPhase && (newPhase === 'PHASE_1' || newPhase === 'PHASE_2' || newPhase === 'INCUBATED') && nextPhaseDetails) {
@@ -1112,6 +1161,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.sanction2UtilizationRemarks = deleteField();
     updates.sanction2UtilizationReviewedBy = deleteField();
     updates.sanction2UtilizationReviewedAt = deleteField();
+    updates.incubationDocuments = {};
     updates.updatedAt = serverTimestamp();
   } else {
     updates.programPhase = null;
@@ -1282,6 +1332,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
         sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
         sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+        incubationDocuments: data.incubationDocuments || {},
     } as IdeaSubmission);
   });
   return userIdeas;
@@ -1358,6 +1409,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     sanction2UtilizationRemarks: deleteField(),
     sanction2UtilizationReviewedBy: deleteField(),
     sanction2UtilizationReviewedAt: deleteField(),
+    incubationDocuments: {},
     updatedAt: serverTimestamp(),
   };
 
@@ -1641,6 +1693,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
         sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
         sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+        incubationDocuments: data.incubationDocuments || {},
     } as IdeaSubmission;
   }
   return null;
@@ -1803,7 +1856,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1848,6 +1901,7 @@ export const createIdeaSubmission = async (
     sanction2UtilizationRemarks: null,
     sanction2UtilizationReviewedBy: null,
     sanction2UtilizationReviewedAt: null,
+    incubationDocuments: {},
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
     createdAt: serverTimestamp() as Timestamp,
@@ -1868,6 +1922,7 @@ export const createIdeaSubmission = async (
     structuredTeamMembers: newDocSnap.data()?.structuredTeamMembers || [],
     teamMemberEmails: newDocSnap.data()?.teamMemberEmails || [],
     isOutlineAIGenerated: newDocSnap.data()?.isOutlineAIGenerated ?? false,
+    incubationDocuments: newDocSnap.data()?.incubationDocuments || {},
   } as IdeaSubmission;
 
   await logUserActivity(
@@ -1895,6 +1950,34 @@ export const updateIdeaPhase2PptDetails = async (ideaId: string, ideaTitle: stri
     { type: 'IDEA', id: ideaId, displayName: ideaTitle },
     { fileName }
   );
+};
+
+export const updateIncubationDocumentFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    docType: IncubationDocumentType,
+    docData: { url: string; fileName: string },
+    actorProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    const docToStore: IncubationDocument = {
+        ...docData,
+        uploadedAt: Timestamp.now(),
+    };
+    
+    const updatePath = `incubationDocuments.${docType}`;
+    await updateDoc(ideaRef, {
+        [updatePath]: docToStore,
+        updatedAt: serverTimestamp(),
+    });
+
+    await logUserActivity(
+        actorProfile.uid,
+        actorProfile.displayName || actorProfile.fullName,
+        'IDEA_INCUBATION_DOCUMENT_UPLOADED',
+        { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+        { docType, fileName: docData.fileName }
+    );
 };
 
 export const updateIdeaOutlineAIGeneratedStatus = async (
@@ -1978,6 +2061,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
         sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
         sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+        incubationDocuments: data.incubationDocuments || {},
     } as IdeaSubmission;
   }
   return null;
