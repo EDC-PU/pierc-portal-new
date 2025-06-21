@@ -1,5 +1,4 @@
 
-import 'dotenv/config';
 import * as admin from 'firebase-admin';
 
 // This new structure ensures Firebase Admin is initialized only when one of its services is first accessed.
@@ -20,7 +19,7 @@ function ensureAdminInitialized() {
   
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  // The private key must have its escaped newlines replaced with actual newlines.
+  // The private key must have its escaped newlines replaced with actual newlines for some environments.
   const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
@@ -42,9 +41,10 @@ function ensureAdminInitialized() {
     });
     console.log("Firebase Admin SDK initialized on first use.");
   } catch (error: any) {
-     console.error('Firebase Admin SDK initialization error. Check your service account credentials.', error);
-     // Re-throw a more specific error to help with debugging by including the original Firebase error message.
-     throw new Error(`Firebase Admin SDK initialization failed: ${error.message}. Please check your service account credentials in the .env file.`);
+     // The stack trace from the original error is crucial for debugging key parsing issues.
+     console.error('Firebase Admin SDK initialization error. Check your service account credentials. Full error stack:', error.stack);
+     // Re-throw a more user-friendly error. The detailed error is in the server logs.
+     throw new Error('Firebase Admin SDK could not be initialized. See server logs for details.');
   }
 }
 
