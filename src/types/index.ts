@@ -24,6 +24,34 @@ export const AVAILABLE_MENTORS = AVAILABLE_MENTOR_NAMES;
 export type FundingSource = 'SSIP_PIET' | 'SSIP_PARUL_UNIVERSITY' | 'SSIP_PIMSR' | 'SSIP_PHYSIOTHERAPY';
 export const ALL_FUNDING_SOURCES: FundingSource[] = ['SSIP_PIET', 'SSIP_PARUL_UNIVERSITY', 'SSIP_PIMSR', 'SSIP_PHYSIOTHERAPY'];
 
+export type IncubationDocumentType =
+  | 'aadharCard'
+  | 'license'
+  | 'panCard'
+  | 'residentialProof'
+  | 'pitchDeck'
+  | 'resumeFounder'
+  | 'resumeCoFounder'
+  | 'incubationAgreement'
+  | 'bankPassbook';
+
+export const ALL_INCUBATION_DOCUMENT_TYPES: { type: IncubationDocumentType; label: string; description: string }[] = [
+    { type: 'aadharCard', label: 'Aadhar Card', description: 'Copy of founder\'s Aadhar card.' },
+    { type: 'license', label: 'License', description: 'Relevant business or professional license, if any.' },
+    { type: 'panCard', label: 'PAN Card', description: 'Copy of founder\'s PAN card.' },
+    { type: 'residentialProof', label: 'Residential Proof', description: 'Utility bill, rent agreement, etc.' },
+    { type: 'pitchDeck', label: 'Pitch Deck', description: 'Your latest pitch deck presentation.' },
+    { type: 'resumeFounder', label: 'Resume of Founder', description: 'CV of the primary founder.' },
+    { type: 'resumeCoFounder', label: 'Resume of Co-founder', description: 'CV of the co-founder(s), if applicable.' },
+    { type: 'incubationAgreement', label: 'Signed Incubation Agreement', description: 'The signed agreement document.' },
+    { type: 'bankPassbook', label: 'Bank Passbook Copy', description: 'Front page of the bank passbook or a cancelled cheque.' },
+];
+
+export interface IncubationDocument {
+  url: string;
+  fileName: string;
+  uploadedAt: Timestamp;
+}
 
 export interface UserProfile {
   uid: string;
@@ -157,6 +185,9 @@ export interface IdeaSubmission {
   sanction2UtilizationRemarks?: string | null;
   sanction2UtilizationReviewedBy?: string | null; // Admin UID
   sanction2UtilizationReviewedAt?: Timestamp | null;
+  
+  incubationDocuments?: Partial<Record<IncubationDocumentType, IncubationDocument>>;
+
 
   submittedAt: Timestamp;
   updatedAt: Timestamp;
@@ -271,6 +302,7 @@ export type ActivityLogAction =
   | 'IDEA_BENEFICIARY_DETAILS_UPDATED'
   | 'IDEA_EXPENSE_UPLOADED'
   | 'IDEA_APPLIED_FOR_NEXT_SANCTION'
+  | 'IDEA_INCUBATION_DOCUMENT_UPLOADED'
   | 'ADMIN_USER_ROLE_UPDATED'
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
   | 'ADMIN_IDEA_MENTOR_ASSIGNED'
@@ -300,7 +332,7 @@ export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
   'IDEA_SUBMITTED', 'IDEA_PROFILE_DATA_UPDATED', 'IDEA_RESUBMITTED', 'IDEA_PPT_UPLOADED',
   'IDEA_TEAM_MEMBER_ADDED', 'IDEA_TEAM_MEMBER_UPDATED', 'IDEA_TEAM_MEMBER_REMOVED',
   'USER_GENERATED_PITCH_DECK_OUTLINE',
-  'IDEA_BENEFICIARY_DETAILS_UPDATED', 'IDEA_EXPENSE_UPLOADED', 'IDEA_APPLIED_FOR_NEXT_SANCTION',
+  'IDEA_BENEFICIARY_DETAILS_UPDATED', 'IDEA_EXPENSE_UPLOADED', 'IDEA_APPLIED_FOR_NEXT_SANCTION', 'IDEA_INCUBATION_DOCUMENT_UPLOADED',
   'ADMIN_USER_ROLE_UPDATED', 'ADMIN_IDEA_STATUS_PHASE_UPDATED', 'ADMIN_IDEA_MENTOR_ASSIGNED',
   'ADMIN_IDEA_PHASE2_MARK_SUBMITTED', 'ADMIN_IDEA_ARCHIVED_FOR_REVISION', 'ADMIN_IDEA_ASSIGNED_TO_COHORT',
   'ADMIN_IDEA_FUNDING_DETAILS_SET', 'ADMIN_IDEA_SANCTION_DISBURSED', 'ADMIN_IDEA_SANCTION_UTILIZATION_REVIEWED',
