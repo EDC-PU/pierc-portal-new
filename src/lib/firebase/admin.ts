@@ -1,5 +1,10 @@
 
 import * as admin from 'firebase-admin';
+import { config } from 'dotenv';
+
+// Load environment variables right at the start of this module.
+// This ensures they are available for any server-side code that imports this module.
+config();
 
 // This new structure ensures Firebase Admin is initialized only when one of its services is first accessed.
 // This is safer for Next.js and provides better error handling.
