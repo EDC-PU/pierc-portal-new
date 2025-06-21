@@ -35,7 +35,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} h-full`} suppressHydrationWarning={true}>
-      <body className="font-body bg-background text-foreground flex flex-col h-full">
+      <body className="font-body bg-background text-foreground flex flex-col h-full" suppressHydrationWarning={true}>
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
