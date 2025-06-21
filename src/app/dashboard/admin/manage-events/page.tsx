@@ -2,7 +2,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { PortalEvent, UserProfile } from '@/types';
+import type { PortalEvent, UserProfile, Cohort } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 import { EventForm, type EventFormData } from '@/components/admin/EventForm';
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { createEventFS, getAllEventsStream, updateEventFS, deleteEventFS, getProfilesForUids } from '@/lib/firebase/firestore';
+import { createEventFS, getAllEventsStream, updateEventFS, deleteEventFS, getProfilesForUids, getAllCohortsStream } from '@/lib/firebase/firestore';
 import { uploadEventFlyer } from '@/ai/flows/upload-event-flyer-flow';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -21,7 +21,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
-  AlertDialogDescription,
+  AlertDialogDescription as AlertDialogModalDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
@@ -36,7 +36,9 @@ export default function ManageEventsPage() {
   const { toast } = useToast();
 
   const [events, setEvents] = useState<PortalEvent[]>([]);
+  const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [loadingCohorts, setLoadingCohorts] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<PortalEvent | null>(null);
 
@@ -56,11 +58,21 @@ export default function ManageEventsPage() {
   useEffect(() => {
     if (userProfile?.role === 'ADMIN_FACULTY') {
       setLoadingEvents(true);
-      const unsubscribe = getAllEventsStream((fetchedEvents) => {
+      const unsubscribeEvents = getAllEventsStream((fetchedEvents) => {
         setEvents(fetchedEvents);
         setLoadingEvents(false);
       });
-      return () => unsubscribe();
+      
+      setLoadingCohorts(true);
+      const unsubscribeCohorts = getAllCohortsStream((fetchedCohorts) => {
+        setCohorts(fetchedCohorts);
+        setLoadingCohorts(false);
+      });
+
+      return () => {
+        unsubscribeEvents();
+        unsubscribeCohorts();
+      };
     }
   }, [userProfile]);
 
@@ -112,6 +124,8 @@ export default function ManageEventsPage() {
         endDateTime: Timestamp.fromDate(formData.endDateTime),
         flyerUrl: flyerUploadResult.flyerUrl,
         flyerFileName: flyerUploadResult.flyerFileName,
+        targetAudience: formData.targetAudience,
+        cohortId: formData.targetAudience === 'SPECIFIC_COHORT' ? formData.cohortId : null,
     };
 
     try {
@@ -148,6 +162,12 @@ export default function ManageEventsPage() {
   
   const formatDate = (timestamp: Timestamp) => format(timestamp.toDate(), 'MMM d, yyyy, h:mm a');
 
+  const getCohortNameById = (cohortId: string | null | undefined): string => {
+    if (!cohortId) return 'N/A';
+    const cohort = cohorts.find(c => c.id === cohortId);
+    return cohort ? cohort.name : `ID: ${cohortId.substring(0,6)}...`;
+  };
+
   const handleViewRsvps = async (event: PortalEvent) => {
     if (!userProfile?.isSuperAdmin) {
         toast({ title: "Access Denied", description: "Only Super Admins can view attendee lists.", variant: "default" });
@@ -172,7 +192,7 @@ export default function ManageEventsPage() {
   };
 
 
-  if (authLoading || loadingEvents) {
+  if (authLoading || loadingEvents || loadingCohorts) {
     return <div className="flex justify-center items-center h-screen"><LoadingSpinner size={48} /></div>;
   }
   if (userProfile?.role !== 'ADMIN_FACULTY') {
@@ -230,8 +250,8 @@ export default function ManageEventsPage() {
                   <TableRow>
                     <TableHead className="min-w-[200px]">Title</TableHead>
                     <TableHead>Category</TableHead>
+                    <TableHead>Audience</TableHead>
                     <TableHead>Start Time</TableHead>
-                    <TableHead>Location</TableHead>
                     <TableHead>RSVPs</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -241,8 +261,12 @@ export default function ManageEventsPage() {
                     <TableRow key={event.id}>
                       <TableCell className="font-medium max-w-xs truncate" title={event.title}>{event.title}</TableCell>
                       <TableCell className="text-sm capitalize">{event.category.toLowerCase().replace('_', ' ')}</TableCell>
+                       <TableCell className="text-sm">
+                        {event.targetAudience === 'SPECIFIC_COHORT' && event.cohortId 
+                          ? `Cohort: ${getCohortNameById(event.cohortId)}` 
+                          : 'All Users'}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{formatDate(event.startDateTime)}</TableCell>
-                      <TableCell className="text-sm">{event.location}</TableCell>
                       <TableCell className="text-sm">
                          {userProfile.isSuperAdmin ? (
                             <Button
@@ -270,9 +294,9 @@ export default function ManageEventsPage() {
                           <AlertDialogContent>
                             <AlertDialogHeader>
                               <AlertDialogTitle className="flex items-center gap-2"><AlertTriangle className="text-destructive" /> Are you sure?</AlertDialogTitle>
-                              <AlertDialogDescription>
+                              <AlertDialogModalDescription>
                                 This will permanently delete the event "{event.title}". This action cannot be undone.
-                              </AlertDialogDescription>
+                              </AlertDialogModalDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>

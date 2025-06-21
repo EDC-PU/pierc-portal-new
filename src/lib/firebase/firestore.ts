@@ -434,6 +434,119 @@ export const deleteAnnouncement = async (announcementId: string, adminProfile: U
   );
 };
 
+export const getDashboardAnnouncementsStream = (cohortId: string | null, callback: (announcements: Announcement[]) => void, limitCount: number) => {
+    const announcementsCol = collection(db, 'announcements');
+    const announcementsMap = new Map<string, Announcement>();
+
+    const processAndCallback = () => {
+        const announcements = Array.from(announcementsMap.values());
+        announcements.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+        callback(announcements.slice(0, limitCount));
+    };
+
+    const qAll = query(announcementsCol,
+        where('targetAudience', '==', 'ALL'),
+        where('isUrgent', '==', false),
+        orderBy('createdAt', 'desc'),
+        limit(limitCount)
+    );
+
+    const unsubAll = onSnapshot(qAll, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "removed") {
+                announcementsMap.delete(change.doc.id);
+            } else {
+                announcementsMap.set(change.doc.id, { id: change.doc.id, ...change.doc.data() } as Announcement);
+            }
+        });
+        processAndCallback();
+    }, (error) => console.error("Error fetching 'ALL' audience announcements:", error));
+
+    let unsubCohort: (() => void) | null = null;
+    if (cohortId) {
+        const qCohort = query(announcementsCol,
+            where('targetAudience', '==', 'SPECIFIC_COHORT'),
+            where('cohortId', '==', cohortId),
+            where('isUrgent', '==', false),
+            orderBy('createdAt', 'desc'),
+            limit(limitCount)
+        );
+        unsubCohort = onSnapshot(qCohort, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "removed") {
+                    announcementsMap.delete(change.doc.id);
+                } else {
+                    announcementsMap.set(change.doc.id, { id: change.doc.id, ...change.doc.data() } as Announcement);
+                }
+            });
+            processAndCallback();
+        }, (error) => console.error(`Error fetching announcements for cohort ${cohortId}:`, error));
+    }
+    
+    return () => {
+        unsubAll();
+        if (unsubCohort) unsubCohort();
+    };
+};
+
+export const getDashboardEventsStream = (cohortId: string | null, callback: (events: PortalEvent[]) => void, limitCount: number) => {
+    const eventsCol = collection(db, 'events');
+    const eventsMap = new Map<string, PortalEvent>();
+
+    const processAndCallback = () => {
+        const events = Array.from(eventsMap.values());
+        events.sort((a, b) => a.startDateTime.toMillis() - b.startDateTime.toMillis());
+        callback(events.slice(0, limitCount));
+    };
+
+    const qAll = query(
+        eventsCol,
+        where('startDateTime', '>=', Timestamp.now()),
+        where('targetAudience', '==', 'ALL'),
+        orderBy('startDateTime', 'asc'),
+        limit(limitCount)
+    );
+
+    const unsubAll = onSnapshot(qAll, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "removed") {
+                eventsMap.delete(change.doc.id);
+            } else {
+                eventsMap.set(change.doc.id, { id: change.doc.id, ...change.doc.data() } as PortalEvent);
+            }
+        });
+        processAndCallback();
+    }, (error) => console.error("Error fetching 'ALL' audience events:", error));
+
+    let unsubCohort: (() => void) | null = null;
+    if (cohortId) {
+        const qCohort = query(
+            eventsCol,
+            where('startDateTime', '>=', Timestamp.now()),
+            where('targetAudience', '==', 'SPECIFIC_COHORT'),
+            where('cohortId', '==', cohortId),
+            orderBy('startDateTime', 'asc'),
+            limit(limitCount)
+        );
+        unsubCohort = onSnapshot(qCohort, (snapshot) => {
+            snapshot.docChanges().forEach((change) => {
+                if (change.type === "removed") {
+                    eventsMap.delete(change.doc.id);
+                } else {
+                    eventsMap.set(change.doc.id, { id: change.doc.id, ...change.doc.data() } as PortalEvent);
+                }
+            });
+            processAndCallback();
+        }, (error) => console.error(`Error fetching events for cohort ${cohortId}:`, error));
+    }
+
+    return () => {
+        unsubAll();
+        if (unsubCohort) unsubCohort();
+    };
+};
+
+
 // Idea Submission functions
 export const createIdeaFromProfile = async (
   userId: string,
@@ -2083,6 +2196,7 @@ export const createEventFS = async (eventData: Omit<PortalEvent, 'id' | 'created
     const eventCol = collection(db, 'events');
     const newEventPayload: Omit<PortalEvent, 'id'> = {
         ...eventData,
+        cohortId: eventData.targetAudience === 'SPECIFIC_COHORT' ? eventData.cohortId : null,
         rsvps: [],
         rsvpCount: 0,
         createdByUid: adminProfile.uid,
@@ -2101,7 +2215,11 @@ export const createEventFS = async (eventData: Omit<PortalEvent, 'id' | 'created
 
 export const updateEventFS = async (eventId: string, dataToUpdate: Partial<Omit<PortalEvent, 'id'>>, adminProfile: UserProfile): Promise<void> => {
     const eventRef = doc(db, 'events', eventId);
-    await updateDoc(eventRef, { ...dataToUpdate, updatedAt: serverTimestamp() });
+    const updateData = { ...dataToUpdate };
+    if (dataToUpdate.targetAudience === 'ALL') {
+        updateData.cohortId = null;
+    }
+    await updateDoc(eventRef, { ...updateData, updatedAt: serverTimestamp() });
     await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_EVENT_UPDATED', { type: 'EVENT', id: eventId, displayName: dataToUpdate.title || undefined }, { fieldsUpdated: Object.keys(dataToUpdate) });
 };
 
@@ -2128,11 +2246,12 @@ export const getAllEventsStream = (callback: (events: PortalEvent[]) => void) =>
     });
 };
 
-export const getUpcomingEventsStream = (callback: (events: PortalEvent[]) => void, limitCount: number) => {
+export const getPublicUpcomingEventsStream = (callback: (events: PortalEvent[]) => void, limitCount: number) => {
     const eventsCol = collection(db, 'events');
     const q = query(
         eventsCol,
         where('startDateTime', '>=', Timestamp.now()),
+        where('targetAudience', '==', 'ALL'),
         orderBy('startDateTime', 'asc'),
         limit(limitCount)
     );

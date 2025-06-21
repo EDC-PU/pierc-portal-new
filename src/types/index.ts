@@ -227,6 +227,8 @@ export interface PortalEvent {
     endDateTime: Timestamp;
     location: string;
     category: EventCategory;
+    targetAudience: 'ALL' | 'SPECIFIC_COHORT';
+    cohortId?: string | null;
     flyerUrl?: string | null;
     flyerFileName?: string | null;
     rsvps: string[]; // Array of user UIDs who have RSVP'd

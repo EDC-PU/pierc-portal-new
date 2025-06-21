@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
-import type { PortalEvent, EventCategory } from '@/types';
+import type { PortalEvent, EventCategory, Cohort } from '@/types';
 import { Calendar as CalendarIcon, Upload, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
@@ -19,8 +19,10 @@ import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { getAllCohortsStream } from '@/lib/firebase/firestore';
 
-const eventSchema = z.object({
+const eventSchemaBase = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(100),
   description: z.string().min(10, 'Description must be at least 10 characters').max(2000),
   location: z.string().min(3, 'Location is required').max(100),
@@ -30,13 +32,28 @@ const eventSchema = z.object({
   startDateTime: z.date({ required_error: "Start date and time are required." }),
   endDateTime: z.date({ required_error: "End date and time are required." }),
   flyerFile: z.custom<File | null>(f => f === null || f instanceof File).optional(),
-}).refine(data => data.endDateTime > data.startDateTime, {
-  message: "End time must be after start time.",
-  path: ["endDateTime"],
+  targetAudience: z.enum(['ALL', 'SPECIFIC_COHORT']).default('ALL'),
+  cohortId: z.string().optional().nullable(),
+});
+
+const eventSchema = eventSchemaBase.superRefine((data, ctx) => {
+    if (data.endDateTime <= data.startDateTime) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "End time must be after start time.",
+            path: ["endDateTime"],
+        });
+    }
+    if (data.targetAudience === 'SPECIFIC_COHORT' && !data.cohortId) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Cohort selection is required when targeting a specific cohort.',
+            path: ['cohortId'],
+        });
+    }
 });
 
 export type EventFormData = z.infer<typeof eventSchema>;
-type EventSaveData = Omit<PortalEvent, 'id' | 'createdAt' | 'updatedAt' | 'createdByUid' | 'creatorDisplayName' | 'rsvps' | 'rsvpCount'>;
 
 interface EventFormProps {
   initialData?: PortalEvent | null;
@@ -46,6 +63,8 @@ interface EventFormProps {
 
 export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormProps) {
   const [preview, setPreview] = useState<string | null>(initialData?.flyerUrl || null);
+  const [cohorts, setCohorts] = useState<Cohort[]>([]);
+  const [loadingCohorts, setLoadingCohorts] = useState(false);
 
   const { control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<EventFormData>({
     resolver: zodResolver(eventSchema),
@@ -57,8 +76,28 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
       startDateTime: initialData?.startDateTime?.toDate() || new Date(),
       endDateTime: initialData?.endDateTime?.toDate() || new Date(new Date().getTime() + 60 * 60 * 1000),
       flyerFile: null,
+      targetAudience: initialData?.targetAudience || 'ALL',
+      cohortId: initialData?.cohortId || null,
     },
   });
+  
+  const currentTargetAudience = watch('targetAudience');
+  
+  useEffect(() => {
+    setLoadingCohorts(true);
+    const unsubscribe = getAllCohortsStream((fetchedCohorts) => {
+      setCohorts(fetchedCohorts);
+      setLoadingCohorts(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    if (currentTargetAudience === 'ALL') {
+      setValue('cohortId', null);
+    }
+  }, [currentTargetAudience, setValue]);
+
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] || null;
@@ -81,8 +120,6 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
     if (fileInput) fileInput.value = '';
     
     if (initialData?.flyerUrl) {
-      // Here you could add logic to mark the flyer for deletion on the backend
-      // For now, we'll just remove it from the preview
       console.log("Flyer removed from form. Backend deletion would be handled on save.");
     }
   };
@@ -115,26 +152,66 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
         {errors.title && <p className="text-sm text-destructive mt-1">{errors.title.message}</p>}
       </div>
 
-      <div>
-        <Label htmlFor="category">Category</Label>
-        <Controller
-          name="category"
-          control={control}
-          render={({ field }) => (
-            <Select onValueChange={field.onChange} value={field.value}>
-              <SelectTrigger id="category"><SelectValue placeholder="Select a category" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="WORKSHOP">Workshop</SelectItem>
-                <SelectItem value="DEADLINE">Deadline</SelectItem>
-                <SelectItem value="MEETING">Meeting</SelectItem>
-                <SelectItem value="WEBINAR">Webinar</SelectItem>
-                <SelectItem value="OTHER">Other</SelectItem>
-              </SelectContent>
-            </Select>
-          )}
-        />
-        {errors.category && <p className="text-sm text-destructive mt-1">{errors.category.message}</p>}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+            <Label htmlFor="category">Category</Label>
+            <Controller
+            name="category"
+            control={control}
+            render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value}>
+                <SelectTrigger id="category"><SelectValue placeholder="Select a category" /></SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="WORKSHOP">Workshop</SelectItem>
+                    <SelectItem value="DEADLINE">Deadline</SelectItem>
+                    <SelectItem value="MEETING">Meeting</SelectItem>
+                    <SelectItem value="WEBINAR">Webinar</SelectItem>
+                    <SelectItem value="OTHER">Other</SelectItem>
+                </SelectContent>
+                </Select>
+            )}
+            />
+            {errors.category && <p className="text-sm text-destructive mt-1">{errors.category.message}</p>}
+        </div>
+        <div>
+            <Label>Target Audience</Label>
+            <Controller
+              name="targetAudience"
+              control={control}
+              render={({ field }) => (
+                <RadioGroup onValueChange={field.onChange} value={field.value} className="flex space-x-4 pt-2">
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="ALL" id="audience-all" />
+                    <Label htmlFor="audience-all" className="font-normal">All Users</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="SPECIFIC_COHORT" id="audience-cohort" /> 
+                    <Label htmlFor="audience-cohort" className="font-normal">Specific Cohort</Label>
+                  </div>
+                </RadioGroup>
+              )}
+            />
+        </div>
       </div>
+
+       {currentTargetAudience === 'SPECIFIC_COHORT' && (
+        <div className="space-y-2">
+            <Label htmlFor="cohortId">Select Cohort</Label>
+            {loadingCohorts ? (
+            <div className="flex items-center"><LoadingSpinner size={16} className="mr-2" /><span className="text-sm text-muted-foreground">Loading cohorts...</span></div>
+            ) : cohorts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No cohorts available.</p>
+            ) : (
+            <Controller name="cohortId" control={control} render={({ field }) => (
+                <Select onValueChange={field.onChange} value={field.value || undefined} disabled={loadingCohorts || cohorts.length === 0}>
+                    <SelectTrigger id="cohortId" className="w-full md:w-[300px]"><SelectValue placeholder="Select a cohort" /></SelectTrigger>
+                    <SelectContent>{cohorts.map(cohort => (<SelectItem key={cohort.id!} value={cohort.id!}>{cohort.name}</SelectItem>))}</SelectContent>
+                </Select>
+            )} />
+            )}
+            {errors.cohortId && <p className="text-sm text-destructive mt-1">{errors.cohortId.message}</p>}
+        </div>
+        )}
 
       <div>
         <Label htmlFor="description">Description</Label>

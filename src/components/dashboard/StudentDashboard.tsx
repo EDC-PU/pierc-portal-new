@@ -23,8 +23,8 @@ import {
   addExpenseToSanctionFS,
   applyForNextSanctionFS,
   updateIdeaOutlineAIGeneratedStatus, 
-  getAnnouncementsStream,
-  getUpcomingEventsStream,
+  getDashboardAnnouncementsStream,
+  getDashboardEventsStream,
 } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -189,17 +189,25 @@ export default function StudentDashboard() {
   const { control: expenseControl, handleSubmit: handleExpenseSubmit, reset: resetExpenseForm, formState: { errors: expenseErrors }, setValue: setExpenseValue } = useForm<ExpenseFormData>({
     resolver: zodResolver(expenseSchema), defaultValues: { description: '', amount: 0, proofFile: null }
   });
+  
+  const userCohortId = useMemo(() => {
+    if (isTeamMemberForIdea) {
+      return isTeamMemberForIdea.cohortId || null;
+    }
+    const ideaInCohort = userIdeas.find(idea => idea.programPhase === 'COHORT' && idea.cohortId);
+    return ideaInCohort?.cohortId || null;
+  }, [userIdeas, isTeamMemberForIdea]);
 
 
   useEffect(() => {
     if (user?.uid) {
       setLoadingDashboardWidgets(true);
-      const unsubAnnouncements = getAnnouncementsStream((announcements) => {
+      const unsubAnnouncements = getDashboardAnnouncementsStream(userCohortId, (announcements) => {
         setRecentAnnouncements(announcements);
         if (loadingDashboardWidgets) setLoadingDashboardWidgets(false);
       }, 3);
 
-      const unsubEvents = getUpcomingEventsStream((events) => {
+      const unsubEvents = getDashboardEventsStream(userCohortId, (events) => {
         setUpcomingEvents(events);
         if (loadingDashboardWidgets) setLoadingDashboardWidgets(false);
       }, 3);
@@ -211,7 +219,7 @@ export default function StudentDashboard() {
     } else {
         setLoadingDashboardWidgets(false);
     }
-  }, [user?.uid]);
+  }, [user?.uid, userCohortId]);
 
   const fetchUserIdeasAndUpdateState = async (currentSelectedIdeaIdToPreserve?: string) => {
     if (!user?.uid) {
