@@ -777,7 +777,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       sanction2UtilizationStatus: ideaData.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
       sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
       sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
-      sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+      sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission);
   });
 
@@ -880,7 +880,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       sanction2UtilizationStatus: ideaData.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
       sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
       sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
-      sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+      sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
     } as IdeaSubmission);
   });
 
