@@ -7,7 +7,7 @@ import { getFunctions } from 'firebase/functions';
 
 // Your web app's Firebase configuration from environment variables
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
@@ -18,12 +18,13 @@ const firebaseConfig = {
 // Map of config keys to their expected environment variable names.
 // This is used for creating a more accurate error message.
 const configToEnvVarMap: Record<keyof typeof firebaseConfig, string> = {
-    apiKey: 'NEXT_PUBLIC_FIREBASE_API_KEY',
+    apiKey: 'NEXT_PUBLIC_FIREBASE_API',
     authDomain: 'NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN',
     projectId: 'NEXT_PUBLIC_FIREBASE_PROJECT_ID',
     storageBucket: 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
     messagingSenderId: 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
     appId: 'NEXT_PUBLIC_FIREBASE_APP_ID',
+  
 };
 
 // Check if all required environment variables are defined.
