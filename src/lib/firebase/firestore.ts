@@ -380,7 +380,7 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
 
 export const getAllAnnouncementsForAdminStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  const q = query(cohortsCol, orderBy('createdAt', 'desc'));
+  const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
 
   return onSnapshot(q, (querySnapshot) => {
     const announcements: Announcement[] = [];
@@ -821,7 +821,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
 
   const ideaSubmissions: IdeaSubmission[] = [];
   ideasSnapshot.docs.forEach(ideaDoc => {
-    const ideaData = doc.data() as Omit<IdeaSubmission, 'id'>;
+    const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
     const userProfile = ideaData.userId ? profilesMap.get(ideaData.userId) : null;
 
     const applicantDisplayName = userProfile ? (userProfile.displayName || userProfile.fullName || 'Unknown User') : ideaData.applicantDisplayName || 'N/A';
@@ -2142,6 +2142,59 @@ export const toggleRsvpForEvent = async (eventId: string, eventTitle: string, us
 
     await updateDoc(eventRef, { rsvps: updatedRsvps, rsvpCount: newRsvpCount });
     await logUserActivity(actorProfile.uid, actorProfile.displayName || actorProfile.fullName, 'USER_RSVP_SUBMITTED', { type: 'EVENT', id: eventId, displayName: eventTitle }, { rsvp: !currentRsvps.includes(userId) });
+};
+
+export const getProfilesForUids = async (uids: string[]): Promise<UserProfile[]> => {
+  if (!uids || uids.length === 0) {
+    return [];
+  }
+
+  const profiles: UserProfile[] = [];
+  const usersCol = collection(db, 'users');
+
+  const CHUNK_SIZE = 30;
+  for (let i = 0; i < uids.length; i += CHUNK_SIZE) {
+    const uidsChunk = uids.slice(i, i + CHUNK_SIZE);
+    if (uidsChunk.length > 0) {
+        const q = query(usersCol, where('uid', 'in', uidsChunk));
+        const querySnapshot = await getDocs(q);
+        querySnapshot.forEach((doc) => {
+            const data = doc.data();
+            const profile: UserProfile = {
+                uid: doc.id,
+                email: data.email ?? null,
+                displayName: data.displayName ?? null,
+                photoURL: data.photoURL ?? null,
+                role: data.role ?? null,
+                fullName: data.fullName ?? '',
+                contactNumber: data.contactNumber ?? '',
+                applicantCategory: data.applicantCategory ?? null,
+                currentStage: data.currentStage ?? null,
+                startupTitle: data.startupTitle ?? null,
+                problemDefinition: data.problemDefinition ?? null,
+                solutionDescription: data.solutionDescription ?? null,
+                uniqueness: data.uniqueness ?? null,
+                enrollmentNumber: data.enrollmentNumber || null,
+                college: data.college || null,
+                instituteName: data.instituteName || null,
+                createdAt: data.createdAt,
+                updatedAt: data.updatedAt,
+                isSuperAdmin: false,
+                isTeamMemberOnly: data.isTeamMemberOnly === true,
+                associatedIdeaId: data.associatedIdeaId ?? null,
+                associatedTeamLeaderUid: data.associatedTeamLeaderUid ?? null,
+            };
+             if (profile.email === 'pranavrathi07@gmail.com') {
+                profile.isSuperAdmin = true;
+            } else if (data.isSuperAdmin === true) {
+                profile.isSuperAdmin = true;
+            }
+            profiles.push(profile);
+        });
+    }
+  }
+
+  return profiles;
 };
 
 

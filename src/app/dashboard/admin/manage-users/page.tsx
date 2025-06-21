@@ -1,9 +1,9 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { getAllUsers, updateUserRoleAndPermissionsFS, deleteUserAccountAndProfile, updateUserProfile } from '@/lib/firebase/firestore';
 import type { UserProfile, Role } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2, Edit3 } from 'lucide-react';
+import { ShieldCheck, UserCog, Users, ShieldAlert, ShieldQuestion, Trash2, Edit3, Search } from 'lucide-react';
 import { AdminEditUserProfileForm, type AdminEditableProfileFormData } from '@/components/admin/AdminEditUserProfileForm';
 import {
   AlertDialog,
@@ -26,10 +26,12 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Input } from '@/components/ui/input';
 
 export default function ManageUsersPage() {
   const { userProfile: adminUserProfile, loading: authLoading, initialLoadComplete } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
 
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -39,6 +41,7 @@ export default function ManageUsersPage() {
   const [dialogAction, setDialogAction] = useState<'promoteAdmin' | 'demoteAdmin' | 'promoteSuper' | 'demoteSuper' | 'deleteUser' | null>(null);
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isEditProfileDialogOpen, setIsEditProfileDialogOpen] = useState(false);
+  const [filterTerm, setFilterTerm] = useState('');
 
 
   useEffect(() => {
@@ -51,6 +54,24 @@ export default function ManageUsersPage() {
       }
     }
   }, [adminUserProfile, authLoading, initialLoadComplete, router, toast]);
+  
+  useEffect(() => {
+    const search = searchParams.get('search');
+    if (search) {
+        setFilterTerm(search);
+    }
+  }, [searchParams]);
+
+  const filteredUsers = useMemo(() => {
+    if (!filterTerm) return users;
+    const lowercasedFilter = filterTerm.toLowerCase();
+    return users.filter(user =>
+        (user.displayName && user.displayName.toLowerCase().includes(lowercasedFilter)) ||
+        (user.fullName && user.fullName.toLowerCase().includes(lowercasedFilter)) ||
+        (user.email && user.email.toLowerCase().includes(lowercasedFilter))
+    );
+  }, [users, filterTerm]);
+
 
   const fetchUsers = async () => {
     setLoadingUsers(true);
@@ -198,10 +219,26 @@ export default function ManageUsersPage() {
         <CardHeader>
           <CardTitle>All Portal Users</CardTitle>
           <CardDescription>View and manage roles for all registered users. Be cautious with permission changes and account deletions.</CardDescription>
+          <div className="pt-4">
+            <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input 
+                    placeholder="Filter users by name or email..."
+                    value={filterTerm}
+                    onChange={(e) => setFilterTerm(e.target.value)}
+                    className="pl-8"
+                />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          {users.length === 0 ? (
-            <p className="text-center text-muted-foreground py-8">No users found.</p>
+          {loadingUsers ? (
+            <div className="flex justify-center items-center py-10">
+              <LoadingSpinner />
+              <p className="ml-2">Loading users...</p>
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No users found matching your filter.</p>
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -214,7 +251,7 @@ export default function ManageUsersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {users.map((u) => (
+                  {filteredUsers.map((u) => (
                     <TableRow key={u.uid}>
                       <TableCell className="font-medium max-w-xs truncate" title={u.displayName || u.email || u.uid}>{u.displayName || u.email}</TableCell>
                       <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{u.email}</TableCell>
@@ -323,5 +360,3 @@ export default function ManageUsersPage() {
     </div>
   );
 }
-
-    
