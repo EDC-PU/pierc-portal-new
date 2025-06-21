@@ -1,10 +1,8 @@
 
 import * as admin from 'firebase-admin';
-import { config } from 'dotenv';
 
-// Load environment variables right at the start of this module.
-// This ensures they are available for any server-side code that imports this module.
-config();
+// NOTE: The `dotenv` call was removed. Next.js handles server-side environment variables automatically.
+// This avoids potential conflicts or incorrect loading order.
 
 // This new structure ensures Firebase Admin is initialized only when one of its services is first accessed.
 // This is safer for Next.js and provides better error handling.
@@ -48,8 +46,9 @@ function ensureAdminInitialized() {
     });
     console.log("Firebase Admin SDK initialized on first use.");
   } catch (error: any) {
-     console.error('Firebase Admin SDK initialization error. Check your service account credentials.', error.stack);
-     throw new Error('Firebase Admin SDK could not be initialized. See server logs for details.');
+     console.error('Firebase Admin SDK initialization error. Check your service account credentials.', error);
+     // Re-throw a more specific error to help with debugging by including the original Firebase error message.
+     throw new Error(`Firebase Admin SDK initialization failed: ${error.message}. Please check your service account credentials in the .env file.`);
   }
 }
 
