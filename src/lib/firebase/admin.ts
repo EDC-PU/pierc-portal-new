@@ -1,8 +1,6 @@
+
 import 'dotenv/config';
 import * as admin from 'firebase-admin';
-
-// NOTE: The `dotenv` call was removed. Next.js handles server-side environment variables automatically.
-// This avoids potential conflicts or incorrect loading order.
 
 // This new structure ensures Firebase Admin is initialized only when one of its services is first accessed.
 // This is safer for Next.js and provides better error handling.
@@ -22,7 +20,8 @@ function ensureAdminInitialized() {
   
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  // The private key must have its escaped newlines replaced with actual newlines.
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
   // Check if all required environment variables are present and throw a clear error if not.
@@ -37,7 +36,6 @@ function ensureAdminInitialized() {
       credential: admin.credential.cert({
         projectId: projectId,
         clientEmail: clientEmail,
-        // The private key is passed directly, assuming the .env parser handles newlines correctly.
         privateKey: privateKey,
       }),
       storageBucket,
