@@ -1140,6 +1140,11 @@ export const updateIdeaStatusAndPhase = async (
   const oldStatus = oldIdeaData.status;
   const oldPhase = oldIdeaData.programPhase;
 
+  // Do not proceed if status is not changing, unless phase is also changing
+  if (oldStatus === newStatus && oldPhase === newPhase && !remarks && !nextPhaseDetails) {
+    return;
+  }
+
   const updates: {[key: string]: any} = {
     status: newStatus,
     updatedAt: serverTimestamp(),
