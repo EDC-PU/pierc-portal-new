@@ -40,6 +40,7 @@ export interface UserProfile {
   problemDefinition: string;
   solutionDescription: string;
   uniqueness: string;
+  teamMembers?: string; // Legacy
 
   enrollmentNumber?: string;
   college?: string;
@@ -283,6 +284,3 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>;
 }
-    
-
-    

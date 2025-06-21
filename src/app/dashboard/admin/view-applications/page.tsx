@@ -1322,7 +1322,7 @@ export default function ViewApplicationsPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="py-4 space-y-4">
-                <Accordion type="multiple" defaultValue={['basic', 'team', 'funding']} className="w-full">
+                <Accordion type="multiple" defaultValue={['basic', 'team', 'fundingAdmin']} className="w-full">
                     <AccordionItem value="basic">
                         <AccordionTrigger>Basic Idea & Applicant Info</AccordionTrigger>
                         <AccordionContent className="space-y-3">
@@ -1348,8 +1348,8 @@ export default function ViewApplicationsPage() {
                                 {selectedApplication.studioLocation && (<div><h4 className="font-semibold text-muted-foreground text-xs">Preferred Studio Location</h4><p>{selectedApplication.studioLocation}</p></div>)}
                                 {selectedApplication.status === 'NOT_SELECTED' && selectedApplication.rejectionRemarks && (<div><h4 className="font-semibold text-muted-foreground text-xs text-destructive flex items-center"><MessageSquareWarning className="h-4 w-4 mr-1" /> Rejection Remarks & Guidance</h4><p className="whitespace-pre-wrap bg-destructive/10 p-2 rounded-md text-destructive-foreground/90 text-sm">{selectedApplication.rejectionRemarks}</p>{selectedApplication.rejectedByUid && <p className="text-xs text-muted-foreground mt-1">By admin: {selectedApplication.rejectedByDisplayName || `UID ${selectedApplication.rejectedByUid.substring(0,5)}...`} on {formatDateOnly(selectedApplication.rejectedAt)}</p>}</div>)}
                                 {selectedApplication.programPhase === 'PHASE_2' && selectedApplication.phase2PptUrl && (<div><h4 className="font-semibold text-muted-foreground text-xs">Phase 2 Presentation</h4><a href={selectedApplication.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{selectedApplication.phase2PptFileName || 'View Phase 2 Presentation'}</a>{selectedApplication.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-1">Uploaded on {formatDateOnly(selectedApplication.phase2PptUploadedAt)}</p>}</div>)}
-                                {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase && (selectedApplication.programPhase === 'PHASE_1' || selectedApplication.programPhase === 'PHASE_2') && selectedApplication.nextPhaseDate && (
-                                    <Card className="mt-2 border-primary/30 text-sm"><CardHeader className="pb-1 pt-2 px-3"><CardTitle className="text-sm font-semibold text-primary flex items-center"><ChevronsRight className="h-4 w-4 mr-1"/> Next Step: {getProgramPhaseLabel(selectedApplication.programPhase)} Details</CardTitle></CardHeader><CardContent className="px-3 pb-2 space-y-0.5"><p><strong>Date:</strong> {formatDateOnly(selectedApplication.nextPhaseDate)}</p><p><strong>Time:</strong> {selectedApplication.nextPhaseStartTime} - {selectedApplication.nextPhaseEndTime}</p><p><strong>Venue:</strong> {selectedApplication.nextPhaseVenue}</p><p className="font-medium mt-1">Guidelines:</p><p className="whitespace-pre-wrap text-xs bg-muted/20 p-1.5 rounded-md">{selectedApplication.nextPhaseGuidelines}</p></CardContent></Card>
+                                {selectedApplication.status === 'SELECTED' && selectedApplication.programPhase && (selectedApplication.programPhase === 'PHASE_1' || selectedApplication.programPhase === 'PHASE_2' || selectedApplication.programPhase === 'INCUBATED') && selectedApplication.nextPhaseDate && (
+                                    <Card className="mt-2 border-primary/30 text-sm"><CardHeader className="pb-1 pt-2 px-3"><CardTitle className="text-sm font-semibold text-primary flex items-center"><ChevronsRight className="h-4 w-4 mr-1"/> Next Step: {getProgramPhaseLabel(selectedApplication.programPhase)} Details</CardTitle></CardHeader><CardContent className="px-3 pb-2 space-y-0.5"><p><strong>Date:</strong> {formatDateOnly(selectedApplication.nextPhaseDate)}</p><p><strong>Time:</strong> {selectedApplication.nextPhaseStartTime} - {selectedApplication.nextPhaseEndTime}</p><p><strong>Venue:</strong> {selectedApplication.nextPhaseVenue}</p><p className="font-medium mt-1">Guidelines:</p><p className="text-xs whitespace-pre-wrap bg-muted/20 p-1.5 rounded-md">{selectedApplication.nextPhaseGuidelines}</p></CardContent></Card>
                                 )}
                             </div>
                         </AccordionContent>
@@ -1506,6 +1506,3 @@ export default function ViewApplicationsPage() {
     </div>
   );
 }
-    
-
-    

@@ -1600,7 +1600,3 @@ export default function StudentDashboard() {
     </Tabs>
   );
 }
-
-
-
-    
