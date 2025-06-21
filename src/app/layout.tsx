@@ -33,7 +33,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} h-full`}>
+    <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} h-full`} suppressHydrationWarning={true}>
       <body className="font-body bg-background text-foreground flex flex-col h-full">
         <AuthProvider>
           <AuthInitializer> {/* Ensures Firebase auth is checked before rendering children */}
