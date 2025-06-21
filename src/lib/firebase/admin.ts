@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import * as admin from 'firebase-admin';
 
 // NOTE: The `dotenv` call was removed. Next.js handles server-side environment variables automatically.
@@ -36,8 +37,8 @@ function ensureAdminInitialized() {
       credential: admin.credential.cert({
         projectId: projectId,
         clientEmail: clientEmail,
-        // The 'replace' is crucial for keys stored in single-line env vars.
-        privateKey: privateKey.replace(/\\n/g, '\n'),
+        // The private key is passed directly, assuming the .env parser handles newlines correctly.
+        privateKey: privateKey,
       }),
       storageBucket,
     });
