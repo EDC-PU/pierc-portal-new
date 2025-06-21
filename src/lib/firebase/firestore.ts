@@ -380,7 +380,7 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
 
 export const getAllAnnouncementsForAdminStream = (callback: (announcements: Announcement[]) => void) => {
   const announcementsCol = collection(db, 'announcements');
-  const q = query(announcementsCol, orderBy('createdAt', 'desc'));
+  const q = query(cohortsCol, orderBy('createdAt', 'desc'));
 
   return onSnapshot(q, (querySnapshot) => {
     const announcements: Announcement[] = [];
@@ -821,7 +821,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
 
   const ideaSubmissions: IdeaSubmission[] = [];
   ideasSnapshot.docs.forEach(ideaDoc => {
-    const ideaData = ideaDoc.data() as Omit<IdeaSubmission, 'id'>;
+    const ideaData = doc.data() as Omit<IdeaSubmission, 'id'>;
     const userProfile = ideaData.userId ? profilesMap.get(ideaData.userId) : null;
 
     const applicantDisplayName = userProfile ? (userProfile.displayName || userProfile.fullName || 'Unknown User') : ideaData.applicantDisplayName || 'N/A';

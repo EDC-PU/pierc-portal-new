@@ -10,13 +10,15 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import type { PortalEvent, EventCategory } from '@/types';
-import { Calendar as CalendarIcon } from 'lucide-react';
+import { Calendar as CalendarIcon, Upload, Trash2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { Timestamp } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import Image from 'next/image';
 
 const eventSchema = z.object({
   title: z.string().min(3, 'Title must be at least 3 characters').max(100),
@@ -27,21 +29,24 @@ const eventSchema = z.object({
   }),
   startDateTime: z.date({ required_error: "Start date and time are required." }),
   endDateTime: z.date({ required_error: "End date and time are required." }),
+  flyerFile: z.custom<File | null>(f => f === null || f instanceof File).optional(),
 }).refine(data => data.endDateTime > data.startDateTime, {
   message: "End time must be after start time.",
   path: ["endDateTime"],
 });
 
-type EventFormData = z.infer<typeof eventSchema>;
+export type EventFormData = z.infer<typeof eventSchema>;
 type EventSaveData = Omit<PortalEvent, 'id' | 'createdAt' | 'updatedAt' | 'createdByUid' | 'creatorDisplayName' | 'rsvps' | 'rsvpCount'>;
 
 interface EventFormProps {
   initialData?: PortalEvent | null;
-  onSave: (data: EventSaveData) => Promise<void>;
+  onSave: (data: EventFormData) => Promise<void>;
   onSubmitSuccess: () => void;
 }
 
 export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormProps) {
+  const [preview, setPreview] = useState<string | null>(initialData?.flyerUrl || null);
+
   const { control, handleSubmit, watch, setValue, formState: { errors, isSubmitting } } = useForm<EventFormData>({
     resolver: zodResolver(eventSchema),
     defaultValues: {
@@ -51,8 +56,36 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
       category: initialData?.category || undefined,
       startDateTime: initialData?.startDateTime?.toDate() || new Date(),
       endDateTime: initialData?.endDateTime?.toDate() || new Date(new Date().getTime() + 60 * 60 * 1000),
+      flyerFile: null,
     },
   });
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setValue('flyerFile', file, { shouldValidate: true });
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setPreview(initialData?.flyerUrl || null);
+    }
+  };
+
+  const removeFlyer = () => {
+    setValue('flyerFile', null);
+    setPreview(null); 
+    const fileInput = document.getElementById('flyerFile') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
+    
+    if (initialData?.flyerUrl) {
+      // Here you could add logic to mark the flyer for deletion on the backend
+      // For now, we'll just remove it from the preview
+      console.log("Flyer removed from form. Backend deletion would be handled on save.");
+    }
+  };
 
   const combineDateAndTime = (date: Date, time: string): Date => {
     const [hours, minutes] = time.split(':').map(Number);
@@ -62,20 +95,11 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
   };
 
   const processSubmit = async (formData: EventFormData) => {
-    const dataToSave: EventSaveData = {
-      title: formData.title,
-      description: formData.description,
-      location: formData.location,
-      category: formData.category,
-      startDateTime: Timestamp.fromDate(formData.startDateTime),
-      endDateTime: Timestamp.fromDate(formData.endDateTime),
-    };
     try {
-      await onSave(dataToSave);
+      await onSave(formData);
       onSubmitSuccess();
     } catch (error) {
       console.error("Failed to save event from form:", error);
-      // Parent component will toast the error
     }
   };
 
@@ -116,6 +140,20 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
         <Label htmlFor="description">Description</Label>
         <Controller name="description" control={control} render={({ field }) => <Textarea id="description" rows={4} {...field} />} />
         {errors.description && <p className="text-sm text-destructive mt-1">{errors.description.message}</p>}
+      </div>
+
+       <div>
+        <Label htmlFor="flyerFile">Event Flyer (Optional)</Label>
+        <Input id="flyerFile" type="file" accept="image/png, image/jpeg, image/webp" onChange={handleFileChange} />
+        {preview && (
+          <div className="mt-4 relative w-full max-w-sm">
+            <Image src={preview} alt="Flyer preview" width={400} height={200} className="rounded-md object-contain border" />
+            <Button type="button" variant="destructive" size="icon" className="absolute top-2 right-2 h-7 w-7" onClick={removeFlyer}>
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+        {errors.flyerFile && <p className="text-sm text-destructive mt-1">{errors.flyerFile.message}</p>}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

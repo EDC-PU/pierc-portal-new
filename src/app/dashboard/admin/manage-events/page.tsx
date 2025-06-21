@@ -2,15 +2,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { PortalEvent, UserProfile, EventCategory } from '@/types';
+import type { PortalEvent, UserProfile } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { EventForm } from '@/components/admin/EventForm';
+import { EventForm, type EventFormData } from '@/components/admin/EventForm';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createEventFS, getAllEventsStream, updateEventFS, deleteEventFS } from '@/lib/firebase/firestore';
+import { uploadEventFlyer } from '@/ai/flows/upload-event-flyer-flow';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
@@ -62,13 +63,55 @@ export default function ManageEventsPage() {
     toast({ title: "Success", description: editingEvent ? "Event updated successfully." : "Event created successfully." });
   };
   
-  const handleSaveEvent = async (data: Omit<PortalEvent, 'id' | 'createdAt' | 'updatedAt' | 'createdByUid' | 'creatorDisplayName' | 'rsvps' | 'rsvpCount'>) => {
+  const fileToDataUri = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  
+  const handleSaveEvent = async (formData: EventFormData) => {
     if (!userProfile) throw new Error("Admin profile not found");
+    
+    let flyerUploadResult: { flyerUrl: string | null; flyerFileName: string | null } = {
+        flyerUrl: editingEvent?.flyerUrl || null,
+        flyerFileName: editingEvent?.flyerFileName || null
+    };
+
+    if (formData.flyerFile) {
+        try {
+            const fileDataUri = await fileToDataUri(formData.flyerFile);
+            flyerUploadResult = await uploadEventFlyer({
+                fileName: formData.flyerFile.name,
+                fileDataUri: fileDataUri,
+            });
+        } catch (uploadError) {
+            toast({ title: "Flyer Upload Failed", description: "Could not upload the event flyer. Please try again.", variant: "destructive" });
+            throw uploadError;
+        }
+    } else if (initialData?.flyerUrl && !formData.flyerFile) {
+        // If there was an initial flyer but it was removed (flyerFile is null)
+        flyerUploadResult = { flyerUrl: null, flyerFileName: null };
+    }
+
+
+    const dataToSave: Omit<PortalEvent, 'id' | 'createdAt' | 'updatedAt' | 'createdByUid' | 'creatorDisplayName' | 'rsvps' | 'rsvpCount'> = {
+        title: formData.title,
+        description: formData.description,
+        location: formData.location,
+        category: formData.category,
+        startDateTime: Timestamp.fromDate(formData.startDateTime),
+        endDateTime: Timestamp.fromDate(formData.endDateTime),
+        flyerUrl: flyerUploadResult.flyerUrl,
+        flyerFileName: flyerUploadResult.flyerFileName,
+    };
+
     try {
         if (editingEvent?.id) {
-            await updateEventFS(editingEvent.id, data, userProfile);
+            await updateEventFS(editingEvent.id, dataToSave, userProfile);
         } else {
-            await createEventFS(data, userProfile);
+            await createEventFS(dataToSave, userProfile);
         }
     } catch (error: any) {
         toast({ title: "Save Error", description: error.message || "Could not save event.", variant: "destructive" });

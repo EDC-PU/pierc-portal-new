@@ -11,6 +11,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { Calendar, Clock, MapPin, Users, Check, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '@/hooks/use-toast';
+import Image from 'next/image';
 
 export default function EventsPage() {
   const { user, userProfile } = useAuth();
@@ -93,7 +94,22 @@ export default function EventsPage() {
             const hasRsvpd = user ? event.rsvps.includes(user.uid) : false;
             const isRsvping = rsvpingEventId === event.id;
             return (
-              <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow">
+              <Card key={event.id} className="flex flex-col shadow-lg hover:shadow-xl transition-shadow overflow-hidden">
+                {event.flyerUrl && (
+                  <div className="relative h-48 w-full">
+                    <Image 
+                      src={event.flyerUrl} 
+                      alt={event.title} 
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                      style={{objectFit: 'cover'}}
+                      data-ai-hint="event flyer"
+                      // In a real app, use a proper image host. Using a placeholder for the simulated URL.
+                      // This conditional logic avoids trying to load from 'storage.example.com'
+                      loader={({ src }) => src.includes('storage.example.com') ? 'https://placehold.co/600x400.png' : src}
+                    />
+                  </div>
+                )}
                 <CardHeader>
                   <CardTitle className="font-headline text-xl text-primary">{event.title}</CardTitle>
                   <CardDescription className="text-xs uppercase font-medium tracking-wider">{event.category.replace('_', ' ')}</CardDescription>
@@ -106,7 +122,7 @@ export default function EventsPage() {
                     <p className="flex items-center"><MapPin className="h-4 w-4 mr-2" /> {event.location}</p>
                   </div>
                 </CardContent>
-                <CardFooter className="flex justify-between items-center bg-muted/50 p-4 mt-4">
+                <CardFooter className="flex justify-between items-center bg-muted/50 p-4 mt-auto">
                   <div className="flex items-center text-sm text-muted-foreground">
                     <Users className="h-4 w-4 mr-2" />
                     <span>{event.rsvpCount} RSVP'd</span>
