@@ -1,9 +1,10 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import type { Announcement } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { UserCircle, CalendarDays, AlertTriangle } from 'lucide-react';
 
 interface AnnouncementCardProps {
@@ -14,9 +15,17 @@ interface AnnouncementCardProps {
 }
 
 export function AnnouncementCard({ announcement, isAdmin = false, onEdit, onDelete }: AnnouncementCardProps) {
-  const formattedDate = announcement.createdAt
-    ? formatDistanceToNow(announcement.createdAt.toDate(), { addSuffix: true })
+  const [timeAgo, setTimeAgo] = useState<string>('');
+
+  const absoluteDate = announcement.createdAt
+    ? format(announcement.createdAt.toDate(), 'MMM d, yyyy')
     : 'Date not available';
+
+  useEffect(() => {
+    if (announcement.createdAt) {
+      setTimeAgo(formatDistanceToNow(announcement.createdAt.toDate(), { addSuffix: true }));
+    }
+  }, [announcement.createdAt]);
 
   return (
     <Card className={`transition-all duration-300 hover:shadow-lg ${announcement.isUrgent ? 'border-accent ring-2 ring-accent/50' : 'border-border'}`}>
@@ -34,7 +43,7 @@ export function AnnouncementCard({ announcement, isAdmin = false, onEdit, onDele
             <UserCircle className="h-4 w-4 mr-1" /> {announcement.creatorDisplayName || 'Admin'}
           </span>
           <span className="flex items-center">
-            <CalendarDays className="h-4 w-4 mr-1" /> {formattedDate}
+            <CalendarDays className="h-4 w-4 mr-1" /> {timeAgo || absoluteDate}
           </span>
         </CardDescription>
       </CardHeader>

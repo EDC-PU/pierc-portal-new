@@ -6,7 +6,7 @@ import { getUrgentAnnouncementsStream } from '@/lib/firebase/firestore';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, X } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { useAuth } from '@/contexts/AuthContext';
 
 const URGENT_ANNOUNCEMENT_DISMISS_KEY_PREFIX = 'dismissedUrgentAnnouncement_';
@@ -16,6 +16,7 @@ export default function UrgentAnnouncementModal() {
   const [currentAnnouncement, setCurrentAnnouncement] = useState<Announcement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const { user } = useAuth(); // Use user to personalize dismissal if needed
+  const [timeAgo, setTimeAgo] = useState<string>('');
 
   useEffect(() => {
     // Only subscribe if user is logged in to avoid unnecessary reads
@@ -52,6 +53,14 @@ export default function UrgentAnnouncementModal() {
       }
     }
   }, [urgentAnnouncements]);
+  
+  // This useEffect will run on the client after hydration to set the relative time.
+  useEffect(() => {
+    if (isOpen && currentAnnouncement?.createdAt) {
+      setTimeAgo(formatDistanceToNow(currentAnnouncement.createdAt.toDate(), { addSuffix: true }));
+    }
+  }, [isOpen, currentAnnouncement]);
+
 
   const handleDismiss = () => {
     if (currentAnnouncement?.id && typeof window !== 'undefined') {
@@ -65,9 +74,10 @@ export default function UrgentAnnouncementModal() {
   if (!isOpen || !currentAnnouncement) {
     return null;
   }
-
-  const formattedDate = currentAnnouncement.createdAt
-    ? formatDistanceToNow(currentAnnouncement.createdAt.toDate(), { addSuffix: true })
+  
+  // Fallback/Server-side rendering format
+  const absoluteDate = currentAnnouncement.createdAt
+    ? format(currentAnnouncement.createdAt.toDate(), 'MMM d, yyyy')
     : 'Date not available';
 
   return (
@@ -79,7 +89,7 @@ export default function UrgentAnnouncementModal() {
             Urgent Announcement!
           </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground pt-1">
-            Posted by {currentAnnouncement.creatorDisplayName || 'Admin'} - {formattedDate}
+            Posted by {currentAnnouncement.creatorDisplayName || 'Admin'} - {timeAgo || absoluteDate}
           </DialogDescription>
         </DialogHeader>
         <div className="py-4 space-y-2">

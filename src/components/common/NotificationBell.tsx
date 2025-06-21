@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useEffect } from 'react';
@@ -11,7 +10,23 @@ import { Badge } from '@/components/ui/badge';
 import { Bell, ArrowRight } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useRouter } from 'next/navigation';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
+
+// Small component to safely render relative time on the client
+const NotificationTime = ({ time }: { time: Date }) => {
+  const [timeAgo, setTimeAgo] = useState('');
+  
+  // Set the relative time string after the component has mounted on the client
+  useEffect(() => {
+    setTimeAgo(formatDistanceToNow(time, { addSuffix: true }));
+  }, [time]);
+  
+  // Render an absolute, non-dynamic time on the server and for the initial client render
+  const absoluteTime = format(time, 'MMM d');
+  
+  return <>{timeAgo || absoluteTime}</>;
+};
+
 
 export function NotificationBell() {
   const { user, userProfile } = useAuth();
@@ -87,7 +102,7 @@ export function NotificationBell() {
                   <p className={`font-semibold ${!notif.isRead ? 'text-foreground' : 'text-muted-foreground'}`}>{notif.title}</p>
                   <p className={`text-xs ${!notif.isRead ? 'text-foreground/80' : 'text-muted-foreground/80'}`}>{notif.message}</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {formatDistanceToNow(notif.createdAt.toDate(), { addSuffix: true })}
+                    <NotificationTime time={notif.createdAt.toDate()} />
                   </p>
                 </div>
               ))
