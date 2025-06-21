@@ -217,6 +217,35 @@ export interface SystemSettings {
   updatedByUid?: string;
 }
 
+// New Event Type
+export type EventCategory = 'WORKSHOP' | 'DEADLINE' | 'MEETING' | 'WEBINAR' | 'OTHER';
+export interface PortalEvent {
+    id?: string;
+    title: string;
+    description: string;
+    startDateTime: Timestamp;
+    endDateTime: Timestamp;
+    location: string;
+    category: EventCategory;
+    rsvps: string[]; // Array of user UIDs who have RSVP'd
+    rsvpCount: number;
+    createdByUid: string;
+    creatorDisplayName: string | null;
+    createdAt: Timestamp;
+    updatedAt: Timestamp;
+}
+
+// New Notification Type
+export interface AppNotification {
+    id?: string;
+    userId: string; // The user this notification is for
+    title: string;
+    message: string;
+    link?: string; // Optional link to navigate to (e.g., /dashboard/idea/xyz)
+    isRead: boolean;
+    createdAt: Timestamp;
+}
+
 export type ActivityLogAction =
   | 'USER_PROFILE_CREATED'
   | 'USER_PROFILE_UPDATED'
@@ -225,6 +254,8 @@ export type ActivityLogAction =
   | 'USER_PASSWORD_RESET_REQUESTED'
   | 'USER_ACCOUNT_DELETED_SELF'
   | 'USER_ACCOUNT_DELETED_BY_ADMIN'
+  | 'USER_NOTIFICATIONS_READ'
+  | 'USER_RSVP_SUBMITTED'
   | 'IDEA_SUBMITTED'
   | 'IDEA_PROFILE_DATA_UPDATED'
   | 'IDEA_RESUBMITTED'
@@ -238,8 +269,8 @@ export type ActivityLogAction =
   | 'IDEA_APPLIED_FOR_NEXT_SANCTION'
   | 'ADMIN_USER_ROLE_UPDATED'
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
-  | 'ADMIN_IDEA_MENTOR_ASSIGNED'           // New action
-  | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'     // New action
+  | 'ADMIN_IDEA_MENTOR_ASSIGNED'
+  | 'ADMIN_IDEA_PHASE2_MARK_SUBMITTED'
   | 'ADMIN_IDEA_ARCHIVED_FOR_REVISION'
   | 'ADMIN_IDEA_ASSIGNED_TO_COHORT'
   | 'ADMIN_IDEA_FUNDING_DETAILS_SET'
@@ -252,11 +283,16 @@ export type ActivityLogAction =
   | 'ADMIN_COHORT_UPDATED'
   | 'ADMIN_COHORT_SCHEDULE_UPDATED'
   | 'ADMIN_COHORT_DELETED'
-  | 'ADMIN_SYSTEM_SETTINGS_UPDATED';
+  | 'ADMIN_SYSTEM_SETTINGS_UPDATED'
+  | 'ADMIN_EVENT_CREATED'
+  | 'ADMIN_EVENT_UPDATED'
+  | 'ADMIN_EVENT_DELETED';
+
 
 export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
   'USER_PROFILE_CREATED', 'USER_PROFILE_UPDATED', 'USER_SIGNED_IN', 'USER_SIGNED_OUT',
   'USER_PASSWORD_RESET_REQUESTED', 'USER_ACCOUNT_DELETED_SELF', 'USER_ACCOUNT_DELETED_BY_ADMIN',
+  'USER_NOTIFICATIONS_READ', 'USER_RSVP_SUBMITTED',
   'IDEA_SUBMITTED', 'IDEA_PROFILE_DATA_UPDATED', 'IDEA_RESUBMITTED', 'IDEA_PPT_UPLOADED',
   'IDEA_TEAM_MEMBER_ADDED', 'IDEA_TEAM_MEMBER_UPDATED', 'IDEA_TEAM_MEMBER_REMOVED',
   'USER_GENERATED_PITCH_DECK_OUTLINE',
@@ -266,8 +302,10 @@ export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
   'ADMIN_IDEA_FUNDING_DETAILS_SET', 'ADMIN_IDEA_SANCTION_DISBURSED', 'ADMIN_IDEA_SANCTION_UTILIZATION_REVIEWED',
   'ADMIN_ANNOUNCEMENT_CREATED', 'ADMIN_ANNOUNCEMENT_UPDATED', 'ADMIN_ANNOUNCEMENT_DELETED',
   'ADMIN_COHORT_CREATED', 'ADMIN_COHORT_UPDATED', 'ADMIN_COHORT_SCHEDULE_UPDATED', 'ADMIN_COHORT_DELETED',
-  'ADMIN_SYSTEM_SETTINGS_UPDATED'
+  'ADMIN_SYSTEM_SETTINGS_UPDATED',
+  'ADMIN_EVENT_CREATED', 'ADMIN_EVENT_UPDATED', 'ADMIN_EVENT_DELETED',
 ];
+
 
 export interface ActivityLogTarget {
   type: string;

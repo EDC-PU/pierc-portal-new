@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -905,8 +905,13 @@ export const updateIdeaStatusAndPhase = async (
 ): Promise<void> => {
   const ideaRef = doc(db, 'ideas', ideaId);
   const oldIdeaSnap = await getDoc(ideaRef);
-  const oldStatus = oldIdeaSnap.exists() ? oldIdeaSnap.data().status : null;
-  const oldPhase = oldIdeaSnap.exists() ? oldIdeaSnap.data().programPhase : null;
+  if (!oldIdeaSnap.exists()) {
+    throw new Error("Idea not found");
+  }
+
+  const oldStatus = oldIdeaSnap.data().status;
+  const oldPhase = oldIdeaSnap.data().programPhase;
+  const ideaOwnerUid = oldIdeaSnap.data().userId;
 
   const updates: {[key: string]: any} = {
     status: newStatus,
@@ -929,7 +934,7 @@ export const updateIdeaStatusAndPhase = async (
     }
      if (newPhase === 'INCUBATED') {
         // Initialize funding status if not already set
-        const currentData = oldIdeaSnap.exists() ? oldIdeaSnap.data() : {};
+        const currentData = oldIdeaSnap.data();
         if (currentData && !currentData.sanction1UtilizationStatus) updates.sanction1UtilizationStatus = 'NOT_APPLICABLE';
         if (currentData && !currentData.sanction2UtilizationStatus) updates.sanction2UtilizationStatus = 'NOT_APPLICABLE';
         if (currentData && !currentData.sanction1Expenses) updates.sanction1Expenses = [];
@@ -1011,6 +1016,16 @@ export const updateIdeaStatusAndPhase = async (
     }
   }
   await updateDoc(ideaRef, updates);
+
+  // Send notification to the idea owner
+  if (ideaOwnerUid && oldStatus !== newStatus) {
+    const notificationTitle = `Your idea "${ideaTitle}" has been updated.`;
+    let notificationMessage = `The status of your idea has been changed from ${oldStatus} to ${newStatus}.`;
+    if (newStatus === 'SELECTED' && newPhase) {
+      notificationMessage += ` It is now in ${getProgramPhaseLabel(newPhase)}.`;
+    }
+    await createNotification(ideaOwnerUid, notificationTitle, notificationMessage, `/dashboard/`);
+  }
 
   await logUserActivity(
     adminProfile.uid,
@@ -2058,6 +2073,114 @@ export const applyForNextSanctionFS = async (
         throw new Error("Application for sanctions beyond Sanction 2 via this method is not supported.");
     }
 };
-    
 
-    
+// Event Management Functions
+export const createEventFS = async (eventData: Omit<PortalEvent, 'id' | 'createdAt' | 'updatedAt' | 'createdByUid' | 'creatorDisplayName' | 'rsvps' | 'rsvpCount'>, adminProfile: UserProfile): Promise<PortalEvent> => {
+    const eventCol = collection(db, 'events');
+    const newEventPayload: Omit<PortalEvent, 'id'> = {
+        ...eventData,
+        rsvps: [],
+        rsvpCount: 0,
+        createdByUid: adminProfile.uid,
+        creatorDisplayName: adminProfile.displayName || adminProfile.fullName,
+        createdAt: serverTimestamp() as Timestamp,
+        updatedAt: serverTimestamp() as Timestamp,
+    };
+    const docRef = await addDoc(eventCol, newEventPayload);
+    const newDocSnap = await getDoc(docRef);
+    if (!newDocSnap.exists()) throw new Error("Could not create event.");
+
+    const createdEvent = { id: newDocSnap.id, ...newDocSnap.data() } as PortalEvent;
+    await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_EVENT_CREATED', { type: 'EVENT', id: createdEvent.id!, displayName: createdEvent.title }, { title: createdEvent.title });
+    return createdEvent;
+};
+
+export const updateEventFS = async (eventId: string, dataToUpdate: Partial<Omit<PortalEvent, 'id'>>, adminProfile: UserProfile): Promise<void> => {
+    const eventRef = doc(db, 'events', eventId);
+    await updateDoc(eventRef, { ...dataToUpdate, updatedAt: serverTimestamp() });
+    await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_EVENT_UPDATED', { type: 'EVENT', id: eventId, displayName: dataToUpdate.title || undefined }, { fieldsUpdated: Object.keys(dataToUpdate) });
+};
+
+export const deleteEventFS = async (eventId: string, adminProfile: UserProfile): Promise<void> => {
+    const eventRef = doc(db, 'events', eventId);
+    const eventSnap = await getDoc(eventRef);
+    const eventTitle = eventSnap.exists() ? eventSnap.data().title : eventId;
+    await deleteDoc(eventRef);
+    await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_EVENT_DELETED', { type: 'EVENT', id: eventId, displayName: eventTitle });
+};
+
+export const getAllEventsStream = (callback: (events: PortalEvent[]) => void) => {
+    const eventsCol = collection(db, 'events');
+    const q = query(eventsCol, orderBy('startDateTime', 'desc'));
+    return onSnapshot(q, (querySnapshot) => {
+        const events: PortalEvent[] = [];
+        querySnapshot.forEach((doc) => {
+            events.push({ id: doc.id, ...doc.data() } as PortalEvent);
+        });
+        callback(events);
+    }, (error) => {
+        console.error("Error fetching events:", error);
+        callback([]);
+    });
+};
+
+export const toggleRsvpForEvent = async (eventId: string, eventTitle: string, userId: string, actorProfile: UserProfile): Promise<void> => {
+    const eventRef = doc(db, 'events', eventId);
+    const eventSnap = await getDoc(eventRef);
+    if (!eventSnap.exists()) throw new Error("Event not found");
+
+    const currentRsvps = (eventSnap.data().rsvps as string[]) || [];
+    let updatedRsvps: string[];
+    let newRsvpCount: number;
+
+    if (currentRsvps.includes(userId)) {
+        updatedRsvps = currentRsvps.filter(id => id !== userId);
+    } else {
+        updatedRsvps = [...currentRsvps, userId];
+    }
+    newRsvpCount = updatedRsvps.length;
+
+    await updateDoc(eventRef, { rsvps: updatedRsvps, rsvpCount: newRsvpCount });
+    await logUserActivity(actorProfile.uid, actorProfile.displayName || actorProfile.fullName, 'USER_RSVP_SUBMITTED', { type: 'EVENT', id: eventId, displayName: eventTitle }, { rsvp: !currentRsvps.includes(userId) });
+};
+
+
+// Notification Functions
+export const createNotification = async (userId: string, title: string, message: string, link?: string): Promise<void> => {
+    const notificationsCol = collection(db, 'notifications');
+    const newNotification: Omit<AppNotification, 'id'> = {
+        userId,
+        title,
+        message,
+        link: link || '',
+        isRead: false,
+        createdAt: serverTimestamp() as Timestamp,
+    };
+    await addDoc(notificationsCol, newNotification);
+};
+
+export const getNotificationsStreamForUser = (userId: string, callback: (notifications: AppNotification[]) => void, limitCount: number = 10) => {
+    const notificationsCol = collection(db, 'notifications');
+    const q = query(notificationsCol, where('userId', '==', userId), orderBy('createdAt', 'desc'), limit(limitCount));
+    return onSnapshot(q, (querySnapshot) => {
+        const notifications: AppNotification[] = [];
+        querySnapshot.forEach((doc) => {
+            notifications.push({ id: doc.id, ...doc.data() } as AppNotification);
+        });
+        callback(notifications);
+    }, (error) => {
+        console.error(`Error fetching notifications for user ${userId}:`, error);
+        callback([]);
+    });
+};
+
+export const markNotificationsAsRead = async (userId: string, notificationIds: string[], actorProfile: UserProfile): Promise<void> => {
+    if (notificationIds.length === 0) return;
+    const batch = writeBatch(db);
+    notificationIds.forEach(id => {
+        const notifRef = doc(db, 'notifications', id);
+        batch.update(notifRef, { isRead: true });
+    });
+    await batch.commit();
+    await logUserActivity(userId, actorProfile.displayName || actorProfile.fullName, 'USER_NOTIFICATIONS_READ', undefined, { count: notificationIds.length });
+};

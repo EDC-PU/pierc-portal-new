@@ -11,6 +11,7 @@ import { LogIn, LogOut, User as UserIcon, LayoutDashboard, Settings, Megaphone, 
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '../ui/skeleton';
 import { useSidebar } from '@/hooks/use-sidebar'; 
+import { NotificationBell } from './NotificationBell';
 
 export function Navbar() {
   const { user, userProfile, signOut, loading, initialLoadComplete } = useAuth();
@@ -44,53 +45,56 @@ export function Navbar() {
             </Link>
           </div>
           
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
             {loading && !initialLoadComplete ? (
                 <Skeleton className="h-10 w-24 rounded-md" />
-            ) : user ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-10 w-10 rounded-full">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={userProfile?.photoURL || user.photoURL || undefined} alt={userProfile?.displayName || user.displayName || 'User'} />
-                      <AvatarFallback>{getInitials(userProfile?.displayName || user.displayName)}</AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{userProfile?.displayName || user.displayName}</p>
-                      <p className="text-xs leading-none text-muted-foreground">{userProfile?.email || user.email}</p>
-                      {userProfile?.role && <p className="text-xs leading-none text-muted-foreground capitalize">{userProfile.role.replace('_', ' ').toLowerCase()}{userProfile.isSuperAdmin ? ' (Super Admin)' : ''}</p>}
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => router.push('/dashboard')}>
-                    <LayoutDashboard className="mr-2 h-4 w-4" />
-                    Dashboard
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => router.push('/profile-setup')}>
-                    <UserIcon className="mr-2 h-4 w-4" />
-                    Profile
-                  </DropdownMenuItem>
-                  {userProfile?.role === 'ADMIN_FACULTY' && (
-                    <>
-                      <DropdownMenuItem onClick={() => router.push('/dashboard/admin/manage-announcements')}>
-                          <Megaphone className="mr-2 h-4 w-4" /> Manage Announcements
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => router.push('/dashboard/admin/system-settings')}>
-                          <Settings className="mr-2 h-4 w-4" /> System Settings
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={signOut}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Log out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+            ) : user && userProfile ? (
+              <>
+                <NotificationBell />
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+                      <Avatar className="h-9 w-9">
+                        <AvatarImage src={userProfile?.photoURL || user.photoURL || undefined} alt={userProfile?.displayName || user.displayName || 'User'} />
+                        <AvatarFallback>{getInitials(userProfile?.displayName || user.displayName)}</AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-56" align="end" forceMount>
+                    <DropdownMenuLabel className="font-normal">
+                      <div className="flex flex-col space-y-1">
+                        <p className="text-sm font-medium leading-none">{userProfile?.displayName || user.displayName}</p>
+                        <p className="text-xs leading-none text-muted-foreground">{userProfile?.email || user.email}</p>
+                        {userProfile?.role && <p className="text-xs leading-none text-muted-foreground capitalize">{userProfile.role.replace('_', ' ').toLowerCase()}{userProfile.isSuperAdmin ? ' (Super Admin)' : ''}</p>}
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => router.push('/dashboard')}>
+                      <LayoutDashboard className="mr-2 h-4 w-4" />
+                      Dashboard
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => router.push('/profile-setup')}>
+                      <UserIcon className="mr-2 h-4 w-4" />
+                      Profile
+                    </DropdownMenuItem>
+                    {userProfile?.role === 'ADMIN_FACULTY' && (
+                      <>
+                        <DropdownMenuItem onClick={() => router.push('/dashboard/admin/manage-announcements')}>
+                            <Megaphone className="mr-2 h-4 w-4" /> Manage Announcements
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => router.push('/dashboard/admin/system-settings')}>
+                            <Settings className="mr-2 h-4 w-4" /> System Settings
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={signOut}>
+                      <LogOut className="mr-2 h-4 w-4" />
+                      Log out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
             ) : (
               <Button onClick={() => router.push('/login')} variant="default">
                 <LogIn className="mr-2 h-4 w-4" /> Login

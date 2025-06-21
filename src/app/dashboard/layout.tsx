@@ -19,7 +19,7 @@ import {
   SidebarSeparator,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote } from 'lucide-react'; 
+import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote, Calendar, Bell, CalendarCheck } from 'lucide-react'; 
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, userProfile, loading, initialLoadComplete, signOut } = useAuth();
@@ -60,12 +60,15 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'My Profile', href: '/profile-setup', icon: User, roles: ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY'] },
     { label: 'Announcements', href: '/dashboard/announcements', icon: Rss, roles: ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY'] },
     { label: 'Incubation Phases', href: '/dashboard/incubation-phases', icon: FileText, roles: ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY'] },
+    { label: 'Events Calendar', href: '/dashboard/events', icon: Calendar, roles: ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY'] },
+    { label: 'Notifications', href: '/dashboard/notifications', icon: Bell, roles: ['STUDENT', 'EXTERNAL_USER', 'ADMIN_FACULTY'] },
   ];
 
   const adminMenuItems = [
     { label: 'Manage Announcements', href: '/dashboard/admin/manage-announcements', icon: Megaphone, roles: ['ADMIN_FACULTY'] },
     { label: 'View Applications', href: '/dashboard/admin/view-applications', icon: BarChart3, roles: ['ADMIN_FACULTY'] },
     { label: 'Manage Cohorts', href: '/dashboard/admin/manage-cohorts', icon: CohortIcon, roles: ['ADMIN_FACULTY'] },
+    { label: 'Manage Events', href: '/dashboard/admin/manage-events', icon: CalendarCheck, roles: ['ADMIN_FACULTY'] },
     { label: 'Bank Account Details', href: '/dashboard/admin/bank-details', icon: Banknote, roles: ['ADMIN_FACULTY'] },
     { label: 'Activity Logs', href: '/dashboard/admin/activity-logs', icon: History, roles: ['ADMIN_FACULTY'] },
     { label: 'System Settings', href: '/dashboard/admin/system-settings', icon: Settings, roles: ['ADMIN_FACULTY'] },
@@ -143,5 +146,3 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     </div>
   );
 }
-
-    
