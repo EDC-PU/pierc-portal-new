@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye, Sparkles, Landmark } from 'lucide-react';
+import { BookOpen, Lightbulb, Users, Activity, Loader2, ArrowRight, FileCheck2, Clock, ChevronsRight, UploadCloud, FileQuestion, AlertCircle, Download, CalendarDays, MapPin, ListChecks, Trash2, PlusCircle, Edit2, Save, UserCheck as UserCheckIcon, Briefcase, Award, Wand2 as AiIcon, Users2 as GroupIcon, ArchiveRestore, DollarSign, Banknote, FileUp, MessageSquare, Eye, Sparkles, Landmark, Rss, Calendar as CalendarIcon } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getUserIdeaSubmissionsWithStatus,
@@ -23,6 +23,8 @@ import {
   addExpenseToSanctionFS,
   applyForNextSanctionFS,
   updateIdeaOutlineAIGeneratedStatus, 
+  getAnnouncementsStream,
+  getUpcomingEventsStream,
 } from '@/lib/firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useRouter } from 'next/navigation';
@@ -31,7 +33,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, Announcement as AnnouncementType, PortalEvent } from '@/types';
 import { format, isValid } from 'date-fns';
 import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
 import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
@@ -167,6 +169,10 @@ export default function StudentDashboard() {
   const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
   const [isSubmittingBeneficiary, setIsSubmittingBeneficiary] = useState(false);
 
+  const [recentAnnouncements, setRecentAnnouncements] = useState<AnnouncementType[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<PortalEvent[]>([]);
+  const [loadingDashboardWidgets, setLoadingDashboardWidgets] = useState(true);
+
 
   const { control, handleSubmit, reset: resetTeamManagementFormInternal, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
     resolver: zodResolver(teamManagementSchema),
@@ -184,6 +190,28 @@ export default function StudentDashboard() {
     resolver: zodResolver(expenseSchema), defaultValues: { description: '', amount: 0, proofFile: null }
   });
 
+
+  useEffect(() => {
+    if (user?.uid) {
+      setLoadingDashboardWidgets(true);
+      const unsubAnnouncements = getAnnouncementsStream((announcements) => {
+        setRecentAnnouncements(announcements);
+        if (loadingDashboardWidgets) setLoadingDashboardWidgets(false);
+      }, 3);
+
+      const unsubEvents = getUpcomingEventsStream((events) => {
+        setUpcomingEvents(events);
+        if (loadingDashboardWidgets) setLoadingDashboardWidgets(false);
+      }, 3);
+      
+      return () => {
+        unsubAnnouncements();
+        unsubEvents();
+      };
+    } else {
+        setLoadingDashboardWidgets(false);
+    }
+  }, [user?.uid]);
 
   const fetchUserIdeasAndUpdateState = async (currentSelectedIdeaIdToPreserve?: string) => {
     if (!user?.uid) {
@@ -885,6 +913,62 @@ export default function StudentDashboard() {
             <p className="text-muted-foreground">Welcome, {userProfile?.displayName || user?.displayName || 'Student'}! Here are your resources and tools.</p>
           </CardContent>
         </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center text-lg"><Rss className="mr-2 h-5 w-5 text-primary"/>Recent Announcements</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {loadingDashboardWidgets ? (
+                        <div className="flex items-center justify-center p-4"><Loader2 className="animate-spin" /></div>
+                    ) : recentAnnouncements.length > 0 ? (
+                        <ul className="space-y-3">
+                            {recentAnnouncements.map(ann => (
+                                <li key={ann.id} className="text-sm">
+                                    <p className="font-semibold truncate">{ann.title}</p>
+                                    <p className="text-xs text-muted-foreground">{formatDate(ann.createdAt)}</p>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-sm text-muted-foreground text-center py-4">No recent announcements.</p>
+                    )}
+                </CardContent>
+                <CardFooter>
+                    <Button variant="link" size="sm" className="p-0" onClick={() => router.push('/dashboard/announcements')}>
+                        View All Announcements <ArrowRight className="ml-1 h-4 w-4"/>
+                    </Button>
+                </CardFooter>
+            </Card>
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center text-lg"><CalendarIcon className="mr-2 h-5 w-5 text-primary"/>Upcoming Events</CardTitle>
+                </CardHeader>
+                <CardContent>
+                     {loadingDashboardWidgets ? (
+                        <div className="flex items-center justify-center p-4"><Loader2 className="animate-spin" /></div>
+                    ) : upcomingEvents.length > 0 ? (
+                        <ul className="space-y-3">
+                            {upcomingEvents.map(event => (
+                                <li key={event.id} className="text-sm">
+                                    <p className="font-semibold truncate">{event.title}</p>
+                                    <p className="text-xs text-muted-foreground">{formatDate(event.startDateTime)} at {format(event.startDateTime.toDate(), 'p')}</p>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-sm text-muted-foreground text-center py-4">No upcoming events.</p>
+                    )}
+                </CardContent>
+                <CardFooter>
+                    <Button variant="link" size="sm" className="p-0" onClick={() => router.push('/dashboard/events')}>
+                        View Events Calendar <ArrowRight className="ml-1 h-4 w-4"/>
+                    </Button>
+                </CardFooter>
+            </Card>
+        </div>
+
 
         <Card>
           <CardHeader>

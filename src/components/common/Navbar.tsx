@@ -36,12 +36,21 @@ export function Navbar() {
               </Button>
             )}
             <Link href="/" className="flex items-center space-x-2 text-primary hover:opacity-80 transition-opacity">
+               <Image
+                src="https://www.pierc.org/_next/static/media/PIERC.959ad75d.svg"
+                alt="PIERC Portal Logo"
+                width={110}
+                height={45}
+                className="h-11 w-auto dark:hidden"
+                priority
+              />
               <Image
                 src="https://www.pierc.org/_next/static/media/PIERC%20WHITE.a9ef7cc8.svg"
                 alt="PIERC Portal Logo"
-                width={110} 
-                height={45} 
-                className="h-11 w-auto" // Adjusted logo size slightly for new navbar height
+                width={110}
+                height={45}
+                className="h-11 w-auto hidden dark:block"
+                priority
               />
             </Link>
           </div>

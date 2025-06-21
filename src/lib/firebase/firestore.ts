@@ -338,13 +338,17 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
   return createdAnn;
 };
 
-export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void) => {
+export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void, limitCount?: number) => {
   const announcementsCol = collection(db, 'announcements');
-  const q = query(announcementsCol,
+  let q = query(announcementsCol,
     where('isUrgent', '==', false),
     where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
   );
+
+  if (limitCount) {
+      q = query(q, limit(limitCount));
+  }
 
   return onSnapshot(q, (querySnapshot) => {
     const announcements: Announcement[] = [];
@@ -2120,6 +2124,27 @@ export const getAllEventsStream = (callback: (events: PortalEvent[]) => void) =>
         callback(events);
     }, (error) => {
         console.error("Error fetching events:", error);
+        callback([]);
+    });
+};
+
+export const getUpcomingEventsStream = (callback: (events: PortalEvent[]) => void, limitCount: number) => {
+    const eventsCol = collection(db, 'events');
+    const q = query(
+        eventsCol,
+        where('startDateTime', '>=', Timestamp.now()),
+        orderBy('startDateTime', 'asc'),
+        limit(limitCount)
+    );
+
+    return onSnapshot(q, (querySnapshot) => {
+        const events: PortalEvent[] = [];
+        querySnapshot.forEach((doc) => {
+            events.push({ id: doc.id, ...doc.data() } as PortalEvent);
+        });
+        callback(events);
+    }, (error) => {
+        console.error("Error fetching upcoming events:", error);
         callback([]);
     });
 };
