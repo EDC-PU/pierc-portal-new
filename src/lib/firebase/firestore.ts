@@ -1,6 +1,6 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
@@ -2586,3 +2586,5 @@ export const markNotificationsAsRead = async (userId: string, notificationIds: s
     await batch.commit();
     await logUserActivity(userId, actorProfile.displayName || actorProfile.fullName, 'USER_NOTIFICATIONS_READ', undefined, { count: notificationIds.length });
 };
+
+    
