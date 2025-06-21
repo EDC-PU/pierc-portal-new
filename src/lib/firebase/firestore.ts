@@ -1,7 +1,7 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocument, IncubationDocumentType } from '@/types';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firestore';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -311,6 +311,43 @@ export const deleteUserAccountAndProfile = async (userIdToDelete: string, adminP
   }
 };
 
+const getUidsForCohort = async (cohortId: string): Promise<string[]> => {
+    if (!cohortId) return [];
+    
+    const ideasCol = collection(db, 'ideas');
+    const q = query(ideasCol, where('cohortId', '==', cohortId));
+    const ideasSnapshot = await getDocs(q);
+
+    if (ideasSnapshot.empty) return [];
+
+    const uids = new Set<string>();
+    ideasSnapshot.forEach(doc => {
+        const idea = doc.data() as IdeaSubmission;
+        if (idea.userId) {
+            uids.add(idea.userId);
+        }
+        if (idea.structuredTeamMembers) {
+            idea.structuredTeamMembers.forEach(member => {
+                // Assuming member.id is the UID. Add a check to ensure it's not a nanoid placeholder.
+                if (member.id && member.id.length > 10) { 
+                    uids.add(member.id);
+                }
+            });
+        }
+    });
+    return Array.from(uids);
+};
+
+const getAllActiveUserIds = async (): Promise<string[]> => {
+    const usersCol = collection(db, 'users');
+    const querySnapshot = await getDocs(query(usersCol, where('role', '!=', null)));
+    const userIds: string[] = [];
+    querySnapshot.forEach(doc => {
+        userIds.push(doc.id);
+    });
+    return userIds;
+};
+
 
 // Announcement Functions
 export const createAnnouncement = async (announcementData: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'>, adminProfile: UserProfile): Promise<Announcement> => {
@@ -335,6 +372,32 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
     { type: 'ANNOUNCEMENT', id: createdAnn.id!, displayName: createdAnn.title },
     { title: createdAnn.title, isUrgent: createdAnn.isUrgent, targetAudience: createdAnn.targetAudience, cohortId: createdAnn.cohortId }
   );
+  
+  // --- Create Notifications for Cohort ---
+  if (createdAnn.targetAudience === 'SPECIFIC_COHORT' && createdAnn.cohortId) {
+      try {
+          const userIds = await getUidsForCohort(createdAnn.cohortId);
+          if (userIds.length > 0) {
+              const batch = writeBatch(db);
+              userIds.forEach(uid => {
+                  const notifRef = doc(collection(db, 'notifications'));
+                  batch.set(notifRef, {
+                      userId: uid,
+                      title: `New Announcement: ${createdAnn.title}`,
+                      message: createdAnn.content.substring(0, 100) + (createdAnn.content.length > 100 ? '...' : ''),
+                      link: '/dashboard/announcements',
+                      isRead: false,
+                      createdAt: serverTimestamp()
+                  });
+              });
+              await batch.commit();
+              await logUserActivity(adminProfile.uid, adminProfile.displayName, 'ADMIN_NOTIFICATION_SENT_COHORT', { type: 'ANNOUNCEMENT', id: createdAnn.id!, displayName: createdAnn.title }, { userCount: userIds.length, cohortId: createdAnn.cohortId });
+          }
+      } catch (e) {
+          console.error(`Failed to send notifications for cohort announcement ${createdAnn.id}`, e);
+      }
+  }
+
   return createdAnn;
 };
 
@@ -1073,10 +1136,9 @@ export const updateIdeaStatusAndPhase = async (
   if (!oldIdeaSnap.exists()) {
     throw new Error("Idea not found");
   }
-
-  const oldStatus = oldIdeaSnap.data().status;
-  const oldPhase = oldIdeaSnap.data().programPhase;
-  const ideaOwnerUid = oldIdeaSnap.data().userId;
+  const oldIdeaData = oldIdeaSnap.data() as IdeaSubmission;
+  const oldStatus = oldIdeaData.status;
+  const oldPhase = oldIdeaData.programPhase;
 
   const updates: {[key: string]: any} = {
     status: newStatus,
@@ -1089,22 +1151,17 @@ export const updateIdeaStatusAndPhase = async (
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
 
-    if (newPhase === 'PHASE_2') {
-      const currentDoc = await getDoc(ideaRef);
-      if (currentDoc.exists() && !currentDoc.data().phase2Marks) {
+    if (newPhase === 'PHASE_2' && !oldIdeaData.phase2Marks) {
         updates.phase2Marks = {};
-      }
     } else if (newPhase !== 'COHORT' && newPhase !== 'INCUBATED') {
         updates.mentor = deleteField();
     }
      if (newPhase === 'INCUBATED') {
-        // Initialize funding status if not already set
-        const currentData = oldIdeaSnap.data();
-        if (currentData && !currentData.sanction1UtilizationStatus) updates.sanction1UtilizationStatus = 'NOT_APPLICABLE';
-        if (currentData && !currentData.sanction2UtilizationStatus) updates.sanction2UtilizationStatus = 'NOT_APPLICABLE';
-        if (currentData && !currentData.sanction1Expenses) updates.sanction1Expenses = [];
-        if (currentData && !currentData.sanction2Expenses) updates.sanction2Expenses = [];
-        if (currentData && !currentData.incubationDocuments) updates.incubationDocuments = {};
+        if (!oldIdeaData.sanction1UtilizationStatus) updates.sanction1UtilizationStatus = 'NOT_APPLICABLE';
+        if (!oldIdeaData.sanction2UtilizationStatus) updates.sanction2UtilizationStatus = 'NOT_APPLICABLE';
+        if (!oldIdeaData.sanction1Expenses) updates.sanction1Expenses = [];
+        if (!oldIdeaData.sanction2Expenses) updates.sanction2Expenses = [];
+        if (!oldIdeaData.incubationDocuments) updates.incubationDocuments = {};
     }
 
     if (newPhase && (newPhase === 'PHASE_1' || newPhase === 'PHASE_2' || newPhase === 'INCUBATED') && nextPhaseDetails) {
@@ -1184,15 +1241,54 @@ export const updateIdeaStatusAndPhase = async (
   }
   await updateDoc(ideaRef, updates);
 
-  // Send notification to the idea owner
-  if (ideaOwnerUid && oldStatus !== newStatus) {
-    const notificationTitle = `Your idea "${ideaTitle}" has been updated.`;
-    let notificationMessage = `The status of your idea has been changed from ${oldStatus} to ${newStatus}.`;
-    if (newStatus === 'SELECTED' && newPhase) {
-      notificationMessage += ` It is now in ${getProgramPhaseLabel(newPhase)}.`;
-    }
-    await createNotification(ideaOwnerUid, notificationTitle, notificationMessage, `/dashboard/`);
+  // Send notification to the idea owner and team members
+  const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
+      if (!phase) return 'N/A';
+      switch (phase) {
+          case 'PHASE_1': return 'Phase 1';
+          case 'PHASE_2': return 'Phase 2';
+          case 'COHORT': return 'Cohort';
+          case 'INCUBATED': return 'Incubated (Funding)';
+          default: return 'N/A';
+      }
+  };
+
+  const notificationTitle = `Your idea "${ideaTitle}" has been updated.`;
+  let notificationMessage = `The status of your idea has changed from ${oldStatus} to ${newStatus}.`;
+  if (newStatus === 'SELECTED' && newPhase) {
+    notificationMessage += ` It is now in ${getProgramPhaseLabel(newPhase)}.`;
+  } else if (newStatus === 'NOT_SELECTED') {
+      notificationMessage += ` Please check your dashboard for feedback.`
   }
+
+  const teamUids = new Set<string>();
+  if (oldIdeaData.userId) {
+      teamUids.add(oldIdeaData.userId);
+  }
+  if (oldIdeaData.structuredTeamMembers) {
+      oldIdeaData.structuredTeamMembers.forEach(member => {
+          if (member.id && member.id.length > 10) { // Check if ID is likely a UID
+              teamUids.add(member.id);
+          }
+      });
+  }
+  
+  if (teamUids.size > 0) {
+      const batch = writeBatch(db);
+      teamUids.forEach(uid => {
+          const notifRef = doc(collection(db, 'notifications'));
+          batch.set(notifRef, {
+              userId: uid,
+              title: notificationTitle,
+              message: notificationMessage,
+              link: '/dashboard/',
+              isRead: false,
+              createdAt: serverTimestamp()
+          });
+      });
+      await batch.commit();
+  }
+
 
   await logUserActivity(
     adminProfile.uid,
@@ -2294,6 +2390,31 @@ export const createEventFS = async (eventData: Omit<PortalEvent, 'id' | 'created
 
     const createdEvent = { id: newDocSnap.id, ...newDocSnap.data() } as PortalEvent;
     await logUserActivity(adminProfile.uid, adminProfile.displayName || adminProfile.fullName, 'ADMIN_EVENT_CREATED', { type: 'EVENT', id: createdEvent.id!, displayName: createdEvent.title }, { title: createdEvent.title });
+
+    if (createdEvent.targetAudience === 'SPECIFIC_COHORT' && createdEvent.cohortId) {
+      try {
+          const userIds = await getUidsForCohort(createdEvent.cohortId);
+          if (userIds.length > 0) {
+              const batch = writeBatch(db);
+              userIds.forEach(uid => {
+                  const notifRef = doc(collection(db, 'notifications'));
+                  batch.set(notifRef, {
+                      userId: uid,
+                      title: `New Event: ${createdEvent.title}`,
+                      message: createdEvent.description.substring(0, 100) + (createdEvent.description.length > 100 ? '...' : ''),
+                      link: '/dashboard/events',
+                      isRead: false,
+                      createdAt: serverTimestamp()
+                  });
+              });
+              await batch.commit();
+              await logUserActivity(adminProfile.uid, adminProfile.displayName, 'ADMIN_NOTIFICATION_SENT_COHORT', { type: 'EVENT', id: createdEvent.id!, displayName: createdEvent.title }, { userCount: userIds.length, cohortId: createdEvent.cohortId });
+          }
+      } catch (e) {
+          console.error(`Failed to send notifications for cohort event ${createdEvent.id}`, e);
+      }
+    }
+
     return createdEvent;
 };
 
