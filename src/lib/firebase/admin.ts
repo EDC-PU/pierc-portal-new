@@ -1,4 +1,3 @@
-
 import * as admin from 'firebase-admin';
 
 // NOTE: The `dotenv` call was removed. Next.js handles server-side environment variables automatically.
@@ -20,16 +19,13 @@ function ensureAdminInitialized() {
     return;
   }
   
-  const serviceAccount = {
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY,
-  };
-
+  const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY;
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
   // Check if all required environment variables are present and throw a clear error if not.
-  if (!serviceAccount.projectId || !serviceAccount.clientEmail || !serviceAccount.privateKey || !storageBucket) {
+  if (!projectId || !clientEmail || !privateKey || !storageBucket) {
     throw new Error(
       'Firebase Admin initialization failed: Missing required environment variables. Ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set in your .env file.'
     );
@@ -38,9 +34,10 @@ function ensureAdminInitialized() {
   try {
     app = admin.initializeApp({
       credential: admin.credential.cert({
-        ...serviceAccount,
+        projectId: projectId,
+        clientEmail: clientEmail,
         // The 'replace' is crucial for keys stored in single-line env vars.
-        privateKey: serviceAccount.privateKey.replace(/\\n/g, '\n'),
+        privateKey: privateKey.replace(/\\n/g, '\n'),
       }),
       storageBucket,
     });
