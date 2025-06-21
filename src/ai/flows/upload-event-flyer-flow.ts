@@ -1,19 +1,18 @@
-
 'use server';
 /**
- * @fileOverview A Genkit flow to upload an event flyer file to Firebase Storage.
+ * @fileOverview A utility to upload an event flyer file to Firebase Storage.
  *
  * - uploadEventFlyer - A function that handles the event flyer upload process.
  * - UploadEventFlyerInput - The input type for the uploadEventFlyer function.
  * - UploadEventFlyerOutput - The return type for the uploadEventFlyer function.
  */
 
-import {ai} from '@/ai/genkit';
-import {z} from 'genkit';
+import {z} from 'genkit'; // Keep zod for schema validation
 import { adminStorage } from '@/lib/firebase/admin';
-import { nanoid } from 'nanoid';
 
+// Schema for input validation
 const UploadEventFlyerInputSchema = z.object({
+  eventName: z.string().describe('The name of the event for the flyer.'),
   fileName: z.string().describe('The original name of the event flyer file.'),
   fileDataUri: z
     .string()
@@ -29,50 +28,49 @@ const UploadEventFlyerOutputSchema = z.object({
 });
 export type UploadEventFlyerOutput = z.infer<typeof UploadEventFlyerOutputSchema>;
 
+
+/**
+ * Uploads an event flyer to Firebase Storage. This is a standard server function, not a Genkit flow.
+ * @param input The flyer data and event name.
+ * @returns The public URL and final filename of the uploaded flyer.
+ */
 export async function uploadEventFlyer(input: UploadEventFlyerInput): Promise<UploadEventFlyerOutput> {
-  return uploadEventFlyerFlow(input);
-}
+  // Validate input with Zod
+  const validatedInput = UploadEventFlyerInputSchema.parse(input);
 
-const uploadEventFlyerFlow = ai.defineFlow(
-  {
-    name: 'uploadEventFlyerFlow',
-    inputSchema: UploadEventFlyerInputSchema,
-    outputSchema: UploadEventFlyerOutputSchema,
-  },
-  async (input) => {
-    console.log(`Uploading event flyer file: ${input.fileName}`);
-    
-    const bucket = adminStorage.bucket();
-    
-    // Extract content and metadata from Data URI
-    const matches = input.fileDataUri.match(/^data:(.+);base64,(.*)$/);
-    if (!matches || matches.length !== 3) {
-        throw new Error('Invalid Data URI format.');
-    }
-    const mimeType = matches[1];
-    const base64Data = matches[2];
-    const buffer = Buffer.from(base64Data, 'base64');
-    
-    // Create a unique path for the file
-    const fileExtension = input.fileName.split('.').pop() || 'png';
-    const uniqueFileName = `${nanoid()}.${fileExtension}`;
-    const filePath = `event_flyers/${uniqueFileName}`;
-    
-    const file = bucket.file(filePath);
-
-    await file.save(buffer, {
-        metadata: {
-            contentType: mimeType,
-        },
-    });
-    
-    // Make the file public and get its URL
-    await file.makePublic();
-    const publicUrl = file.publicUrl();
-
-    return {
-      flyerUrl: publicUrl,
-      flyerFileName: input.fileName,
-    };
+  console.log(`Uploading event flyer file for event: ${validatedInput.eventName}`);
+  
+  const bucket = adminStorage.bucket();
+  
+  // Extract content and metadata from Data URI
+  const matches = validatedInput.fileDataUri.match(/^data:(.+);base64,(.*)$/);
+  if (!matches || matches.length !== 3) {
+      throw new Error('Invalid Data URI format.');
   }
-);
+  const mimeType = matches[1];
+  const base64Data = matches[2];
+  const buffer = Buffer.from(base64Data, 'base64');
+  
+  // Sanitize event name for use as a filename and get extension
+  const fileExtension = validatedInput.fileName.split('.').pop() || 'png';
+  const sanitizedEventName = validatedInput.eventName.trim().toLowerCase().replace(/[^a-z0-9-]/g, '').replace(/\s+/g, '-');
+  const newFileName = `flyer-${sanitizedEventName}.${fileExtension}`;
+  const filePath = `event_flyers/${newFileName}`;
+  
+  const file = bucket.file(filePath);
+
+  await file.save(buffer, {
+      metadata: {
+          contentType: mimeType,
+      },
+  });
+  
+  // Make the file public and get its URL
+  await file.makePublic();
+  const publicUrl = file.publicUrl();
+
+  return {
+    flyerUrl: publicUrl,
+    flyerFileName: newFileName, // Return the new, sanitized filename
+  };
+}

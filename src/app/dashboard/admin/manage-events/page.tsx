@@ -90,6 +90,7 @@ export default function ManageEventsPage() {
         try {
             const fileDataUri = await fileToDataUri(formData.flyerFile);
             flyerUploadResult = await uploadEventFlyer({
+                eventName: formData.title,
                 fileName: formData.flyerFile.name,
                 fileDataUri: fileDataUri,
             });
