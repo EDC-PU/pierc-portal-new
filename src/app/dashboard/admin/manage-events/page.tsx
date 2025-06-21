@@ -116,8 +116,8 @@ export default function ManageEventsPage() {
           </div>
         </div>
         <Dialog open={isFormOpen} onOpenChange={(isOpen) => {
-            setIsFormOpen(isOpen);
             if (!isOpen) setEditingEvent(null);
+            setIsFormOpen(isOpen);
         }}>
           <DialogTrigger asChild>
             <Button onClick={openNewForm}>

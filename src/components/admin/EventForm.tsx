@@ -186,4 +186,3 @@ export function EventForm({ initialData, onSave, onSubmitSuccess }: EventFormPro
     </form>
   );
 }
-
