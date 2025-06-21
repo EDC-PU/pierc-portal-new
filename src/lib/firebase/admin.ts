@@ -19,8 +19,7 @@ function ensureAdminInitialized() {
   
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  // The private key must have its escaped newlines replaced with actual newlines for some environments.
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
+  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
   // Check if all required environment variables are present and throw a clear error if not.
@@ -30,6 +29,9 @@ function ensureAdminInitialized() {
     );
   }
   
+  // Clean up the private key
+  privateKey = privateKey.replace(/\\n/g, '\n');
+
   try {
     app = admin.initializeApp({
       credential: admin.credential.cert({
