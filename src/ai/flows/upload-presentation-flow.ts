@@ -1,15 +1,17 @@
 
 'use server';
 /**
- * @fileOverview A Genkit flow to simulate uploading a presentation file.
+ * @fileOverview A Genkit flow to upload a presentation file to Firebase Storage.
  *
- * - uploadPresentation - A function that handles the (simulated) presentation upload process.
+ * - uploadPresentation - A function that handles the presentation upload process.
  * - UploadPresentationInput - The input type for the uploadPresentation function.
  * - UploadPresentationOutput - The return type for the uploadPresentation function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { adminStorage } from '@/lib/firebase/admin';
+import { nanoid } from 'nanoid';
 
 const UploadPresentationInputSchema = z.object({
   ideaId: z.string().describe('The ID of the idea submission this presentation belongs to.'),
@@ -23,7 +25,7 @@ const UploadPresentationInputSchema = z.object({
 export type UploadPresentationInput = z.infer<typeof UploadPresentationInputSchema>;
 
 const UploadPresentationOutputSchema = z.object({
-  pptUrl: z.string().describe('The (simulated) URL where the presentation is stored.'),
+  pptUrl: z.string().describe('The public URL where the presentation is stored.'),
   pptFileName: z.string().describe('The name of the presentation file stored.'),
 });
 export type UploadPresentationOutput = z.infer<typeof UploadPresentationOutputSchema>;
@@ -39,17 +41,35 @@ const uploadPresentationFlow = ai.defineFlow(
     outputSchema: UploadPresentationOutputSchema,
   },
   async (input) => {
-    console.log(`Simulating upload for idea: ${input.ideaId}, file: ${input.fileName}`);
+    console.log(`Uploading presentation for idea: ${input.ideaId}, file: ${input.fileName}`);
     
-    // Simulate storing the file and generating a URL
-    // In a real scenario, this would involve uploading to Firebase Storage or similar
-    // and then getting the public URL.
-    const dummyStoragePath = `presentations/${input.ideaId}/${Date.now()}_${input.fileName}`;
-    const simulatedPptUrl = `https://storage.example.com/${dummyStoragePath}`;
+    const bucket = adminStorage.bucket();
+    
+    const matches = input.fileDataUri.match(/^data:(.+);base64,(.*)$/);
+    if (!matches || matches.length !== 3) {
+        throw new Error('Invalid Data URI format.');
+    }
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    const fileExtension = input.fileName.split('.').pop() || 'pptx';
+    const uniqueFileName = `${nanoid()}.${fileExtension}`;
+    const filePath = `presentations/${input.ideaId}/${uniqueFileName}`;
+    
+    const file = bucket.file(filePath);
 
-    // For this simulation, we just return the constructed URL and original filename
+    await file.save(buffer, {
+        metadata: {
+            contentType: mimeType,
+        },
+    });
+    
+    await file.makePublic();
+    const publicUrl = file.publicUrl();
+
     return {
-      pptUrl: simulatedPptUrl,
+      pptUrl: publicUrl,
       pptFileName: input.fileName,
     };
   }

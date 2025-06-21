@@ -104,9 +104,6 @@ export default function EventsPage() {
                       sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                       style={{objectFit: 'cover'}}
                       data-ai-hint="event flyer"
-                      // In a real app, use a proper image host. Using a placeholder for the simulated URL.
-                      // This conditional logic avoids trying to load from 'storage.example.com'
-                      loader={({ src }) => src.includes('storage.example.com') ? 'https://placehold.co/600x400.png' : src}
                     />
                   </div>
                 )}

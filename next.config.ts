@@ -22,6 +22,12 @@ const nextConfig: NextConfig = {
         hostname: 'www.pierc.org', // Added for PIERC logo
         port: '',
         pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com', // Added for Firebase Storage
+        port: '',
+        pathname: '/**',
       }
     ],
   },

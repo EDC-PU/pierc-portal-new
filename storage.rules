@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // By default, allow read access to everyone for public assets.
+    // Writes are restricted to authenticated users, enforced by server-side logic (Genkit flows).
+    match /{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+  }
+}

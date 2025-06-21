@@ -1,15 +1,17 @@
 
 'use server';
 /**
- * @fileOverview A Genkit flow to simulate uploading an event flyer file.
+ * @fileOverview A Genkit flow to upload an event flyer file to Firebase Storage.
  *
- * - uploadEventFlyer - A function that handles the (simulated) event flyer upload process.
+ * - uploadEventFlyer - A function that handles the event flyer upload process.
  * - UploadEventFlyerInput - The input type for the uploadEventFlyer function.
  * - UploadEventFlyerOutput - The return type for the uploadEventFlyer function.
  */
 
 import {ai} from '@/ai/genkit';
 import {z} from 'genkit';
+import { adminStorage } from '@/lib/firebase/admin';
+import { nanoid } from 'nanoid';
 
 const UploadEventFlyerInputSchema = z.object({
   fileName: z.string().describe('The original name of the event flyer file.'),
@@ -22,7 +24,7 @@ const UploadEventFlyerInputSchema = z.object({
 export type UploadEventFlyerInput = z.infer<typeof UploadEventFlyerInputSchema>;
 
 const UploadEventFlyerOutputSchema = z.object({
-  flyerUrl: z.string().describe('The (simulated) URL where the flyer is stored.'),
+  flyerUrl: z.string().describe('The public URL where the flyer is stored.'),
   flyerFileName: z.string().describe('The name of the flyer file stored.'),
 });
 export type UploadEventFlyerOutput = z.infer<typeof UploadEventFlyerOutputSchema>;
@@ -38,15 +40,38 @@ const uploadEventFlyerFlow = ai.defineFlow(
     outputSchema: UploadEventFlyerOutputSchema,
   },
   async (input) => {
-    console.log(`Simulating event flyer upload for file: ${input.fileName}`);
+    console.log(`Uploading event flyer file: ${input.fileName}`);
     
-    // Simulate storing the file and generating a URL
-    const dummyStoragePath = `event_flyers/${Date.now()}_${input.fileName}`;
-    const simulatedFlyerUrl = `https://storage.example.com/${dummyStoragePath}`;
+    const bucket = adminStorage.bucket();
+    
+    // Extract content and metadata from Data URI
+    const matches = input.fileDataUri.match(/^data:(.+);base64,(.*)$/);
+    if (!matches || matches.length !== 3) {
+        throw new Error('Invalid Data URI format.');
+    }
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+    
+    // Create a unique path for the file
+    const fileExtension = input.fileName.split('.').pop() || 'png';
+    const uniqueFileName = `${nanoid()}.${fileExtension}`;
+    const filePath = `event_flyers/${uniqueFileName}`;
+    
+    const file = bucket.file(filePath);
 
-    // For this simulation, we just return the constructed URL and original filename
+    await file.save(buffer, {
+        metadata: {
+            contentType: mimeType,
+        },
+    });
+    
+    // Make the file public and get its URL
+    await file.makePublic();
+    const publicUrl = file.publicUrl();
+
     return {
-      flyerUrl: simulatedFlyerUrl,
+      flyerUrl: publicUrl,
       flyerFileName: input.fileName,
     };
   }
