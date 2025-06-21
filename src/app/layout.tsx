@@ -6,6 +6,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { Toaster } from '@/components/ui/toaster';
 import { AppShell } from '@/components/AppShell';
 import { AuthInitializer } from '@/components/AuthInitializer';
+import { ThemeProvider } from '@/components/common/ThemeProvider';
 
 const inter = Inter({ 
   subsets: ['latin'], 
@@ -35,14 +36,21 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable} h-full`} suppressHydrationWarning={true}>
       <body className="font-body bg-background text-foreground flex flex-col h-full">
-        <AuthProvider>
-          <AuthInitializer> {/* Ensures Firebase auth is checked before rendering children */}
-            <AppShell> {/* AppShell includes SidebarProvider, Navbar, Footer */}
-              {children}
-            </AppShell>
-            <Toaster />
-          </AuthInitializer>
-        </AuthProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <AuthProvider>
+            <AuthInitializer> {/* Ensures Firebase auth is checked before rendering children */}
+              <AppShell> {/* AppShell includes SidebarProvider, Navbar, Footer */}
+                {children}
+              </AppShell>
+              <Toaster />
+            </AuthInitializer>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

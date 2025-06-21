@@ -12,6 +12,7 @@ import { useRouter } from 'next/navigation';
 import { Skeleton } from '../ui/skeleton';
 import { useSidebar } from '@/hooks/use-sidebar'; 
 import { NotificationBell } from './NotificationBell';
+import { ThemeToggle } from './ThemeToggle';
 
 export function Navbar() {
   const { user, userProfile, signOut, loading, initialLoadComplete } = useAuth();
@@ -46,6 +47,7 @@ export function Navbar() {
           </div>
           
           <div className="flex items-center space-x-2">
+            <ThemeToggle />
             {loading && !initialLoadComplete ? (
                 <Skeleton className="h-10 w-24 rounded-md" />
             ) : user && userProfile ? (
