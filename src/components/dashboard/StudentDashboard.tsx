@@ -462,7 +462,7 @@ export default function StudentDashboard() {
       });
 
       await updateIdeaPhase2PptDetails(uploadingPptIdeaId, ideaToUpdate.title, flowResult.pptUrl, flowResult.pptFileName, userProfile);
-      toast({ title: "Presentation Info Saved", description: `${flowResult.pptFileName} details recorded (Simulated Upload).` });
+      toast({ title: "Upload Successful", description: `${flowResult.pptFileName} has been uploaded.` });
       fetchUserIdeasAndUpdateState(uploadingPptIdeaId);
 
     } catch (error) {
@@ -1205,7 +1205,7 @@ export default function StudentDashboard() {
                                       <div className="flex items-center justify-between">
                                           <p>Uploaded: <span className="font-medium">{idea.phase2PptFileName}</span></p>
                                           <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs flex items-center">
-                                              <Download className="h-3 w-3 mr-1" /> View (Simulated Link)
+                                              <Download className="h-3 w-3 mr-1" /> View
                                           </a>
                                       </div>
                                   ) : (
@@ -1231,7 +1231,6 @@ export default function StudentDashboard() {
                                       </Button>
                                   </div>
                                   {uploadError && uploadingPptIdeaId === idea.id && <p className="text-destructive text-xs mt-1">{uploadError}</p>}
-                                  <p className="text-muted-foreground text-xs italic">Upload uses a simulated flow. Actual storage integration is a future step.</p>
                               </CardContent>
                           </Card>
                       )}
