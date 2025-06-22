@@ -16,7 +16,7 @@ import {
     markSanctionAsDisbursedFS,
     reviewSanctionUtilizationFS,
 } from '@/lib/firebase/firestore';
-import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry, FundingSource } from '@/types';
+import type { IdeaSubmission, IdeaStatus, ProgramPhase, UserProfile, AdminMark, TeamMember, MentorName, Cohort, ApplicantCategory, SanctionApprovalStatus, ExpenseEntry, FundingSource, Comment } from '@/types';
 import { AVAILABLE_MENTORS_DATA, ALL_IDEA_STATUSES, ALL_PROGRAM_PHASES, ALL_FUNDING_SOURCES } from '@/types';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
@@ -45,7 +45,7 @@ import {
   AlertDialogTrigger as AlertDialogButtonTrigger,
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass, Sparkles } from 'lucide-react';
+import { FileText, Eye, Info, Download, Trash2, ChevronsRight, Star, UserCheck, MessageSquareWarning, CalendarIcon, ClockIcon, Users as UsersIconLucide, Award, Users2 as GroupIcon, Archive, Search, Filter, ChevronDown, ChevronUp, Layers, CheckSquare, Square, DollarSign, Banknote, CheckCircle2, XCircle, Hourglass, Sparkles, MessageSquare } from 'lucide-react';
 import { format, formatISO, isValid } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
@@ -53,6 +53,7 @@ import { db } from '@/lib/firebase/config';
 import { cn } from '@/lib/utils';
 import * as XLSX from 'xlsx';
 import ReactMarkdown from 'react-markdown';
+import { IdeaComments } from '@/components/dashboard/IdeaComments';
 
 
 const NO_PHASE_VALUE = "NO_PHASE_ASSIGNED";
@@ -204,21 +205,7 @@ export default function ViewApplicationsPage() {
         const updatedVersionInList = applications.find(app => app.id === selectedApplication.id);
         if (updatedVersionInList) {
             const hasRelevantChange =
-                updatedVersionInList.programPhase !== selectedApplication.programPhase ||
-                updatedVersionInList.status !== selectedApplication.status ||
-                updatedVersionInList.mentor !== selectedApplication.mentor ||
-                updatedVersionInList.cohortId !== selectedApplication.cohortId ||
-                updatedVersionInList.isOutlineAIGenerated !== selectedApplication.isOutlineAIGenerated ||
-                JSON.stringify(updatedVersionInList.phase2Marks) !== JSON.stringify(selectedApplication.phase2Marks) ||
-                updatedVersionInList.fundingSource !== selectedApplication.fundingSource ||
-                updatedVersionInList.totalFundingAllocated !== selectedApplication.totalFundingAllocated ||
-                updatedVersionInList.sanction1Amount !== selectedApplication.sanction1Amount ||
-                updatedVersionInList.sanction2Amount !== selectedApplication.sanction2Amount ||
-                updatedVersionInList.sanction1DisbursedAt?.toMillis() !== selectedApplication.sanction1DisbursedAt?.toMillis() ||
-                updatedVersionInList.sanction2DisbursedAt?.toMillis() !== selectedApplication.sanction2DisbursedAt?.toMillis() ||
-                updatedVersionInList.sanction1UtilizationStatus !== selectedApplication.sanction1UtilizationStatus ||
-                updatedVersionInList.sanction2UtilizationStatus !== selectedApplication.sanction2UtilizationStatus ||
-                (updatedVersionInList.updatedAt && selectedApplication.updatedAt && updatedVersionInList.updatedAt.toMillis() !== selectedApplication.updatedAt.toMillis());
+                JSON.stringify(updatedVersionInList) !== JSON.stringify(selectedApplication);
 
             if (hasRelevantChange) {
                 setSelectedApplication(updatedVersionInList);
@@ -1312,7 +1299,7 @@ export default function ViewApplicationsPage() {
 
       {selectedApplication && userProfile && (
         <Dialog open={isDetailModalOpen} onOpenChange={setIsDetailModalOpen}>
-          <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
             <DialogHeader>
               <DialogTitle className="font-headline text-2xl flex items-center">
                 <Info className="h-6 w-6 mr-2 text-primary" /> Application Details
@@ -1321,14 +1308,14 @@ export default function ViewApplicationsPage() {
                 Full information for: <span className="font-semibold">{selectedApplication.title}</span>
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4 space-y-4">
-                <Accordion type="multiple" defaultValue={['basic', 'team', 'fundingAdmin']} className="w-full">
+            <div className="py-4 space-y-4 flex-grow overflow-y-auto pr-4">
+                <Accordion type="multiple" defaultValue={['basic', 'team', 'fundingAdmin', 'discussion']} className="w-full">
                     <AccordionItem value="basic">
                         <AccordionTrigger>Basic Idea & Applicant Info</AccordionTrigger>
                         <AccordionContent className="space-y-3">
                              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Idea Title</h4><p>{selectedApplication.title}</p></div>
-                                <div><h4 className="font-semibold text-muted-foreground text-xs">Status</h4><Badge variant={getStatusBadgeVariant(selectedApplication.status)} className="capitalize text-sm">{selectedApplication.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
+                                <div><h4 className="font-semibold text-muted-foreground text-xs">Status</h4><Badge variant={getStatusBadgeVariant(selectedApplication.status)} className="capitalize text-sm py-1 px-3 shadow-sm">{selectedApplication.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
                                 {selectedApplication.status === 'SELECTED' && (<div><h4 className="font-semibold text-muted-foreground text-xs">Program Phase</h4><p>{getProgramPhaseLabel(selectedApplication.programPhase)}</p></div>)}
                                 {selectedApplication.programPhase === 'COHORT' && selectedApplication.cohortId && (<div><h4 className="font-semibold text-muted-foreground text-xs">Assigned Cohort</h4><p className="flex items-center gap-1"><GroupIcon className="h-4 w-4 text-primary" />{allCohorts.find(c => c.id === selectedApplication.cohortId)?.name || 'Unknown Cohort'}</p></div>)}
                                 <div><h4 className="font-semibold text-muted-foreground text-xs">Applicant Name</h4><p>{selectedApplication.applicantDisplayName || 'N/A'}</p></div>
@@ -1364,6 +1351,16 @@ export default function ViewApplicationsPage() {
                                     <Card key={member.id || index} className="bg-muted/40 p-2 shadow-sm text-xs"><CardHeader className="p-0 pb-0.5"><CardTitle className="text-xs font-medium">Member {index + 1}: {member.name}</CardTitle></CardHeader><CardContent className="p-0 text-foreground/80 space-y-0.5"><p><strong>Email:</strong> {member.email}</p><p><strong>Phone:</strong> {member.phone}</p><p><strong>Institute:</strong> {member.institute}</p><p><strong>Department:</strong> {member.department}</p>{member.enrollmentNumber && <p><strong>Enrollment No:</strong> {member.enrollmentNumber}</p>}</CardContent></Card>
                                 ))}</div></div>
                             )}
+                        </AccordionContent>
+                    </AccordionItem>
+                    <AccordionItem value="discussion">
+                        <AccordionTrigger>Feedback &amp; Discussion</AccordionTrigger>
+                        <AccordionContent>
+                            <IdeaComments 
+                                idea={selectedApplication} 
+                                currentUserProfile={userProfile} 
+                                onCommentPosted={fetchApplications} 
+                            />
                         </AccordionContent>
                     </AccordionItem>
                     {selectedApplication.programPhase === 'COHORT' && (

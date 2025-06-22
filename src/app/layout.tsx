@@ -21,7 +21,7 @@ const spaceGrotesk = Space_Grotesk({
 });
 
 export const metadata: Metadata = {
-  title: 'PIERC Portal',
+  title: 'PIERC',
   description: 'Parul Innovation & Entrepreneurship Research Centre Portal. Your hub for incubation, research, and innovation.',
   icons: {
     icon: '/favicon.ico', // Assuming you might add a favicon later

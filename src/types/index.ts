@@ -1,6 +1,15 @@
 
 import type { Timestamp } from 'firebase/firestore';
 
+export interface Comment {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorRole: Role;
+  content: string;
+  createdAt: Timestamp;
+}
+
 export type Role = 'STUDENT' | 'EXTERNAL_USER' | 'ADMIN_FACULTY' | null;
 
 export type ApplicantCategory = 'PARUL_STUDENT' | 'PARUL_STAFF' | 'PARUL_ALUMNI' | 'OTHERS';
@@ -37,7 +46,7 @@ export type IncubationDocumentType =
 
 export const ALL_INCUBATION_DOCUMENT_TYPES: { type: IncubationDocumentType; label: string; description: string }[] = [
     { type: 'aadharCard', label: 'Aadhar Card', description: 'Copy of founder\'s Aadhar card.' },
-    { type: 'license', label: 'License', description: 'Relevant business or professional license, if any.' },
+    { type: 'license', label: 'Relevant business or professional license, if any.' },
     { type: 'panCard', label: 'PAN Card', description: 'Copy of founder\'s PAN card.' },
     { type: 'residentialProof', label: 'Residential Proof', description: 'Utility bill, rent agreement, etc.' },
     { type: 'pitchDeck', label: 'Pitch Deck', description: 'Your latest pitch deck presentation.' },
@@ -131,6 +140,7 @@ export interface IdeaSubmission {
   teamMembers?: string; // Legacy text field for team members
   structuredTeamMembers?: TeamMember[];
   teamMemberEmails?: string[];
+  comments?: Comment[];
 
   fileURL?: string;
   fileName?: string;
@@ -303,6 +313,8 @@ export type ActivityLogAction =
   | 'IDEA_EXPENSE_UPLOADED'
   | 'IDEA_APPLIED_FOR_NEXT_SANCTION'
   | 'IDEA_INCUBATION_DOCUMENT_UPLOADED'
+  | 'ADMIN_COMMENT_ADDED'
+  | 'USER_COMMENT_ADDED'
   | 'ADMIN_USER_ROLE_UPDATED'
   | 'ADMIN_IDEA_STATUS_PHASE_UPDATED'
   | 'ADMIN_IDEA_MENTOR_ASSIGNED'
@@ -335,6 +347,7 @@ export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
   'IDEA_TEAM_MEMBER_ADDED', 'IDEA_TEAM_MEMBER_UPDATED', 'IDEA_TEAM_MEMBER_REMOVED',
   'USER_GENERATED_PITCH_DECK_OUTLINE',
   'IDEA_BENEFICIARY_DETAILS_UPDATED', 'IDEA_EXPENSE_UPLOADED', 'IDEA_APPLIED_FOR_NEXT_SANCTION', 'IDEA_INCUBATION_DOCUMENT_UPLOADED',
+  'ADMIN_COMMENT_ADDED', 'USER_COMMENT_ADDED',
   'ADMIN_USER_ROLE_UPDATED', 'ADMIN_IDEA_STATUS_PHASE_UPDATED', 'ADMIN_IDEA_MENTOR_ASSIGNED',
   'ADMIN_IDEA_PHASE2_MARK_SUBMITTED', 'ADMIN_IDEA_ARCHIVED_FOR_REVISION', 'ADMIN_IDEA_ASSIGNED_TO_COHORT',
   'ADMIN_IDEA_FUNDING_DETAILS_SET', 'ADMIN_IDEA_SANCTION_DISBURSED', 'ADMIN_IDEA_SANCTION_UTILIZATION_REVIEWED',

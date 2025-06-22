@@ -25,7 +25,7 @@ export function Navbar() {
   };
 
   return (
-    <nav className="bg-card text-card-foreground shadow-md sticky top-0 z-50 h-20 flex items-center"> {/* Navbar height changed to h-20 (5rem) */}
+    <nav className="bg-card text-card-foreground shadow-md sticky top-0 z-50 h-24 flex items-center"> {/* Navbar height changed to h-20 (5rem) */}
       <div className="container mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-full">
           <div className="flex items-center space-x-4">
@@ -39,17 +39,17 @@ export function Navbar() {
                <Image
                 src="https://www.pierc.org/_next/static/media/PIERC.959ad75d.svg"
                 alt="PIERC Portal Logo"
-                width={110}
-                height={45}
-                className="h-11 w-auto dark:hidden"
+                width={130}
+                height={60}
+                className="h-16 w-auto dark:hidden"
                 priority
               />
               <Image
                 src="https://www.pierc.org/_next/static/media/PIERC%20WHITE.a9ef7cc8.svg"
                 alt="PIERC Portal Logo"
-                width={110}
-                height={45}
-                className="h-11 w-auto hidden dark:block"
+                width={130}
+                height={60}
+                className="h-16 w-auto hidden dark:block"
                 priority
               />
             </Link>

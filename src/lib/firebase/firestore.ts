@@ -2,7 +2,8 @@
 
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
-import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType } from '@/types';
+import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType, Comment } from '@/types';
+import { AVAILABLE_MENTORS_DATA } from '@/types';
 import { httpsCallable } from 'firebase/functions';
 import { nanoid } from 'nanoid';
 import type { User } from 'firebase/auth';
@@ -654,6 +655,7 @@ export const createIdeaFromProfile = async (
             teamMembers: data.teamMembers || '',
             structuredTeamMembers: data.structuredTeamMembers || [],
             teamMemberEmails: data.teamMemberEmails || [],
+            comments: data.comments || [],
             fileURL: data.fileURL ?? null,
             fileName: data.fileName ?? null,
             studioLocation: data.studioLocation ?? null,
@@ -752,6 +754,7 @@ export const createIdeaFromProfile = async (
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
+        comments: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.comments || []),
         fileURL: existingIdeaToUpdate.fileURL || null,
         fileName: existingIdeaToUpdate.fileName || null,
         studioLocation: existingIdeaToUpdate.studioLocation || null,
@@ -795,6 +798,7 @@ export const createIdeaFromProfile = async (
         submittedAt: serverTimestamp() as Timestamp,
         structuredTeamMembers: [],
         teamMemberEmails: [],
+        comments: [],
         status: 'SUBMITTED',
         programPhase: null,
         cohortId: null,
@@ -969,6 +973,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
+      comments: ideaData.comments || [],
       rejectionRemarks: ideaData.rejectionRemarks || null,
       rejectedByUid: ideaData.rejectedByUid || null,
       rejectedAt: ideaData.rejectedAt || null,
@@ -1073,6 +1078,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
+      comments: ideaData.comments || [],
       rejectionRemarks: ideaData.rejectionRemarks || null,
       rejectedByUid: ideaData.rejectedByUid || null,
       rejectedAt: ideaData.rejectedAt || null,
@@ -1192,6 +1198,7 @@ export const updateIdeaStatusAndPhase = async (
     updates.mentor = deleteField();
     updates.cohortId = deleteField();
     updates.isOutlineAIGenerated = false;
+    updates.comments = [];
     updates.rejectionRemarks = deleteField();
     updates.rejectedByUid = deleteField();
     updates.rejectedAt = deleteField();
@@ -1263,9 +1270,9 @@ export const updateIdeaStatusAndPhase = async (
     let notificationTitle = `Update on your Idea: "${ideaTitle}"`;
     let notificationMessage = `The status of your idea has been updated to: ${newStatus.replace(/_/g, ' ').toLowerCase()}.`;
 
-    if (newStatus === 'SELECTED' && newPhase) {
+    if (newStatus === 'SELECTED') {
       notificationTitle = `🎉 Congratulations! Your Idea is Selected! 🎉`;
-      notificationMessage = `Your idea, "${ideaTitle}", has been selected for ${getProgramPhaseLabel(newPhase)}! We're excited to see you at the next stage.`;
+      notificationMessage = newPhase ? `Your idea, "${ideaTitle}", has been selected for ${getProgramPhaseLabel(newPhase)}! We're excited to see you at the next stage.` : `Your idea, "${ideaTitle}", has been selected! More details to follow.`;
     } else if (newStatus === 'NOT_SELECTED') {
       notificationTitle = `Update on your Idea: "${ideaTitle}"`;
       notificationMessage = `Your idea has been reviewed. Please check your dashboard for feedback and guidance from our team.`;
@@ -1404,6 +1411,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
+        comments: data.comments || [],
         submittedAt,
         updatedAt,
         rejectionRemarks: data.rejectionRemarks || null,
@@ -1487,6 +1495,7 @@ export const archiveIdeaSubmissionForUserRevisionFS = async (ideaId: string, adm
     mentor: deleteField(),
     cohortId: deleteField(),
     isOutlineAIGenerated: false,
+    comments: [],
     rejectionRemarks: deleteField(),
     rejectedByUid: deleteField(),
     rejectedAt: deleteField(),
@@ -1765,6 +1774,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
+        comments: data.comments || [],
         submittedAt,
         updatedAt,
         rejectionRemarks: data.rejectionRemarks || null,
@@ -1966,7 +1976,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments' | 'comments'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -1982,6 +1992,7 @@ export const createIdeaSubmission = async (
     teamMembers: ideaData.teamMembers || '',
     structuredTeamMembers: ideaData.structuredTeamMembers || [],
     teamMemberEmails: ideaData.teamMemberEmails || [],
+    comments: [],
     status: 'SUBMITTED',
     programPhase: null,
     cohortId: null,
@@ -2133,6 +2144,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
+        comments: data.comments || [],
         submittedAt,
         updatedAt,
         rejectionRemarks: data.rejectionRemarks || null,
@@ -2601,4 +2613,78 @@ export const markNotificationsAsRead = async (userId: string, notificationIds: s
     await logUserActivity(userId, actorProfile.displayName || actorProfile.fullName, 'USER_NOTIFICATIONS_READ', undefined, { count: notificationIds.length });
 };
 
-    
+// Commenting Functions
+export const addCommentToIdea = async (
+  ideaId: string,
+  ideaTitle: string,
+  commentContent: string,
+  actorProfile: UserProfile
+): Promise<void> => {
+  if (!commentContent.trim()) {
+    throw new Error("Comment cannot be empty.");
+  }
+
+  const ideaRef = doc(db, 'ideas', ideaId);
+  const newComment: Comment = {
+    id: nanoid(),
+    authorId: actorProfile.uid,
+    authorName: actorProfile.displayName || actorProfile.fullName || 'User',
+    authorRole: actorProfile.role,
+    content: commentContent,
+    createdAt: Timestamp.now(),
+  };
+
+  await updateDoc(ideaRef, {
+    comments: arrayUnion(newComment),
+    updatedAt: serverTimestamp(),
+  });
+
+  const logAction: ActivityLogAction = actorProfile.role === 'ADMIN_FACULTY' ? 'ADMIN_COMMENT_ADDED' : 'USER_COMMENT_ADDED';
+  await logUserActivity(
+    actorProfile.uid,
+    actorProfile.displayName || actorProfile.fullName,
+    logAction,
+    { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+    { commentContent: commentContent.substring(0, 50) + '...' }
+  );
+
+  // --- Notification Logic ---
+  const ideaSnap = await getDoc(ideaRef);
+  if (!ideaSnap.exists()) return;
+  const ideaData = ideaSnap.data() as IdeaSubmission;
+
+  const notificationTitle = `New Comment on "${ideaTitle}"`;
+  const notificationMessage = `${newComment.authorName}: "${commentContent.substring(0, 50)}..."`;
+  
+  const userIdsToNotify = new Set<string>();
+
+  if (actorProfile.role === 'ADMIN_FACULTY') {
+    // Admin commented, notify the team
+    const notificationLink = '/dashboard';
+    if (ideaData.userId) {
+      userIdsToNotify.add(ideaData.userId);
+    }
+    ideaData.structuredTeamMembers?.forEach(member => {
+      if (member.id && member.id.length > 10) userIdsToNotify.add(member.id);
+    });
+
+    userIdsToNotify.delete(actorProfile.uid);
+  
+    if (userIdsToNotify.size > 0) {
+        const batch = writeBatch(db);
+        Array.from(userIdsToNotify).forEach(uid => {
+          const notifRef = doc(collection(db, 'notifications'));
+          batch.set(notifRef, {
+            userId: uid,
+            title: notificationTitle,
+            message: notificationMessage,
+            link: notificationLink,
+            isRead: false,
+            createdAt: serverTimestamp()
+          });
+        });
+        await batch.commit();
+    }
+  } 
+  // Future enhancement: Add logic here to notify admins/mentors when a user comments.
+};
