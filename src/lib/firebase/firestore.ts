@@ -1262,14 +1262,14 @@ export const updateIdeaStatusAndPhase = async (
   // --- Notification Logic ---
   if (oldStatus !== newStatus) {
     const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
-        if (!phase) return 'N/A';
-        switch (phase) {
-            case 'PHASE_1': return 'Phase 1';
-            case 'PHASE_2': return 'Phase 2';
-            case 'COHORT': return 'Cohort';
-            case 'INCUBATED': return 'Incubated (Funding)';
-            default: return 'N/A';
-        }
+      if (!phase) return 'N/A';
+      switch (phase) {
+          case 'PHASE_1': return 'Phase 1';
+          case 'PHASE_2': return 'Phase 2';
+          case 'COHORT': return 'Cohort';
+          case 'INCUBATED': return 'Incubated (Funding)';
+          default: return 'N/A';
+      }
     };
 
     let notificationTitle = `Update on your Idea: "${ideaTitle}"`;
@@ -2207,16 +2207,27 @@ export const assignIdeaToCohortFS = async (ideaId: string, ideaTitle: string, ne
     updatedAt: serverTimestamp()
   });
 
+  // Safely unassign from the old cohort
   if (oldCohortId && oldCohortId !== newCohortId) {
     const oldCohortRef = doc(db, 'cohorts', oldCohortId);
-    batch.update(oldCohortRef, {
-      ideaIds: arrayRemove(ideaId),
-      updatedAt: serverTimestamp()
-    });
+    const oldCohortSnap = await getDoc(oldCohortRef);
+    if (oldCohortSnap.exists()) {
+        batch.update(oldCohortRef, {
+          ideaIds: arrayRemove(ideaId),
+          updatedAt: serverTimestamp()
+        });
+    } else {
+        console.warn(`Old cohort with ID ${oldCohortId} not found while unassigning. The operation will proceed, but the old cohort document was not updated as it doesn't exist.`);
+    }
   }
 
+  // Safely assign to the new cohort
   if (newCohortId && newCohortId !== oldCohortId) {
     const newCohortRef = doc(db, 'cohorts', newCohortId);
+    const newCohortSnap = await getDoc(newCohortRef);
+    if (!newCohortSnap.exists()) {
+        throw new Error(`Assigning idea failed: The target cohort does not exist. Please ensure the cohort is created before assigning ideas to it.`);
+    }
     batch.update(newCohortRef, {
       ideaIds: arrayUnion(ideaId),
       updatedAt: serverTimestamp()
