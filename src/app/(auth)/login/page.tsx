@@ -71,9 +71,9 @@ export default function LoginPage() {
     reset(); 
   }
 
-  // Adjusted min-height calculation: Navbar (h-16 = 4rem) + Footer (py-6 = 3rem) = 7rem
-  // theme(spacing.16) = 4rem, theme(spacing.12) = 3rem
-  const pageMinHeight = "min-h-[calc(100vh_-_theme(spacing.16)_-_theme(spacing.12))]"; 
+  // Adjusted min-height calculation: Navbar (h-20 = 5rem) + Footer (py-6 = 3rem) = 8rem
+  // theme(spacing.20) = 5rem, theme(spacing.12) = 3rem
+  const pageMinHeight = "min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))]"; 
 
   if (!initialLoadComplete) {
     return (

@@ -7,8 +7,8 @@ import Link from 'next/link';
 
 export default function NotFound() {
   // Using a calculation similar to login page for vertical centering between header and footer
-  // Navbar (h-16 = 4rem) + Footer (py-6 = 3rem)
-  const mainContentMinHeight = "min-h-[calc(100vh_-_theme(spacing.16)_-_theme(spacing.12))]";
+  // Navbar (h-20 = 5rem) + Footer (py-6 = 3rem)
+  const mainContentMinHeight = "min-h-[calc(100vh_-_theme(spacing.20)_-_theme(spacing.12))]";
 
   return (
     <div className={`flex flex-col items-center justify-center text-center p-4 animate-fade-in ${mainContentMinHeight}`}>
