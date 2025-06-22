@@ -1,5 +1,4 @@
 
-
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType, Comment } from '@/types';
@@ -359,6 +358,8 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
     cohortId: announcementData.targetAudience === 'SPECIFIC_COHORT' ? announcementData.cohortId : null,
     createdByUid: adminProfile.uid,
     creatorDisplayName: adminProfile.displayName || adminProfile.fullName,
+    attachmentURL: announcementData.attachmentURL || null,
+    attachmentName: announcementData.attachmentName || null,
     createdAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
   };
@@ -466,9 +467,13 @@ export const getAllAnnouncementsForAdminStream = (callback: (announcements: Anno
 export const updateAnnouncement = async (announcementId: string, data: Partial<Omit<Announcement, 'id'|'createdAt'|'createdByUid'|'creatorDisplayName'>>, adminProfile: UserProfile): Promise<void> => {
   const announcementRef = doc(db, 'announcements', announcementId);
 
-  const updateData = { ...data };
+  const updateData: any = { ...data };
   if (data.targetAudience === 'ALL') {
     updateData.cohortId = null;
+  }
+  if (data.attachmentURL === null) {
+      updateData.attachmentURL = deleteField();
+      updateData.attachmentName = deleteField();
   }
 
   await updateDoc(announcementRef, {
@@ -1079,43 +1084,43 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
       comments: ideaData.comments || [],
-      rejectionRemarks: ideaData.rejectionRemarks || null,
-      rejectedByUid: ideaData.rejectedByUid || null,
-      rejectedAt: ideaData.rejectedAt || null,
-      phase2PptUrl: ideaData.phase2PptUrl || null,
-      phase2PptFileName: ideaData.phase2PptFileName || null,
-      phase2PptUploadedAt: ideaData.phase2PptUploadedAt || null,
+      rejectionRemarks: data.rejectionRemarks || null,
+      rejectedByUid: data.rejectedByUid || null,
+      rejectedAt: data.rejectedAt || null,
+      phase2PptUrl: data.phase2PptUrl || null,
+      phase2PptFileName: data.phase2PptFileName || null,
+      phase2PptUploadedAt: data.phase2PptUploadedAt || null,
       nextPhaseDate: nextPhaseDate,
-      nextPhaseStartTime: ideaData.nextPhaseStartTime || null,
-      nextPhaseEndTime: ideaData.nextPhaseEndTime || null,
-      nextPhaseVenue: ideaData.nextPhaseVenue || null,
-      nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
-      mentor: ideaData.mentor,
-      fundingSource: ideaData.fundingSource ?? null,
-      totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
-      sanction1Amount: ideaData.sanction1Amount ?? null,
-      sanction2Amount: ideaData.sanction2Amount ?? null,
-      sanction1DisbursedAt: ideaData.sanction1DisbursedAt ?? null,
-      sanction2DisbursedAt: ideaData.sanction2DisbursedAt ?? null,
-      sanction1Expenses: ideaData.sanction1Expenses || [],
-      sanction2Expenses: ideaData.sanction2Expenses || [],
-      beneficiaryName: ideaData.beneficiaryName ?? null,
-      beneficiaryAccountNo: ideaData.beneficiaryAccountNo ?? null,
-      beneficiaryBankName: ideaData.beneficiaryBankName ?? null,
-      beneficiaryIfscCode: ideaData.beneficiaryIfscCode ?? null,
-      beneficiaryAccountType: ideaData.beneficiaryAccountType ?? null,
-      beneficiaryCity: ideaData.beneficiaryCity ?? null,
-      beneficiaryBranchName: ideaData.beneficiaryBranchName ?? null,
-      sanction1AppliedForNext: ideaData.sanction1AppliedForNext ?? false,
-      sanction1UtilizationStatus: ideaData.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
-      sanction1UtilizationRemarks: ideaData.sanction1UtilizationRemarks ?? null,
-      sanction1UtilizationReviewedBy: ideaData.sanction1UtilizationReviewedBy ?? null,
-      sanction1UtilizationReviewedAt: ideaData.sanction1UtilizationReviewedAt ?? null,
-      sanction2UtilizationStatus: ideaData.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
-      sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
-      sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
-      sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
-      incubationDocuments: ideaData.incubationDocuments || {},
+      nextPhaseStartTime: data.nextPhaseStartTime || null,
+      nextPhaseEndTime: data.nextPhaseEndTime || null,
+      nextPhaseVenue: data.nextPhaseVenue || null,
+      nextPhaseGuidelines: data.nextPhaseGuidelines || null,
+      mentor: data.mentor,
+      fundingSource: data.fundingSource ?? null,
+      totalFundingAllocated: data.totalFundingAllocated ?? null,
+      sanction1Amount: data.sanction1Amount ?? null,
+      sanction2Amount: data.sanction2Amount ?? null,
+      sanction1DisbursedAt: data.sanction1DisbursedAt ?? null,
+      sanction2DisbursedAt: data.sanction2DisbursedAt ?? null,
+      sanction1Expenses: data.sanction1Expenses || [],
+      sanction2Expenses: data.sanction2Expenses || [],
+      beneficiaryName: data.beneficiaryName ?? null,
+      beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
+      beneficiaryBankName: data.beneficiaryBankName ?? null,
+      beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+      beneficiaryAccountType: data.beneficiaryAccountType ?? null,
+      beneficiaryCity: data.beneficiaryCity ?? null,
+      beneficiaryBranchName: data.beneficiaryBranchName ?? null,
+      sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
+      sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
+      sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
+      sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
+      sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
+      sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
+      sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+      incubationDocuments: data.incubationDocuments || {},
     } as IdeaSubmission);
   });
 
@@ -1296,7 +1301,7 @@ export const updateIdeaStatusAndPhase = async (
     
     if (teamUids.size > 0) {
         const batch = writeBatch(db);
-        teamUids.forEach(uid => {
+        Array.from(teamUids).forEach(uid => {
             const notifRef = doc(collection(db, 'notifications'));
             batch.set(notifRef, {
                 userId: uid,

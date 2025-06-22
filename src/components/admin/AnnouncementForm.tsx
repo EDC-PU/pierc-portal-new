@@ -15,10 +15,11 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import type { Announcement as AnnouncementType, UserProfile, Cohort } from '@/types';
 import { improveAnnouncementLanguage } from '@/ai/flows/improve-announcement-language';
-import { Wand2 } from 'lucide-react';
+import { Wand2, Paperclip, X } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getAllCohortsStream } from '@/lib/firebase/firestore';
+import { Badge } from '../ui/badge';
 
 const announcementSchemaBase = z.object({
   title: z.string().min(5, 'Title must be at least 5 characters').max(100),
@@ -26,6 +27,7 @@ const announcementSchemaBase = z.object({
   isUrgent: z.boolean().default(false),
   targetAudience: z.enum(['ALL', 'SPECIFIC_COHORT']).default('ALL'),
   cohortId: z.string().optional().nullable(),
+  attachmentFile: z.custom<File | null>(f => f === null || f instanceof File).optional(),
 });
 
 const announcementSchema = announcementSchemaBase.superRefine((data, ctx) => {
@@ -38,27 +40,22 @@ const announcementSchema = announcementSchemaBase.superRefine((data, ctx) => {
   }
 });
 
-export type AnnouncementFormSubmitData = z.infer<typeof announcementSchema>;
-
-export type AnnouncementSaveData = AnnouncementFormSubmitData & {
-    createdByUid: string;
-    creatorDisplayName: string | null;
-};
-
+export type AnnouncementFormData = z.infer<typeof announcementSchema>;
 
 interface AnnouncementFormProps {
-  currentUserProfile: UserProfile | null;
   initialData?: AnnouncementType | null;
   onSubmitSuccess: () => void;
-  onSave: (data: AnnouncementSaveData) => Promise<void>;
+  onSave: (data: AnnouncementFormData) => Promise<void>;
 }
 
-export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSuccess, onSave }: AnnouncementFormProps) {
+export function AnnouncementForm({ initialData, onSubmitSuccess, onSave }: AnnouncementFormProps) {
   const { toast } = useToast();
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loadingCohorts, setLoadingCohorts] = useState(false);
+  const [existingAttachmentName, setExistingAttachmentName] = useState<string | null>(initialData?.attachmentName || null);
 
-  const { control, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<AnnouncementFormSubmitData>({
+
+  const { control, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<AnnouncementFormData>({
     resolver: zodResolver(announcementSchema),
     defaultValues: {
       title: initialData?.title || '',
@@ -66,6 +63,7 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
       isUrgent: initialData?.isUrgent || false,
       targetAudience: initialData?.targetAudience || 'ALL',
       cohortId: initialData?.cohortId || null,
+      attachmentFile: undefined, // Start with no file selected
     },
   });
 
@@ -74,6 +72,7 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
 
   const currentContent = watch('content');
   const currentTargetAudience = watch('targetAudience');
+  const currentAttachmentFile = watch('attachmentFile');
 
   useEffect(() => {
     setLoadingCohorts(true);
@@ -116,38 +115,35 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
     }
   };
 
-  const processSubmit = async (formData: AnnouncementFormSubmitData) => {
-    if (!currentUserProfile) {
-        toast({ title: "Error", description: "User not authenticated.", variant: "destructive"});
-        return;
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] || null;
+    setValue('attachmentFile', file, { shouldValidate: true });
+    if(file === null) {
+      setExistingAttachmentName(null);
     }
-    
-    const announcementDataToSave: AnnouncementSaveData = {
-        ...formData,
-        cohortId: formData.targetAudience === 'SPECIFIC_COHORT' ? formData.cohortId : null,
-        createdByUid: currentUserProfile.uid,
-        creatorDisplayName: currentUserProfile.displayName || currentUserProfile.fullName || 'Admin',
-    };
+  };
 
+  const removeAttachment = () => {
+    setValue('attachmentFile', null); 
+    setExistingAttachmentName(null); 
+    const fileInput = document.getElementById('attachmentFile') as HTMLInputElement;
+    if (fileInput) fileInput.value = '';
+  };
+
+
+  const processSubmit = async (formData: AnnouncementFormData) => {
     try {
-      await onSave(announcementDataToSave);
+      await onSave(formData);
       onSubmitSuccess(); 
     } catch (error) {
       console.error("Failed to save announcement from form:", error);
-       toast({ title: "Save Error", description: (error as Error).message || "Could not save announcement.", variant: "destructive"});
     }
   };
 
   return (
-    <Card className="w-full shadow-lg">
-      <CardHeader>
-        <CardTitle className="font-headline text-2xl">{initialData ? 'Edit Announcement' : 'Create New Announcement'}</CardTitle>
-        <CardDescription>
-          {initialData ? 'Modify the details of the existing announcement.' : 'Craft a new announcement for the PIERC community.'}
-        </CardDescription>
-      </CardHeader>
+    <Card className="w-full shadow-lg border-none">
       <form onSubmit={handleSubmit(processSubmit)}>
-        <CardContent className="space-y-6">
+        <CardContent className="space-y-6 pt-4">
           <div>
             <Label htmlFor="title">Title</Label>
             <Controller name="title" control={control} render={({ field }) => <Input id="title" placeholder="Announcement Title" {...field} />} />
@@ -157,6 +153,7 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
           <div>
             <Label htmlFor="content">Content</Label>
             <Controller name="content" control={control} render={({ field }) => <Textarea id="content" placeholder="Detailed content of the announcement..." rows={6} {...field} />} />
+            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting (e.g., **bold**, *italic*, - lists).</p>
             {errors.content && <p className="text-sm text-destructive mt-1">{errors.content.message}</p>}
           </div>
 
@@ -181,6 +178,23 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
               </CardFooter>
             </Card>
           )}
+
+          <div>
+            <Label htmlFor="attachmentFile">Attachment (Optional)</Label>
+            <Input id="attachmentFile" type="file" onChange={handleFileChange} />
+            {(existingAttachmentName || currentAttachmentFile?.name) && (
+              <div className="mt-2 flex items-center gap-2">
+                <Badge variant="secondary" className="flex items-center gap-2">
+                  <Paperclip className="h-3 w-3"/>
+                  <span>{currentAttachmentFile?.name || existingAttachmentName}</span>
+                </Badge>
+                <Button type="button" size="icon" variant="ghost" className="h-6 w-6 text-muted-foreground hover:text-destructive" onClick={removeAttachment}>
+                  <X className="h-4 w-4"/>
+                </Button>
+              </div>
+            )}
+             {errors.attachmentFile && <p className="text-sm text-destructive mt-1">{errors.attachmentFile.message}</p>}
+          </div>
           
           <div className="space-y-2">
             <Label>Target Audience</Label>
@@ -278,4 +292,3 @@ export function AnnouncementForm({ currentUserProfile, initialData, onSubmitSucc
     </Card>
   );
 }
-

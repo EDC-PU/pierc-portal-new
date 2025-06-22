@@ -5,17 +5,18 @@ import { useEffect, useState } from 'react';
 import type { Announcement, UserProfile, Cohort } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
-import { AnnouncementForm, type AnnouncementSaveData } from '@/components/admin/AnnouncementForm';
+import { AnnouncementForm, type AnnouncementFormData } from '@/components/admin/AnnouncementForm';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { createAnnouncement, getAllAnnouncementsForAdminStream, updateAnnouncement, deleteAnnouncement, getAllCohortsStream } from '@/lib/firebase/firestore';
+import { uploadAnnouncementAttachment } from '@/ai/flows/upload-announcement-attachment-flow';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
-import { PlusCircle, Edit3, Trash2, AlertTriangle, Megaphone } from 'lucide-react';
+import { PlusCircle, Edit3, Trash2, AlertTriangle, Megaphone, Download } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +28,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import ReactMarkdown from 'react-markdown';
+
 
 export default function ManageAnnouncementsPage() {
   const { userProfile, loading: authLoading } = useAuth();
@@ -73,21 +76,61 @@ export default function ManageAnnouncementsPage() {
     toast({ title: "Success", description: editingAnnouncement ? "Announcement updated successfully." : "Announcement created successfully." });
   };
 
-  const handleSaveAnnouncement = async (dataWithCreatorInfo: AnnouncementSaveData) => {
+  const handleSaveAnnouncement = async (formData: AnnouncementFormData) => {
     if (!userProfile) {
         toast({ title: "Authentication Error", description: "Admin profile not found.", variant: "destructive" });
         throw new Error("Admin profile not found");
     }
+
+    let attachmentDetails: { attachmentURL: string | null; attachmentName: string | null } = {
+        attachmentURL: editingAnnouncement?.attachmentURL || null,
+        attachmentName: editingAnnouncement?.attachmentName || null
+    };
+
+    if (formData.attachmentFile) {
+      try {
+        const fileToDataUri = (file: File): Promise<string> =>
+            new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        const fileDataUri = await fileToDataUri(formData.attachmentFile);
+        attachmentDetails = await uploadAnnouncementAttachment({
+            announcementTitle: formData.title,
+            fileName: formData.attachmentFile.name,
+            fileDataUri: fileDataUri,
+        });
+      } catch (uploadError) {
+          toast({ title: "Attachment Upload Failed", description: "Could not upload the attachment. Please try again.", variant: "destructive" });
+          throw uploadError;
+      }
+    } else if (formData.attachmentFile === null) { 
+        attachmentDetails = { attachmentURL: null, attachmentName: null };
+    }
+
+    const dataToSave: Omit<Announcement, 'id' | 'createdAt' | 'updatedAt'> = {
+        title: formData.title,
+        content: formData.content,
+        isUrgent: formData.isUrgent,
+        targetAudience: formData.targetAudience,
+        cohortId: formData.targetAudience === 'SPECIFIC_COHORT' ? formData.cohortId : null,
+        attachmentURL: attachmentDetails.attachmentURL,
+        attachmentName: attachmentDetails.attachmentName,
+        createdByUid: userProfile.uid,
+        creatorDisplayName: userProfile.displayName || userProfile.fullName || 'Admin',
+    };
+
     try {
         if (editingAnnouncement && editingAnnouncement.id) {
-            const { createdByUid, creatorDisplayName, ...actualUpdateData } = dataWithCreatorInfo;
-            await updateAnnouncement(editingAnnouncement.id, actualUpdateData, userProfile);
+            await updateAnnouncement(editingAnnouncement.id, dataToSave, userProfile);
         } else {
-            await createAnnouncement(dataWithCreatorInfo, userProfile);
+            await createAnnouncement(dataToSave, userProfile);
         }
     } catch (error: any) {
         toast({ title: "Save Error", description: error.message || "Could not save announcement.", variant: "destructive"});
-        throw error;
+        throw error; 
     }
   };
 
@@ -156,10 +199,9 @@ export default function ManageAnnouncementsPage() {
             </DialogHeader>
             {isFormOpen && (
                  <AnnouncementForm
-                    currentUserProfile={userProfile}
                     initialData={editingAnnouncement}
-                    onSubmitSuccess={handleFormSubmitSuccess}
                     onSave={handleSaveAnnouncement}
+                    onSubmitSuccess={handleFormSubmitSuccess}
                 />
             )}
           </DialogContent>
@@ -183,7 +225,7 @@ export default function ManageAnnouncementsPage() {
                     <TableHead className="hidden md:table-cell">Date</TableHead>
                     <TableHead className="hidden sm:table-cell">Status</TableHead>
                     <TableHead className="hidden lg:table-cell">Audience</TableHead>
-                    <TableHead className="hidden lg:table-cell">Creator</TableHead>
+                    <TableHead>Attachment</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -208,8 +250,14 @@ export default function ManageAnnouncementsPage() {
                           ? `Cohort: ${getCohortNameById(ann.cohortId)}` 
                           : 'All Users'}
                       </TableCell>
-                       <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                        {ann.creatorDisplayName || 'N/A'}
+                       <TableCell className="text-sm">
+                        {ann.attachmentURL ? (
+                            <a href={ann.attachmentURL} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline flex items-center gap-1">
+                                <Download className="h-4 w-4" /> View
+                            </a>
+                        ) : (
+                            <span className="text-muted-foreground">None</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right space-x-1 sm:space-x-2">
                         <Button variant="ghost" size="icon" onClick={() => openEditForm(ann)} title="Edit">
@@ -248,5 +296,3 @@ export default function ManageAnnouncementsPage() {
     </div>
   );
 }
-
-    

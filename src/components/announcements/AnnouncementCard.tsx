@@ -1,11 +1,14 @@
+
 'use client';
 
 import { useState, useEffect } from 'react';
 import type { Announcement } from '@/types';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { format, formatDistanceToNow } from 'date-fns';
-import { UserCircle, CalendarDays, AlertTriangle } from 'lucide-react';
+import { UserCircle, CalendarDays, AlertTriangle, Download } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
 
 interface AnnouncementCardProps {
   announcement: Announcement;
@@ -47,16 +50,19 @@ export function AnnouncementCard({ announcement, isAdmin = false, onEdit, onDele
           </span>
         </CardDescription>
       </CardHeader>
-      <CardContent>
-        <p className="text-foreground whitespace-pre-wrap">{announcement.content}</p>
+      <CardContent className="prose prose-sm dark:prose-invert max-w-none">
+        <ReactMarkdown>{announcement.content}</ReactMarkdown>
       </CardContent>
-      {isAdmin && onEdit && onDelete && announcement.id && (
+      {(announcement.attachmentURL || (isAdmin && onEdit && onDelete && announcement.id)) && (
         <CardFooter className="flex justify-end gap-2">
-          {/* Admin actions can be added here if needed on this card directly */}
-          {/* e.g.
-          <Button variant="outline" size="sm" onClick={() => onEdit(announcement)}>Edit</Button>
-          <Button variant="destructive" size="sm" onClick={() => onDelete(announcement.id!)}>Delete</Button> 
-          */}
+            {announcement.attachmentURL && (
+                <Button variant="outline" size="sm" asChild>
+                    <a href={announcement.attachmentURL} target="_blank" rel="noopener noreferrer">
+                        <Download className="h-4 w-4 mr-2" />
+                        {announcement.attachmentName || 'Download Attachment'}
+                    </a>
+                </Button>
+            )}
         </CardFooter>
       )}
     </Card>

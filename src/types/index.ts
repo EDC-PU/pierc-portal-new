@@ -240,8 +240,8 @@ export interface Announcement {
   isUrgent: boolean;
   targetAudience: 'ALL' | 'SPECIFIC_COHORT';
   cohortId?: string | null;
-  attachmentURL?: string;
-  attachmentName?: string;
+  attachmentURL?: string | null;
+  attachmentName?: string | null;
   createdByUid: string;
   creatorDisplayName: string | null;
   createdAt: Timestamp;
