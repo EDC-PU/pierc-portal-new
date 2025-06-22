@@ -1,4 +1,5 @@
 
+
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType } from '@/types';
@@ -1246,54 +1247,62 @@ export const updateIdeaStatusAndPhase = async (
   }
   await updateDoc(ideaRef, updates);
 
-  // Send notification to the idea owner and team members
-  const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
-      if (!phase) return 'N/A';
-      switch (phase) {
-          case 'PHASE_1': return 'Phase 1';
-          case 'PHASE_2': return 'Phase 2';
-          case 'COHORT': return 'Cohort';
-          case 'INCUBATED': return 'Incubated (Funding)';
-          default: return 'N/A';
-      }
-  };
+  // --- Notification Logic ---
+  if (oldStatus !== newStatus) {
+    const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
+        if (!phase) return 'N/A';
+        switch (phase) {
+            case 'PHASE_1': return 'Phase 1';
+            case 'PHASE_2': return 'Phase 2';
+            case 'COHORT': return 'Cohort';
+            case 'INCUBATED': return 'Incubated (Funding)';
+            default: return 'N/A';
+        }
+    };
 
-  const notificationTitle = `Your idea "${ideaTitle}" has been updated.`;
-  let notificationMessage = `The status of your idea has changed from ${oldStatus} to ${newStatus}.`;
-  if (newStatus === 'SELECTED' && newPhase) {
-    notificationMessage += ` It is now in ${getProgramPhaseLabel(newPhase)}.`;
-  } else if (newStatus === 'NOT_SELECTED') {
-      notificationMessage += ` Please check your dashboard for feedback.`
-  }
+    let notificationTitle = `Update on your Idea: "${ideaTitle}"`;
+    let notificationMessage = `The status of your idea has been updated to: ${newStatus.replace(/_/g, ' ').toLowerCase()}.`;
 
-  const teamUids = new Set<string>();
-  if (oldIdeaData.userId) {
-      teamUids.add(oldIdeaData.userId);
-  }
-  if (oldIdeaData.structuredTeamMembers) {
-      oldIdeaData.structuredTeamMembers.forEach(member => {
-          if (member.id && member.id.length > 10) { // Check if ID is likely a UID
-              teamUids.add(member.id);
-          }
-      });
-  }
-  
-  if (teamUids.size > 0) {
-      const batch = writeBatch(db);
-      teamUids.forEach(uid => {
-          const notifRef = doc(collection(db, 'notifications'));
-          batch.set(notifRef, {
-              userId: uid,
-              title: notificationTitle,
-              message: notificationMessage,
-              link: '/dashboard/',
-              isRead: false,
-              createdAt: serverTimestamp()
-          });
-      });
-      await batch.commit();
-  }
+    if (newStatus === 'SELECTED' && newPhase) {
+      notificationTitle = `🎉 Congratulations! Your Idea is Selected! 🎉`;
+      notificationMessage = `Your idea, "${ideaTitle}", has been selected for ${getProgramPhaseLabel(newPhase)}! We're excited to see you at the next stage.`;
+    } else if (newStatus === 'NOT_SELECTED') {
+      notificationTitle = `Update on your Idea: "${ideaTitle}"`;
+      notificationMessage = `Your idea has been reviewed. Please check your dashboard for feedback and guidance from our team.`;
+    } else if (newStatus === 'ARCHIVED_BY_ADMIN') {
+        notificationTitle = `Your Idea "${ideaTitle}" has been Archived`;
+        notificationMessage = `Your idea has been archived for revision. Please update your details on the profile page and save to resubmit.`;
+    }
 
+    const teamUids = new Set<string>();
+    if (oldIdeaData.userId) {
+        teamUids.add(oldIdeaData.userId);
+    }
+    if (oldIdeaData.structuredTeamMembers) {
+        oldIdeaData.structuredTeamMembers.forEach(member => {
+            // A simple check to see if the ID is a UID and not a placeholder
+            if (member.id && member.id.length > 10) { 
+                teamUids.add(member.id);
+            }
+        });
+    }
+    
+    if (teamUids.size > 0) {
+        const batch = writeBatch(db);
+        teamUids.forEach(uid => {
+            const notifRef = doc(collection(db, 'notifications'));
+            batch.set(notifRef, {
+                userId: uid,
+                title: notificationTitle,
+                message: notificationMessage,
+                link: '/dashboard/',
+                isRead: false,
+                createdAt: serverTimestamp()
+            });
+        });
+        await batch.commit();
+    }
+  }
 
   await logUserActivity(
     adminProfile.uid,
