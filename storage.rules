@@ -1,27 +1,12 @@
-rules_version = '2';
 
+rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    
-    // Allow public read on event flyers.
-    // Writes are currently handled by a backend function using the Admin SDK, which bypasses these rules.
-    match /event_flyers/{flyerName} {
-      allow read: if true;
-      allow write: if false; // No client-side writes are permitted for this path.
-    }
-
-    // Allow public read on presentations.
-    // Only allow the owner of the idea to write (upload/update/delete) files for their own idea.
-    match /presentations/{ideaId}/{fileName} {
-      allow read: if true;
-      allow write: if request.auth != null && get(/databases/$(database)/documents/ideas/$(ideaId)).data.userId == request.auth.uid;
-    }
-    
-    // Allow public read on incubation documents.
-    // Only allow the owner of the idea to write (upload/update/delete) files for their own idea.
-    match /incubation_documents/{ideaId}/{fileName} {
-       allow read: if true;
-       allow write: if request.auth != null && get(/databases/$(database)/documents/ideas/$(ideaId)).data.userId == request.auth.uid;
+    // Only authenticated users can access files.
+    // This is a basic rule. For production, you would want to restrict access further.
+    // For example, only the uploader or specific users should be able to read/write certain paths.
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
     }
   }
 }
