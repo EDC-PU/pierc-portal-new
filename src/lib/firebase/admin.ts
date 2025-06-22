@@ -28,7 +28,9 @@ function ensureAdminInitialized() {
     // Log a clear error to the server console instead of throwing.
     // This prevents the entire server from crashing on startup if env vars are missing.
     console.error(
-      'Firebase Admin initialization skipped: Missing required environment variables. Ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set in the deployment environment. Admin features like file uploads will fail.'
+      'Firebase Admin SDK initialization skipped. This is expected during client-side rendering, but if you see this error on your server during a server-side action, it means required environment variables are missing. \n' +
+      'Please ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set. \n' +
+      'For local development, use a .env.local file. For production, set these in your hosting provider\'s environment variable settings.'
     );
     return; // Exit without initializing, app remains null
   }
@@ -53,7 +55,11 @@ function ensureAdminInitialized() {
 function getService<T>(serviceGetter: () => T): T {
     ensureAdminInitialized();
     if (!app) {
-        throw new Error('Firebase Admin SDK is not initialized. Check server logs for configuration errors (e.g., missing environment variables). This feature is unavailable.');
+        throw new Error(
+          'Firebase Admin SDK feature failed. The SDK is not initialized. This usually means the required server-side environment variables (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing. \n\n' +
+          'FOR LOCAL DEVELOPMENT: Ensure these variables are in your .env or .env.local file. \n' +
+          'FOR DEPLOYMENT: Ensure these variables are set in your hosting provider\'s settings (e.g., Firebase Hosting, Vercel). .env files are not used in production.'
+        );
     }
     return serviceGetter();
 }
