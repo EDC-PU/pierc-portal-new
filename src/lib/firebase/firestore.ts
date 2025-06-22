@@ -246,6 +246,18 @@ export const getAllUsers = async (): Promise<UserProfile[]> => {
   return users;
 };
 
+export const getAllAdminUids = async (): Promise<string[]> => {
+  const usersCol = collection(db, 'users');
+  const q = query(usersCol, where('role', '==', 'ADMIN_FACULTY'));
+  const querySnapshot = await getDocs(q);
+  const uids: string[] = [];
+  querySnapshot.forEach((doc) => {
+    uids.push(doc.id);
+  });
+  return uids;
+};
+
+
 export const getTotalUsersCount = async (): Promise<number> => {
   const usersCol = collection(db, 'users');
   const snapshot = await getCountFromServer(usersCol);
@@ -981,41 +993,41 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       comments: ideaData.comments || [],
       rejectionRemarks: ideaData.rejectionRemarks || null,
       rejectedByUid: ideaData.rejectedByUid || null,
-      rejectedAt: ideaData.rejectedAt || null,
-      phase2PptUrl: ideaData.phase2PptUrl || null,
-      phase2PptFileName: ideaData.phase2PptFileName || null,
-      phase2PptUploadedAt: ideaData.phase2PptUploadedAt || null,
+      rejectedAt: data.rejectedAt || null,
+      phase2PptUrl: data.phase2PptUrl || null,
+      phase2PptFileName: data.phase2PptFileName || null,
+      phase2PptUploadedAt: data.phase2PptUploadedAt || null,
       nextPhaseDate: nextPhaseDate,
-      nextPhaseStartTime: ideaData.nextPhaseStartTime || null,
-      nextPhaseEndTime: ideaData.nextPhaseEndTime || null,
-      nextPhaseVenue: ideaData.nextPhaseVenue || null,
-      nextPhaseGuidelines: ideaData.nextPhaseGuidelines || null,
-      mentor: ideaData.mentor,
-      fundingSource: ideaData.fundingSource ?? null,
-      totalFundingAllocated: ideaData.totalFundingAllocated ?? null,
-      sanction1Amount: ideaData.sanction1Amount ?? null,
-      sanction2Amount: ideaData.sanction2Amount ?? null,
-      sanction1DisbursedAt: ideaData.sanction1DisbursedAt ?? null,
-      sanction2DisbursedAt: ideaData.sanction2DisbursedAt ?? null,
-      sanction1Expenses: ideaData.sanction1Expenses || [],
-      sanction2Expenses: ideaData.sanction2Expenses || [],
-      beneficiaryName: ideaData.beneficiaryName ?? null,
-      beneficiaryAccountNo: ideaData.beneficiaryAccountNo ?? null,
-      beneficiaryBankName: ideaData.beneficiaryBankName ?? null,
-      beneficiaryIfscCode: ideaData.beneficiaryIfscCode ?? null,
-      beneficiaryAccountType: ideaData.beneficiaryAccountType ?? null,
-      beneficiaryCity: ideaData.beneficiaryCity ?? null,
-      beneficiaryBranchName: ideaData.beneficiaryBranchName ?? null,
-      sanction1AppliedForNext: ideaData.sanction1AppliedForNext ?? false,
-      sanction1UtilizationStatus: ideaData.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
-      sanction1UtilizationRemarks: ideaData.sanction1UtilizationRemarks ?? null,
-      sanction1UtilizationReviewedBy: ideaData.sanction1UtilizationReviewedBy ?? null,
-      sanction1UtilizationReviewedAt: ideaData.sanction1UtilizationReviewedAt ?? null,
-      sanction2UtilizationStatus: ideaData.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
-      sanction2UtilizationRemarks: ideaData.sanction2UtilizationRemarks ?? null,
-      sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
-      sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
-      incubationDocuments: ideaData.incubationDocuments || {},
+      nextPhaseStartTime: data.nextPhaseStartTime || null,
+      nextPhaseEndTime: data.nextPhaseEndTime || null,
+      nextPhaseVenue: data.nextPhaseVenue || null,
+      nextPhaseGuidelines: data.nextPhaseGuidelines || null,
+      mentor: data.mentor,
+      fundingSource: data.fundingSource ?? null,
+      totalFundingAllocated: data.totalFundingAllocated ?? null,
+      sanction1Amount: data.sanction1Amount ?? null,
+      sanction2Amount: data.sanction2Amount ?? null,
+      sanction1DisbursedAt: data.sanction1DisbursedAt ?? null,
+      sanction2DisbursedAt: data.sanction2DisbursedAt ?? null,
+      sanction1Expenses: data.sanction1Expenses || [],
+      sanction2Expenses: data.sanction2Expenses || [],
+      beneficiaryName: data.beneficiaryName ?? null,
+      beneficiaryAccountNo: data.beneficiaryAccountNo ?? null,
+      beneficiaryBankName: data.beneficiaryBankName ?? null,
+      beneficiaryIfscCode: data.beneficiaryIfscCode ?? null,
+      beneficiaryAccountType: data.beneficiaryAccountType ?? null,
+      beneficiaryCity: data.beneficiaryCity ?? null,
+      beneficiaryBranchName: data.beneficiaryBranchName ?? null,
+      sanction1AppliedForNext: data.sanction1AppliedForNext ?? false,
+      sanction1UtilizationStatus: data.sanction1UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction1UtilizationRemarks: data.sanction1UtilizationRemarks ?? null,
+      sanction1UtilizationReviewedBy: data.sanction1UtilizationReviewedBy ?? null,
+      sanction1UtilizationReviewedAt: data.sanction1UtilizationReviewedAt ?? null,
+      sanction2UtilizationStatus: data.sanction2UtilizationStatus ?? 'NOT_APPLICABLE',
+      sanction2UtilizationRemarks: data.sanction2UtilizationRemarks ?? null,
+      sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
+      sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
+      incubationDocuments: data.incubationDocuments || {},
     } as IdeaSubmission);
   });
 
@@ -2664,7 +2676,7 @@ export const addCommentToIdea = async (
     { commentContent: commentContent.substring(0, 50) + '...' }
   );
 
-  // --- Notification Logic ---
+  // --- Comprehensive Notification Logic ---
   const ideaSnap = await getDoc(ideaRef);
   if (!ideaSnap.exists()) return;
   const ideaData = ideaSnap.data() as IdeaSubmission;
@@ -2674,33 +2686,38 @@ export const addCommentToIdea = async (
   
   const userIdsToNotify = new Set<string>();
 
-  if (actorProfile.role === 'ADMIN_FACULTY') {
-    // Admin commented, notify the team
-    const notificationLink = '/dashboard';
-    if (ideaData.userId) {
-      userIdsToNotify.add(ideaData.userId);
-    }
-    ideaData.structuredTeamMembers?.forEach(member => {
-      if (member.id && member.id.length > 10) userIdsToNotify.add(member.id);
-    });
+  // 1. Add the idea owner (team leader)
+  if (ideaData.userId) {
+    userIdsToNotify.add(ideaData.userId);
+  }
+  // 2. Add all structured team members
+  ideaData.structuredTeamMembers?.forEach(member => {
+    if (member.id && member.id.length > 10) userIdsToNotify.add(member.id);
+  });
 
-    userIdsToNotify.delete(actorProfile.uid);
-  
-    if (userIdsToNotify.size > 0) {
-        const batch = writeBatch(db);
-        Array.from(userIdsToNotify).forEach(uid => {
+  // 3. Add all admins/mentors
+  const allAdminUids = await getAllAdminUids();
+  allAdminUids.forEach(uid => userIdsToNotify.add(uid));
+
+  // 4. Remove the author of the comment to prevent self-notification
+  userIdsToNotify.delete(actorProfile.uid);
+
+  // 5. Create and send notifications
+  if (userIdsToNotify.size > 0) {
+      const batch = writeBatch(db);
+      Array.from(userIdsToNotify).forEach(uid => {
           const notifRef = doc(collection(db, 'notifications'));
+          const link = allAdminUids.includes(uid) ? `/dashboard/admin/view-applications` : `/dashboard`;
+
           batch.set(notifRef, {
-            userId: uid,
-            title: notificationTitle,
-            message: notificationMessage,
-            link: notificationLink,
-            isRead: false,
-            createdAt: serverTimestamp()
+              userId: uid,
+              title: notificationTitle,
+              message: notificationMessage,
+              link: link, // Use a more specific link for admins
+              isRead: false,
+              createdAt: serverTimestamp()
           });
-        });
-        await batch.commit();
-    }
-  } 
-  // Future enhancement: Add logic here to notify admins/mentors when a user comments.
+      });
+      await batch.commit();
+  }
 };
