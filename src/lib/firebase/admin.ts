@@ -36,11 +36,14 @@ function ensureAdminInitialized() {
   }
   
   try {
+    // The replace call is crucial for production environments where the key is stored as a single line.
+    const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
+
     app = admin.initializeApp({
       credential: admin.credential.cert({
         projectId: projectId,
         clientEmail: clientEmail,
-        privateKey: privateKey.replace(/\\n/g, '\n'),
+        privateKey: formattedPrivateKey,
       }),
       storageBucket,
     });
@@ -56,9 +59,7 @@ function getService<T>(serviceGetter: () => T): T {
     ensureAdminInitialized();
     if (!app) {
         throw new Error(
-          'Firebase Admin SDK feature failed. The SDK is not initialized. This usually means the required server-side environment variables (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing. \n\n' +
-          'FOR LOCAL DEVELOPMENT: Ensure these variables are in your .env or .env.local file. \n' +
-          'FOR DEPLOYMENT: Ensure these variables are set in your hosting provider\'s settings (e.g., Firebase Hosting, Vercel). .env files are not used in production.'
+          'Firebase Admin SDK is not initialized. Check server logs for configuration errors. This usually means the required server-side environment variables (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing from your hosting environment. If running locally, ensure they are in a .env.local file and that you have restarted the development server.'
         );
     }
     return serviceGetter();
