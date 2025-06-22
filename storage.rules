@@ -1,12 +1,13 @@
-
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
-    // Only authenticated users can access files.
-    // This is a basic rule. For production, you would want to restrict access further.
-    // For example, only the uploader or specific users should be able to read/write certain paths.
-    match /{allPaths=**} {
-      allow read, write: if request.auth != null;
-    }
+    // Allow public read access to all files. This is useful for sharing links to attachments, flyers, etc.
+    allow read;
+    
+    // Only allow authenticated users to upload (write) files.
+    // This provides a basic level of security against anonymous uploads.
+    // For stricter rules, you could match specific paths, e.g., match /presentations/{userId}/{fileName}
+    allow write: if request.auth != null;
   }
 }
