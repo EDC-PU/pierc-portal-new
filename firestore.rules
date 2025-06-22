@@ -1,90 +1,69 @@
+
 rules_version = '2';
+
+function isAuth() {
+  return request.auth != null;
+}
+
+function isOwner(userId) {
+  return isAuth() && request.auth.uid == userId;
+}
+
+function isAdmin() {
+  return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+}
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // =================================
-    // Helper Functions
-    // =================================
-    function isAuth() {
-      return request.auth != null;
+    
+    match /{document=**} {
+      allow read, write: if false;
     }
-
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-
-    function isAdmin() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
-    }
-
-    // --- Users Collection ---
+    
     match /users/{userId} {
-      allow create: if isAuth();
-      allow read: if isAuth() && (isOwner(userId) || isAdmin());
-      allow update: if isAuth() && (isOwner(userId) || isAdmin());
-      allow delete: if isAdmin();
-    }
-
-    // --- Ideas Collection ---
-    match /ideas/{ideaId} {
-      allow create: if isAuth();
       allow read: if isAuth();
-      
-      // Update logic:
-      // 1. Admin can update any field.
-      // 2. The idea's owner can update any field.
-      // 3. ANY authenticated user can update ONLY the 'comments' and 'updatedAt' fields. This allows team/mentors to comment.
-      allow update: if isAuth() && (
-                      isAdmin() || 
-                      isOwner(resource.data.userId) || 
-                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']))
-                    );
-
-      allow delete: if isAdmin();
+      allow write: if isOwner(userId) || isAdmin();
     }
-
-    // --- Announcements Collection ---
+    
+    match /ideas/{ideaId} {
+      allow read: if isAuth();
+      allow create: if isAuth();
+      allow update: if isAuth() && (
+        (isOwner(resource.data.userId) || isAdmin()) ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt'])
+      );
+    }
+    
     match /announcements/{announcementId} {
       allow read: if isAuth();
-      allow write: if isAdmin(); // Create, Update, Delete for Admins only
+      allow write: if isAdmin();
     }
     
-    // --- Events Collection ---
     match /events/{eventId} {
       allow read: if isAuth();
-      // Admin can C/U/D. Anyone can RSVP (update rsvps & rsvpCount).
-      allow create, delete: if isAdmin();
-      allow update: if isAuth() && (
-                      isAdmin() ||
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount'])
-                    );
+      allow write: if isAdmin();
+      allow update: if isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount']);
     }
-    
-    // --- Cohorts Collection ---
+
     match /cohorts/{cohortId} {
       allow read: if isAuth();
-      allow write: if isAdmin(); // Create, Update, Delete for Admins only
+      allow write: if isAdmin();
     }
 
-    // --- System Settings Collection ---
-    match /systemSettings/{settingId} {
-      allow read: if isAuth();
-      allow write: if isAdmin(); // Create, Update, Delete for Admins only
-    }
-
-    // --- Notifications Collection ---
     match /notifications/{notificationId} {
-      // Users can read and update (mark as read) their own notifications.
-      allow read, update: if isAuth() && isOwner(resource.data.userId);
-      // Notifications are created by server functions or other users, so any auth'd user can create.
+      allow read, write, delete: if isOwner(resource.data.userId);
       allow create: if isAuth();
     }
+
+    match /systemSettings/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
     
-    // --- Activity Logs Collection ---
-    // Only accessible by backend/admins.
     match /activityLogs/{logId} {
-      allow read, write: if isAdmin();
+      allow create: if isAuth();
+      allow read: if isAdmin();
+      allow update, delete: if false;
     }
   }
 }
