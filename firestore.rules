@@ -1,90 +1,90 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
-    function isAuthenticated() {
+    // =================================
+    // Helper Functions
+    // =================================
+    function isAuth() {
       return request.auth != null;
     }
 
-    // Helper function to check if the user is an admin
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+
     function isAdmin() {
-      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
     }
 
-    // Default deny all reads and writes
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Allow authenticated users to read their own profile
+    // --- Users Collection ---
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if request.auth.uid == userId;
+      allow create: if isAuth();
+      allow read: if isAuth() && (isOwner(userId) || isAdmin());
+      allow update: if isAuth() && (isOwner(userId) || isAdmin());
+      allow delete: if isAdmin();
     }
 
-    // Allow admins to read/write all user profiles
-    match /users/{userId} {
-      allow read, write: if isAdmin();
-    }
-    
-    // System Settings: Only admins can read/write
-    match /systemSettings/{docId} {
-      allow read, write: if isAdmin();
-    }
-    
-    // Announcements: Admins can do anything, authenticated users can read
-    match /announcements/{announcementId} {
-      allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
-    }
-    
-    // Events: Admins can do anything, authenticated users can read and update RSVPs
-    match /events/{eventId} {
-       allow read: if isAuthenticated();
-       allow create, update, delete: if isAdmin();
-       // Allow any authenticated user to add/remove their UID from the rsvps array
-       allow update: if isAuthenticated()
-                      && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount']);
-    }
-    
-    // Cohorts: Admins can do anything, authenticated users can read
-    match /cohorts/{cohortId} {
-      allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
-    }
-    
-    // Notifications: Only the user can read/write their own notifications
-    match /notifications/{notificationId} {
-      allow read, write: if isAuthenticated() && request.auth.uid == resource.data.userId;
-    }
-    
-    // Activity Logs: Only admins can read, nobody can write directly (written by backend)
-    match /activityLogs/{logId} {
-      allow read: if isAdmin();
-      allow write: if false; // Should be written via server-side logic only
-    }
-
-    // Ideas collection
+    // --- Ideas Collection ---
     match /ideas/{ideaId} {
-      // Anyone authenticated can read any idea
-      allow read: if isAuthenticated();
+      allow create: if isAuth();
+      allow read: if isAuth();
       
-      // Allow user to create an idea if they are authenticated
-      allow create: if isAuthenticated();
+      // Update logic:
+      // 1. Admin can update any field.
+      // 2. The idea's owner can update any field.
+      // 3. ANY authenticated user can update ONLY the 'comments' and 'updatedAt' fields. This allows team/mentors to comment.
+      allow update: if isAuth() && (
+                      isAdmin() || 
+                      isOwner(resource.data.userId) || 
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']))
+                    );
 
-      // Allow update if:
-      // 1. User is the owner (can update anything).
-      // 2. User is an admin (can update anything).
-      // 3. Any authenticated user is ONLY adding a comment.
-      allow update: if (isAuthenticated() && request.auth.uid == resource.data.userId)
-                    || isAdmin()
-                    || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
-      
-      // Only the idea owner or an admin can delete their idea
-      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // --- Announcements Collection ---
+    match /announcements/{announcementId} {
+      allow read: if isAuth();
+      allow write: if isAdmin(); // Create, Update, Delete for Admins only
+    }
+    
+    // --- Events Collection ---
+    match /events/{eventId} {
+      allow read: if isAuth();
+      // Admin can C/U/D. Anyone can RSVP (update rsvps & rsvpCount).
+      allow create, delete: if isAdmin();
+      allow update: if isAuth() && (
+                      isAdmin() ||
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount'])
+                    );
+    }
+    
+    // --- Cohorts Collection ---
+    match /cohorts/{cohortId} {
+      allow read: if isAuth();
+      allow write: if isAdmin(); // Create, Update, Delete for Admins only
+    }
+
+    // --- System Settings Collection ---
+    match /systemSettings/{settingId} {
+      allow read: if isAuth();
+      allow write: if isAdmin(); // Create, Update, Delete for Admins only
+    }
+
+    // --- Notifications Collection ---
+    match /notifications/{notificationId} {
+      // Users can read and update (mark as read) their own notifications.
+      allow read, update: if isAuth() && isOwner(resource.data.userId);
+      // Notifications are created by server functions or other users, so any auth'd user can create.
+      allow create: if isAuth();
+    }
+    
+    // --- Activity Logs Collection ---
+    // Only accessible by backend/admins.
+    match /activityLogs/{logId} {
+      allow read, write: if isAdmin();
     }
   }
 }
