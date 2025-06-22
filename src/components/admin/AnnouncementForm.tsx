@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -15,7 +15,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import type { Announcement as AnnouncementType, UserProfile, Cohort } from '@/types';
 import { improveAnnouncementLanguage } from '@/ai/flows/improve-announcement-language';
-import { Wand2, Paperclip, X } from 'lucide-react';
+import { Wand2, Paperclip, X, Bold, Italic, List, ListOrdered } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { getAllCohortsStream } from '@/lib/firebase/firestore';
@@ -53,6 +53,7 @@ export function AnnouncementForm({ initialData, onSubmitSuccess, onSave }: Annou
   const [cohorts, setCohorts] = useState<Cohort[]>([]);
   const [loadingCohorts, setLoadingCohorts] = useState(false);
   const [existingAttachmentName, setExistingAttachmentName] = useState<string | null>(initialData?.attachmentName || null);
+  const contentRef = useRef<HTMLTextAreaElement | null>(null);
 
 
   const { control, handleSubmit, setValue, watch, formState: { errors, isSubmitting } } = useForm<AnnouncementFormData>({
@@ -88,6 +89,73 @@ export function AnnouncementForm({ initialData, onSubmitSuccess, onSave }: Annou
       setValue('cohortId', null); // Clear cohortId if audience is ALL
     }
   }, [currentTargetAudience, setValue]);
+
+  const applyFormat = (formatType: 'bold' | 'italic' | 'ul' | 'ol') => {
+    const textarea = contentRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = textarea.value.substring(start, end);
+    let newText = '';
+
+    const modifyLines = (lines: string[], prefixer: (line: string, index: number) => string) => {
+      return lines.map(prefixer).join('\n');
+    };
+
+    switch (formatType) {
+        case 'bold':
+            newText = `**${selectedText}**`;
+            break;
+        case 'italic':
+            newText = `*${selectedText}*`;
+            break;
+        case 'ul': {
+            const lines = selectedText.split('\n');
+            const transformed = modifyLines(lines, line => line.trim() ? `- ${line}` : line);
+            newText = start > 0 && textarea.value[start-1] !== '\n' ? '\n' + transformed : transformed;
+            break;
+        }
+        case 'ol': {
+            const lines = selectedText.split('\n');
+            let counter = 1;
+            const transformed = modifyLines(lines, line => line.trim() ? `${counter++}. ${line}` : line);
+            newText = start > 0 && textarea.value[start-1] !== '\n' ? '\n' + transformed : transformed;
+            break;
+        }
+    }
+
+    const updatedContent = textarea.value.substring(0, start) + newText + textarea.value.substring(end);
+    setValue('content', updatedContent, { shouldValidate: true });
+
+    requestAnimationFrame(() => {
+        textarea.focus();
+        if (formatType === 'bold' || formatType === 'italic') {
+            textarea.selectionStart = start + 2;
+            textarea.selectionEnd = start + selectedText.length + 2;
+        } else {
+            textarea.selectionStart = start + newText.length;
+            textarea.selectionEnd = start + newText.length;
+        }
+    });
+  };
+
+  const FormattingToolbar = () => (
+    <div className="flex items-center gap-1 border border-b-0 rounded-t-md p-1 bg-muted/50">
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormat('bold')} title="Bold">
+        <Bold className="h-4 w-4" />
+      </Button>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormat('italic')} title="Italic">
+        <Italic className="h-4 w-4" />
+      </Button>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormat('ul')} title="Unordered List">
+        <List className="h-4 w-4" />
+      </Button>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7" onClick={() => applyFormat('ol')} title="Ordered List">
+        <ListOrdered className="h-4 w-4" />
+      </Button>
+    </div>
+  );
 
 
   const handleImproveLanguage = async () => {
@@ -152,8 +220,21 @@ export function AnnouncementForm({ initialData, onSubmitSuccess, onSave }: Annou
 
           <div>
             <Label htmlFor="content">Content</Label>
-            <Controller name="content" control={control} render={({ field }) => <Textarea id="content" placeholder="Detailed content of the announcement..." rows={6} {...field} />} />
-            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting (e.g., **bold**, *italic*, - lists).</p>
+            <FormattingToolbar />
+            <Controller name="content" control={control} render={({ field }) => 
+                <Textarea
+                    id="content"
+                    placeholder="Detailed content of the announcement..."
+                    rows={6}
+                    {...field}
+                    ref={e => {
+                        field.ref(e);
+                        contentRef.current = e;
+                    }}
+                    className="mt-0 rounded-t-none"
+                />
+            } />
+            <p className="text-xs text-muted-foreground mt-1">Use the toolbar for basic formatting.</p>
             {errors.content && <p className="text-sm text-destructive mt-1">{errors.content.message}</p>}
           </div>
 
