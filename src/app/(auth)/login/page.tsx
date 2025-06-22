@@ -106,7 +106,7 @@ export default function LoginPage() {
   }
   
   return (
-    <div className={`flex items-center justify-center py-12 bg-gradient-to-br from-background to-secondary/30 animate-fade-in ${pageMinHeight}`}>
+    <div className={`flex items-center justify-center py-12 animate-fade-in ${pageMinHeight}`}>
       <Card className="w-full max-w-md shadow-2xl">
         <CardHeader className="text-center">
           <CardTitle className="text-3xl font-headline">
