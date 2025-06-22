@@ -10,13 +10,13 @@ import {
   SidebarHeader,
   SidebarContent,
   SidebarFooter,
-  SidebarTrigger,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuButton,
   SidebarGroup,
   SidebarGroupLabel,
   SidebarSeparator,
+  SidebarRail,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
 import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote, Calendar, Bell, CalendarCheck, Briefcase } from 'lucide-react'; 
@@ -86,7 +86,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         className="h-full"
         >
         <SidebarHeader className="flex items-center justify-between p-2 md:justify-center">
-           <SidebarTrigger className="hidden md:flex" />
+           {/* SidebarTrigger has been removed and replaced by the centered SidebarRail */}
         </SidebarHeader>
         <SidebarContent>
           <SidebarMenu>
@@ -138,6 +138,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </SidebarMenu>
         </SidebarFooter>
       </Sidebar>
+      <SidebarRail side="left" />
       
       <div className="flex-1 w-0 overflow-y-auto transition-all duration-200 ease-linear md:ml-[var(--sidebar-width-icon)] peer-data-[state=expanded]:md:ml-[var(--sidebar-width)]">
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex flex-col flex-1"> 

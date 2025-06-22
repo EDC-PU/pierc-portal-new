@@ -4,7 +4,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { VariantProps, cva } from "class-variance-authority"
-import { PanelLeft } from "lucide-react"
+import { ChevronLeft, ChevronRight, PanelLeft } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
@@ -287,33 +287,58 @@ const SidebarTrigger = React.forwardRef<
 SidebarTrigger.displayName = "SidebarTrigger"
 
 const SidebarRail = React.forwardRef<
-  HTMLButtonElement,
-  React.ComponentProps<"button">
->(({ className, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar()
+  HTMLDivElement,
+  React.ComponentProps<"div"> & { side?: "left" | "right" }
+>(({ className, side = "left", ...props }, ref) => {
+  const { toggleSidebar, state } = useSidebar();
+  const isCollapsed = state === "collapsed";
+
+  const icon =
+    side === "left" ? (
+      isCollapsed ? (
+        <ChevronRight />
+      ) : (
+        <ChevronLeft />
+      )
+    ) : isCollapsed ? (
+      <ChevronLeft />
+    ) : (
+      <ChevronRight />
+    );
 
   return (
-    <button
+    <div
       ref={ref}
-      data-sidebar="rail"
-      aria-label="Toggle Sidebar"
-      tabIndex={-1}
-      onClick={toggleSidebar}
-      title="Toggle Sidebar"
       className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
-        "[[data-side=left]_&]:cursor-w-resize [[data-side=right]_&]:cursor-e-resize",
-        "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-        "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:hover:bg-sidebar",
-        "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
-        "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+        "absolute top-0 hidden h-full items-center md:flex",
+        "peer-data-[side=left]:left-[var(--sidebar-width)] peer-data-[collapsible=icon]:peer-data-[side=left]:left-[var(--sidebar-width-icon)]",
+        "peer-data-[side=right]:right-[var(--sidebar-width)] peer-data-[collapsible=icon]:peer-data-[side=right]:right-[var(--sidebar-width-icon)]",
+        "duration-200 ease-linear transition-[left,right]",
         className
       )}
       {...props}
-    />
-  )
-})
-SidebarRail.displayName = "SidebarRail"
+    >
+      <div
+        className={cn(
+          "-translate-x-1/2 rtl:translate-x-1/2",
+          side === "right" && "translate-x-1/2 rtl:-translate-x-1/2"
+        )}
+      >
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8 rounded-full bg-background"
+          onClick={() => toggleSidebar()}
+          aria-label="Toggle Sidebar"
+        >
+          {icon}
+        </Button>
+      </div>
+    </div>
+  );
+});
+SidebarRail.displayName = "SidebarRail";
+
 
 const SidebarInset = React.forwardRef<
   HTMLDivElement,
