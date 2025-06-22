@@ -34,11 +34,10 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { Timestamp } from 'firebase/firestore';
 import { getDoc, doc } from 'firebase/firestore';
 import { db } from '@/lib/firebase/config';
-import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, Announcement as AnnouncementType, PortalEvent, IncubationDocumentType, Comment } from '@/types';
+import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, Announcement as AnnouncementType, PortalEvent, IncubationDocumentType } from '@/types';
 import { ALL_INCUBATION_DOCUMENT_TYPES } from '@/types';
 import { format, isValid } from 'date-fns';
-import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
-import { uploadIncubationDocument } from '@/ai/flows/upload-incubation-document-flow';
+import { uploadPresentation, uploadIncubationDocument } from '@/lib/firebase/actions';
 import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -357,7 +356,7 @@ export default function StudentDashboard() {
     if ((timestamp as Timestamp)?.toDate) {
       dateToFormat = (timestamp as Timestamp).toDate();
     } else if (timestamp instanceof Date) {
-      dateToFormat = dateToFormat;
+      dateToFormat = timestamp;
     } else {
         return 'Invalid Date';
     }
@@ -371,7 +370,7 @@ export default function StudentDashboard() {
     if ((timestamp as Timestamp)?.toDate) {
       dateToFormat = (timestamp as Timestamp).toDate();
     } else if (timestamp instanceof Date) {
-      dateToFormat = dateToFormat;
+      dateToFormat = timestamp;
     } else {
         return 'Invalid Date';
     }

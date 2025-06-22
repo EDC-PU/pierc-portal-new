@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { createEventFS, getAllEventsStream, updateEventFS, deleteEventFS, getProfilesForUids, getAllCohortsStream } from '@/lib/firebase/firestore';
-import { uploadEventFlyer } from '@/ai/flows/upload-event-flyer-flow';
+import { uploadEventFlyer } from '@/lib/firebase/actions';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';

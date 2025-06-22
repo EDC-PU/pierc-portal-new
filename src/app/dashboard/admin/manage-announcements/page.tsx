@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { createAnnouncement, getAllAnnouncementsForAdminStream, updateAnnouncement, deleteAnnouncement, getAllCohortsStream } from '@/lib/firebase/firestore';
-import { uploadAnnouncementAttachment } from '@/ai/flows/upload-announcement-attachment-flow';
+import { uploadAnnouncementAttachment } from '@/lib/firebase/actions';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
