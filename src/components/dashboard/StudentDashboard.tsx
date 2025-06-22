@@ -37,8 +37,7 @@ import { db } from '@/lib/firebase/config';
 import type { ProgramPhase, TeamMember, UserProfile, ApplicantCategory, CurrentStage, IdeaStatus, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, Announcement as AnnouncementType, PortalEvent, IncubationDocumentType } from '@/types';
 import { ALL_INCUBATION_DOCUMENT_TYPES } from '@/types';
 import { format, isValid } from 'date-fns';
-import { uploadPresentation } from '@/ai/flows/upload-presentation-flow';
-import { uploadIncubationDocument } from '@/ai/flows/upload-incubation-document-flow';
+import { uploadPresentation, uploadIncubationDocument } from '@/lib/firebase/actions';
 import { generatePitchDeckOutline, type GeneratePitchDeckOutlineOutput } from '@/ai/flows/generate-pitch-deck-outline-flow';
 import { useForm, Controller, type SubmitHandler, useFieldArray } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -62,6 +61,7 @@ import { Textarea } from '@/components/ui/textarea';
 import ReactMarkdown from 'react-markdown';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { YoutubePlaylist } from './YoutubePlaylist';
+import { IdeaComments } from './IdeaComments';
 
 
 const getProgramPhaseLabel = (phase: ProgramPhase | null | undefined): string => {
@@ -845,6 +845,9 @@ export default function StudentDashboard() {
                     </CardContent>
                 </Card>
              )}
+            <div className="mt-4 pt-4 border-t">
+                <IdeaComments idea={idea} currentUserProfile={userProfile!} onCommentPosted={() => fetchUserIdeasAndUpdateState(idea.id)} />
+            </div>
         </CardContent>
         </Card>
     </div>
@@ -1033,229 +1036,16 @@ export default function StudentDashboard() {
               <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
             ) : (
               <ScrollArea className="h-auto pr-3" key={userIdeas.map(i=>i.id).join(',')}>
-                <ul className="space-y-4">
+                <div className="space-y-4">
                   {userIdeas.map((idea) => {
                     const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null;
-                    const canViewOutline = generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline;
                     return (
-                    <li key={idea.id} className="p-4 bg-muted/30 rounded-lg hover:bg-muted/50 transition-colors shadow-sm">
-                      <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-2">
-                          <div>
-                              <p className="font-semibold text-foreground text-lg">{idea.title}</p>
-                              <p className="text-xs text-muted-foreground">
-                                  Submitted: {formatDate(idea.submittedAt)} | Last Updated: {formatDate(idea.updatedAt)}
-                              </p>
-                              {idea.teamMembers && idea.teamMembers.trim() !== '' && (
-                                  <p className="text-xs text-muted-foreground mt-1">
-                                      <span className="font-medium">Team Description:</span> {idea.teamMembers}
-                                  </p>
-                              )}
-                              {(idea.structuredTeamMembers && idea.structuredTeamMembers.length > 0) && (
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    <span className="font-medium">Team Members ({idea.structuredTeamMembers.length}):</span> {(idea.structuredTeamMembers || []).map(m => m.name).join(', ')}
-                                </p>
-                              )}
-                              {idea.programPhase === 'COHORT' && idea.mentor && (
-                                 <p className="text-xs text-muted-foreground mt-1 flex items-center">
-                                    <Award className="h-3.5 w-3.5 mr-1 text-amber-500"/> <span className="font-medium">Mentor:</span> {idea.mentor}
-                                </p>
-                              )}
-                              {idea.programPhase === 'COHORT' && assignedCohort && (
-                                 <p className="text-xs text-muted-foreground mt-1 flex items-center">
-                                    <GroupIcon className="h-3.5 w-3.5 mr-1 text-primary"/> <span className="font-medium">Cohort:</span> {assignedCohort.name}
-                                </p>
-                              )}
-                              {idea.isOutlineAIGenerated && (
-                                <p className="text-xs text-green-600 mt-1 flex items-center">
-                                    <Sparkles className="h-3.5 w-3.5 mr-1"/> Pitch Deck Outline was AI-assisted
-                                </p>
-                              )}
-                          </div>
-                          <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-2 sm:mt-0 flex-shrink-0">
-                              <Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-xs py-1 px-2.5">
-                              {idea.status.replace(/_/g, ' ').toLowerCase()}
-                              </Badge>
-                              {idea.status === 'SELECTED' && idea.programPhase && (
-                                  <Badge variant="outline" className="capitalize text-xs py-1 px-2.5 flex items-center">
-                                      <ChevronsRight className="h-3 w-3 mr-1" />
-                                      {getProgramPhaseLabel(idea.programPhase)}
-                                  </Badge>
-                              )}
-                              {idea.programPhase === 'PHASE_2' && idea.phase2Marks && userProfile && idea.phase2Marks[userProfile.uid] && (
-                              <Badge variant="outline" className="text-xs py-1 px-2.5">
-                                      <FileCheck2 className="h-3 w-3 mr-1 text-green-500"/> Your Mark: {idea.phase2Marks[userProfile.uid].mark ?? 'N/A'}
-                              </Badge>
-                              )}
-                          </div>
-                      </div>
-
-                        <div className="mt-3 pt-3 border-t border-border/50 space-y-2 text-sm">
-                            {idea.applicantType && (
-                                <div className="flex">
-                                    <Label className="w-1/3 font-semibold text-muted-foreground">Applicant Category:</Label>
-                                    <p className="w-2/3">{applicantCategoryLabels[idea.applicantType] || idea.applicantType.replace(/_/g, ' ')}</p>
-                                </div>
-                            )}
-                            {idea.developmentStage && (
-                                <div className="flex">
-                                    <Label className="w-1/3 font-semibold text-muted-foreground">Current Stage:</Label>
-                                    <p className="w-2/3">{currentStageLabels[idea.developmentStage] || idea.developmentStage.replace(/_/g, ' ')}</p>
-                                </div>
-                            )}
-                             <div className="mt-2">
-                                <Label className="font-semibold text-muted-foreground">Problem Definition:</Label>
-                                <div className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5 markdown-container">
-                                  <ReactMarkdown components={MarkdownDisplayComponents}>{idea.problem || 'N/A'}</ReactMarkdown>
-                                </div>
-                            </div>
-                            <div>
-                                <Label className="font-semibold text-muted-foreground">Solution Description:</Label>
-                                <div className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5 markdown-container">
-                                  <ReactMarkdown components={MarkdownDisplayComponents}>{idea.solution || 'N/A'}</ReactMarkdown>
-                                </div>
-                            </div>
-                            <div>
-                                <Label className="font-semibold text-muted-foreground">Uniqueness:</Label>
-                                <div className="whitespace-pre-wrap bg-background/30 p-2 rounded-md text-xs mt-0.5 markdown-container">
-                                  <ReactMarkdown components={MarkdownDisplayComponents}>{idea.uniqueness || 'N/A'}</ReactMarkdown>
-                                </div>
-                            </div>
+                        <div key={idea.id}>
+                           {renderIdeaDetails(idea, assignedCohort)}
                         </div>
-
-
-                      {idea.status === 'NOT_SELECTED' && idea.rejectionRemarks && (
-                          <Card className="mt-3 bg-destructive/10 border-destructive/30">
-                              <CardHeader className="pb-2 pt-3 px-4">
-                                  <CardTitle className="text-sm font-semibold text-destructive-foreground/90 flex items-center">
-                                      <AlertCircle className="h-4 w-4 mr-2"/> Feedback & Guidance
-                                  </CardTitle>
-                              </CardHeader>
-                              <CardContent className="text-xs text-destructive-foreground/80 px-4 pb-3 whitespace-pre-wrap">
-                                  {idea.rejectionRemarks}
-                                  {idea.rejectedAt && <p className="mt-1 text-destructive-foreground/60">Provided on: {formatDate(idea.rejectedAt)}</p>}
-                              </CardContent>
-                          </Card>
-                      )}
-                      {idea.status === 'ARCHIVED_BY_ADMIN' && (
-                        <Card className="mt-3 bg-yellow-500/10 border-yellow-500/30">
-                            <CardHeader className="pb-2 pt-3 px-4">
-                                <CardTitle className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 flex items-center">
-                                    <ArchiveRestore className="h-4 w-4 mr-2"/> Action Required
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="text-xs text-yellow-700/90 dark:text-yellow-400/90 px-4 pb-3">
-                                This idea submission was archived by an administrator. You can update your core idea details (title, problem, solution, etc.) on your main "Profile Setup" page. Saving your profile will resubmit this idea for review.
-                            </CardContent>
-                        </Card>
-                       )}
-
-                        {idea.status === 'SELECTED' && idea.programPhase && (
-                            <>
-                                {idea.programPhase === 'COHORT' && assignedCohort ? (
-                                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                                    <CardHeader className="pb-2 pt-4 px-4">
-                                        <CardTitle className="text-lg font-semibold text-primary flex items-center">
-                                            <GroupIcon className="h-5 w-5 mr-2"/> Incubation Cohort Details
-                                        </CardTitle>
-                                        <CardDescription className="text-xs">
-                                            Your idea is part of the "{assignedCohort.name}" cohort.
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
-                                        <p><strong className="text-primary/90">Cohort Name:</strong> {assignedCohort.name}</p>
-                                        <p><strong className="text-primary/90">Start Date:</strong> {formatDate(assignedCohort.startDate)}</p>
-                                        <p><strong className="text-primary/90">End Date:</strong> {formatDate(assignedCohort.endDate)}</p>
-                                    </CardContent>
-                                </Card>
-                                ) : (idea.programPhase === 'PHASE_1' || idea.programPhase === 'PHASE_2' || idea.programPhase === 'INCUBATED') && idea.nextPhaseDate ? (
-                                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                                    <CardHeader className="pb-2 pt-4 px-4">
-                                        <CardTitle className="text-lg font-semibold text-primary flex items-center">
-                                            <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
-                                        </CardTitle>
-                                        <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                                            <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
-                                            <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
-                                        </div>
-                                        <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {idea.nextPhaseVenue}</p>
-                                        {idea.nextPhaseGuidelines && (
-                                            <div className="pt-1">
-                                                <p className="font-medium text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
-                                                <p className="text-xs whitespace-pre-wrap bg-background/30 p-2 mt-1 rounded-md border border-border">{idea.nextPhaseGuidelines}</p>
-                                            </div>
-                                        )}
-                                    </CardContent>
-                                </Card>
-                                ) : null}
-                            </>
-                        )}
-
-                      {idea.programPhase === 'PHASE_2' && (
-                          <Card className="mt-3 border-primary/30">
-                              <CardHeader className="pb-2 pt-3 px-4">
-                                  <CardTitle className="text-sm font-semibold text-primary flex items-center">
-                                    <UploadCloud className="h-4 w-4 mr-2"/> Phase 2 Presentation
-                                  </CardTitle>
-                              </CardHeader>
-                              <CardContent className="text-xs px-4 pb-3 space-y-2">
-                                  {idea.phase2PptUrl && idea.phase2PptFileName ? (
-                                      <div className="flex items-center justify-between">
-                                          <p>Uploaded: <span className="font-medium">{idea.phase2PptFileName}</span></p>
-                                          <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline text-xs flex items-center">
-                                              <Download className="h-3 w-3 mr-1" /> View
-                                          </a>
-                                      </div>
-                                  ) : (
-                                      <p className="text-muted-foreground">No presentation uploaded yet.</p>
-                                  )}
-                                  <div className="flex items-center gap-2 pt-1">
-                                      <Input
-                                          id={`ppt-upload-${idea.id}`}
-                                          type="file"
-                                          accept=".ppt, .pptx"
-                                          onChange={(e) => handlePptFileChange(e, idea.id!)}
-                                          className="text-xs h-8 file:mr-2 file:py-1 file:px-2 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20"
-                                          disabled={isUploadingPpt && uploadingPptIdeaId === idea.id}
-                                      />
-                                      <Button
-                                          size="sm"
-                                          onClick={handlePptUpload}
-                                          disabled={!selectedPptFile || uploadingPptIdeaId !== idea.id || (isUploadingPpt && uploadingPptIdeaId === idea.id)}
-                                          className="h-8"
-                                      >
-                                          {isUploadingPpt && uploadingPptIdeaId === idea.id ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <UploadCloud className="h-4 w-4 mr-1"/>}
-                                          Upload
-                                      </Button>
-                                  </div>
-                                  {uploadError && uploadingPptIdeaId === idea.id && <p className="text-destructive text-xs mt-1">{uploadError}</p>}
-                              </CardContent>
-                          </Card>
-                      )}
-                      {idea.status !== 'ARCHIVED_BY_ADMIN' && (
-                        <div className="mt-3 pt-3 border-t border-border/50">
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                    if ( (generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline) || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ) {
-                                        setIsOutlineModalOpen(true);
-                                    } else {
-                                        handleGenerateOutline(idea);
-                                    }
-                                }}
-                                disabled={isGeneratingOutline && generatingOutlineIdeaId === idea.id}
-                            >
-                                {(isGeneratingOutline && generatingOutlineIdeaId === idea.id) ? <Loader2 className="h-4 w-4 animate-spin mr-2"/> : ( (generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline) || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ? <Eye className="h-4 w-4 mr-2"/> : <AiIcon className="h-4 w-4 mr-2"/>)}
-                                { ( (generatedOutline && generatingOutlineIdeaId === idea.id && !isGeneratingOutline) || (idea.isOutlineAIGenerated && generatedOutline && generatingOutlineIdeaId === idea.id) ) ? "View AI Pitch Outline" : "Generate Pitch Deck Outline (AI)"}
-                            </Button>
-                        </div>
-                      )}
-                    </li>
-                  )})}
-                </ul>
+                    );
+                  })}
+                </div>
               </ScrollArea>
             )}
           </CardContent>
