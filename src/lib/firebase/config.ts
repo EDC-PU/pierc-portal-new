@@ -13,8 +13,8 @@ const firebaseConfig = {
   storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  email: process.env.FIREBASE_CLIENT_EMAIL,
-  private_key: process.env.FIREBASE_PRIVATE_KEY
+  clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  privateKey: process.env.FIREBASE_PRIVATE_KEY
 };
 
 // Map of config keys to their expected environment variable names.
@@ -26,8 +26,8 @@ const configToEnvVarMap: Record<keyof typeof firebaseConfig, string> = {
     storageBucket: 'NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET',
     messagingSenderId: 'NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID',
     appId: 'NEXT_PUBLIC_FIREBASE_APP_ID',
-    email: 'FIREBASE_CLIENT_EMAIL',
-    private_key: 'FIREBASE_PRIVATE_KEY'
+    clientEmail: 'FIREBASE_CLIENT_EMAIL',
+    privateKey: 'FIREBASE_PRIVATE_KEY'
 };
 
 // Check if all required environment variables are defined.
