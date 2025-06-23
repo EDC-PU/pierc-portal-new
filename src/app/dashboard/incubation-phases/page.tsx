@@ -26,7 +26,7 @@ const incubationPhases: Phase[] = [
     icon: Lightbulb,
     title: 'Phase 1: Application Stage',
     description: 'Submit Your Idea Through The Startup Support Tab On Our Website.',
-    keyActivities: ['Idea Submission', 'Initial Concept Outline', 'Team Formation (if any)'],
+    keyActivities: ['Each team will have 5 minutes for verbal discussion followed by 2 minutes for questions by the jury members.', 'No PPT or presentation is required for this phase'],
     image: "https://placehold.co/600x300.png",
     imageHint: "idea submission form"
   },
@@ -34,7 +34,7 @@ const incubationPhases: Phase[] = [
     icon: Users,
     title: 'Phase 2: Evaluation',
     description: 'Applications Undergo Expert Review And Pitch Presentations In Two Rounds.',
-    keyActivities: ['Expert Review of Application', 'First Round Pitch Presentation', 'Second Round Pitch Presentation', 'Feedback Incorporation'],
+    keyActivities: ['You will have 7 minutes to present your idea, followed by a 2-minute Q&A session with the jury.', 'Please ensure that you have impactful presentations and Make a detailed budget plan.'],
     image: "https://placehold.co/600x300.png",
     imageHint: "expert review meeting"
   },
@@ -43,7 +43,7 @@ const incubationPhases: Phase[] = [
     title: 'Phase 3: Pre-Incubation Program (Cohort)',
     description: 'Begin With The 2–Week Training Program And Enter The Idea Stage Of Incubation.',
     keyActivities: ['2-Week Intensive Training', 'Cohort Formation', 'Mentorship Assignment', 'Business Model Development', 'MVP Scoping'],
-    image: "https://placehold.co/600x300.png",
+    image: "https://www.pierc.org/assets/grid/15.jpg",
     imageHint: "training program cohort"
   },
 ];
@@ -126,7 +126,7 @@ export default function IncubationPhasesPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <h4 className="font-semibold text-lg mb-2">Key Activities:</h4>
+                <h4 className="font-semibold text-lg mb-2">Notes:</h4>
                 <ul className="space-y-1">
                   {phase.keyActivities.map((activity, actIndex) => (
                     <li key={actIndex} className="flex items-start text-muted-foreground">

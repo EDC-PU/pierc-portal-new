@@ -312,25 +312,23 @@ export default function StudentDashboard() {
   }, [selectedIdeaForTeamMgmt, replace, isTeamMemberForIdea]);
   
   const ideaForFundManagementTab = useMemo(() => {
-    const incubated = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
-    if (incubated.length > 0) {
-      if (selectedIdeaForTeamMgmt && selectedIdeaForTeamMgmt.programPhase === 'INCUBATED') {
-        return selectedIdeaForTeamMgmt;
-      }
-      return incubated[0];
-    }
-    return null;
-  }, [userIdeas, selectedIdeaForTeamMgmt]);
+    // Finds the first incubated idea to display in the funding tab.
+    // The UI can be enhanced later to select between multiple incubated ideas if needed.
+    const incubatedIdeas = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
+    return incubatedIdeas[0] || null;
+  }, [userIdeas]);
 
   useEffect(() => {
-    if (ideaForFundManagementTab?.id) {
-        const key = `hasSeenIncubationTabs_${ideaForFundManagementTab.id}`;
-        const hasSeen = localStorage.getItem(key);
-        if (!hasSeen) {
-            setShowNewIncubationBadge(true);
-        }
+    const incubatedIdeas = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
+    if (incubatedIdeas.length > 0) {
+        const hasUnseenIncubation = incubatedIdeas.some(
+            idea => idea.id && !localStorage.getItem(`hasSeenIncubationTabs_${idea.id}`)
+        );
+        setShowNewIncubationBadge(hasUnseenIncubation);
+    } else {
+        setShowNewIncubationBadge(false); // Ensure it's hidden if no ideas are incubated
     }
-  }, [ideaForFundManagementTab]);
+  }, [userIdeas]);
 
 
   useEffect(() => {
@@ -728,10 +726,17 @@ export default function StudentDashboard() {
   };
 
   const handleTabChange = (value: string) => {
-    if ((value === 'fundManagement' || value === 'incubationDocuments') && ideaForFundManagementTab?.id) {
-        const key = `hasSeenIncubationTabs_${ideaForFundManagementTab.id}`;
-        localStorage.setItem(key, 'true');
-        setShowNewIncubationBadge(false);
+    if (value === 'fundManagement' || value === 'incubationDocuments') {
+        const incubatedIdeas = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
+        if (incubatedIdeas.length > 0) {
+            incubatedIdeas.forEach(idea => {
+                if (idea.id) {
+                    const key = `hasSeenIncubationTabs_${idea.id}`;
+                    localStorage.setItem(key, 'true');
+                }
+            });
+            setShowNewIncubationBadge(false);
+        }
     }
   };
 

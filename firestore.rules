@@ -1,69 +1,264 @@
 
 rules_version = '2';
 
-function isAuth() {
-  return request.auth != null;
-}
-
-function isOwner(userId) {
-  return isAuth() && request.auth.uid == userId;
-}
-
-function isAdmin() {
-  return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
-}
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    match /{document=**} {
-      allow read, write: if false;
+
+    // --- Helper Functions ---
+
+    function isRequestingUserAuthenticated() {
+      return request.auth != null && request.auth.uid != null;
     }
-    
-    match /users/{userId} {
-      allow read: if isAuth();
-      allow write: if isOwner(userId) || isAdmin();
+
+    function isRequestingUserAdmin() {
+      return isRequestingUserAuthenticated() && request.auth.token.role == 'ADMIN_FACULTY';
     }
-    
+
+    function isSuperAdminUser() {
+      return isRequestingUserAuthenticated() &&
+             (request.auth.token.email == 'pranavrathi07@gmail.com' || request.auth.token.isSuperAdmin == true);
+    }
+
+    function isOwner(userId) {
+      return isRequestingUserAuthenticated() && request.auth.uid == userId;
+    }
+
+   // --- Ideas Collection ---
     match /ideas/{ideaId} {
-      allow read: if isAuth();
       allow create: if isAuth();
+      allow read: if isAuth();
+      
+      // Update logic:
+      // 1. Admin can update any field.
+      // 2. The idea's owner can update any field.
+      // 3. ANY authenticated user can update ONLY the 'comments' and 'updatedAt' fields. This allows team/mentors to comment.
       allow update: if isAuth() && (
-        (isOwner(resource.data.userId) || isAdmin()) ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt'])
-      );
+                      isAdmin() || 
+                      isOwner(resource.data.userId) || 
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']))
+                    );
+
+      allow delete: if isAdmin();
+    }
+
+
+    // --- /users/{userId} ---
+    match /users/{userId} {
+      allow read: if isRequestingUserAuthenticated();
+      allow create: if isOwner(userId); // Profile creation is tied to auth UID
+
+      // UPDATE rule for user profiles
+      allow update: if isSuperAdminUser() ||
+                      (isOwner(userId) && isOwnProfileUpdateAllowed(request, resource)) ||
+                      (isRequestingUserAdmin() && isAdminUpdatingAllowedFields(request, resource));
+
+      // DELETE rule for user profiles
+      // Deletion is handled by Cloud Functions for atomicity, so rules can be restrictive.
+      // Admins and owners can trigger the function.
+      allow delete: if isSuperAdminUser() || isRequestingUserAdmin() || isOwner(userId);
     }
     
+    
+
+    // --- /ideas/{ideaId} ---
+    match /ideas/{ideaId} {
+      allow read: if isRequestingUserAuthenticated();
+
+      // CREATE rule for ideas
+      allow create: if isSuperAdminUser() || isOwnerCreatingIdea(request, resource);
+
+      // UPDATE rule for ideas
+      allow update: if isSuperAdminUser() ||
+                      (isOwner(resource.data.userId) && isOwnerMakingAllowedChanges(request, resource)) ||
+                      (isRequestingUserAdmin() && isAdminUpdatingAllowedFields(request, resource));
+
+      // DELETE rule is intentionally omitted to prevent accidental data loss.
+      // Deletion should be a privileged, soft-delete/archive operation.
+      allow delete: if isSuperAdminUser();
+    }
+
+    // --- /announcements/{announcementId} ---
     match /announcements/{announcementId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
-    }
-    
-    match /events/{eventId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
-      allow update: if isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount']);
+      allow read: if true; // Announcements are public
+      allow create, update, delete: if isSuperAdminUser() || isRequestingUserAdmin();
     }
 
+    // --- /cohorts/{cohortId} ---
     match /cohorts/{cohortId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
-    }
-
-    match /notifications/{notificationId} {
-      allow read, write, delete: if isOwner(resource.data.userId);
-      allow create: if isAuth();
-    }
-
-    match /systemSettings/{docId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
+      allow read: if true; // Cohort info can be public
+      allow create, update, delete: if isSuperAdminUser() || isRequestingUserAdmin();
     }
     
+    // --- /events/{eventId} ---
+    match /events/{eventId} {
+      allow read: if true;
+      
+      // Super admin can do anything. Regular admin can create valid events.
+      allow create: if isSuperAdminUser() || (isRequestingUserAdmin() && isValidEventData(request.resource.data, true));
+      
+      // Super admin can do anything. Others have specific permissions.
+      allow update: if isSuperAdminUser() ||
+                      // Admin who created it can edit it
+                      (isRequestingUserAdmin() && resource.data.createdByUid == request.auth.uid && hasOnlyAllowedEventFieldsChanged(request.resource.data, resource.data)) ||
+                      // Any auth user can RSVP
+                      (isRequestingUserAuthenticated() && isUserRsvping(request.resource.data, resource.data));
+
+      // Super admin or creator admin can delete.
+      allow delete: if isSuperAdminUser() || (isRequestingUserAdmin() && resource.data.createdByUid == request.auth.uid);
+    }
+    
+    // --- /notifications/{notificationId} ---
+    match /notifications/{notificationId} {
+      allow read, update: if isOwner(resource.data.userId); // Only the target user can read/update their notifications
+      // Notifications are created by the system (via backend functions) or other server-side logic, not directly by clients.
+      allow create: if isRequestingUserAdmin(); // Allow admins to create them for now, can be tightened later.
+      allow delete: if isOwner(resource.data.userId); // User can delete their own notifications
+    }
+
+    // --- /systemSettings/config ---
+    match /systemSettings/config {
+      allow read: if true; // Settings can be read by anyone
+      allow write: if isSuperAdminUser() || isRequestingUserAdmin();
+    }
+
+    // --- /activityLogs/{logId} ---
     match /activityLogs/{logId} {
-      allow create: if isAuth();
-      allow read: if isAdmin();
-      allow update, delete: if false;
+      allow read: if isRequestingUserAdmin(); // Only admins can read activity logs
+      // Logs are created by the system/backend, not directly by clients.
+      allow write: if false;
+    }
+
+    // --- Detailed Validation Functions ---
+ // Notifications - A user can read their own. An admin can create them. A user can mark their own as read.
+    match /notifications/{notificationId} {
+      allow read: if request.auth.uid == resource.data.userId;
+      // Admins can create notifications for any user.
+      allow create: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+      // Users can mark their own notification as read.
+      allow update: if request.auth.uid == resource.data.userId
+                    && request.resource.data.isRead == true
+                    && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      allow delete: if false;
+      
+      }
+    // USER PROFILE VALIDATION
+function isOwnProfileUpdateAllowed(request, resource) {
+  let existingData = resource.data;
+  let newData = request.resource.data;
+  let immutableFields = ['uid', 'email', 'role', 'isSuperAdmin', 'createdAt', 'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid'];
+  let allowedPersonalFields = ['fullName', 'contactNumber', 'displayName', 'photoURL', 'enrollmentNumber', 'college', 'instituteName'];
+  let allowedIdeaFields = ['startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'applicantCategory', 'currentStage', 'teamMembers'];
+
+  let coreFieldsUnchanged = !newData.diff(existingData).affectedKeys().hasAny(immutableFields);
+
+  return existingData.isTeamMemberOnly == true
+    ? coreFieldsUnchanged &&
+      newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields)
+    : coreFieldsUnchanged &&
+      newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields + allowedIdeaFields);
+}
+
+
+    function isAdminUpdatingAllowedFields(request, resource) {
+        let allowedFields = ['fullName', 'contactNumber', 'enrollmentNumber', 'college', 'instituteName', 'applicantCategory', 'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'currentStage', 'teamMembers'];
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+    }
+    
+    // IDEA VALIDATION
+    function isOwnerCreatingIdea(request, resource) {
+      let data = request.resource.data;
+      return isOwner(data.userId) &&
+             isValidIdeaData(data) &&
+             data.status == 'SUBMITTED' &&
+             data.programPhase == null;
+    }
+
+    function isOwnerMakingAllowedChanges(request, resource) {
+      let newData = request.resource.data;
+      let existingData = resource.data;
+      // Fields an owner can update after initial submission
+      let ownerUpdatableFields = [
+        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
+        'structuredTeamMembers', 'teamMemberEmails',
+        'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
+        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext'
+      ];
+      let immutableFields = ['userId', 'createdAt', 'submittedAt'];
+
+      return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
+             newData.diff(existingData).affectedKeys().hasOnly(ownerUpdatableFields) &&
+             isIdeaDataInternallyConsistent(newData);
+    }
+
+    function isAdminUpdatingIdea(request, resource) {
+        let allowedAdminFieldsToChange = [
+            'status', 'programPhase', 'phase2Marks', 'mentor', 'cohortId', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
+            'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines', 'updatedAt',
+            'isOutlineAIGenerated', 'fundingSource', 'totalFundingAllocated', 'sanction1Amount', 'sanction2Amount',
+            'sanction1DisbursedAt', 'sanction2DisbursedAt', 'sanction1UtilizationStatus', 'sanction1UtilizationRemarks',
+            'sanction1UtilizationReviewedBy', 'sanction1UtilizationReviewedAt', 'sanction2UtilizationStatus',
+            'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt',
+            // Allow admin to reset these if needed during archival etc.
+            'sanction1Expenses', 'sanction2Expenses', 'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName',
+            'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext'
+        ];
+        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
+
+        return isRequestingUserAdmin() &&
+               !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
+               request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedAdminFieldsToChange) &&
+               isValidIdeaData(request.resource.data) &&
+               isIdeaDataInternallyConsistent(request.resource.data);
+    }
+    
+    function isValidIdeaData(data) {
+      return data.title is string && data.title.size() > 0 &&
+             data.problem is string && data.problem.size() > 0 &&
+             data.solution is string && data.solution.size() > 0 &&
+             data.uniqueness is string && data.uniqueness.size() > 0 &&
+             data.userId == request.auth.uid;
+    }
+
+    function isIdeaDataInternallyConsistent(data) {
+      // If in a cohort, must have a cohortId.
+      let cohortLogic = (data.programPhase == 'COHORT') ? (data.cohortId is string) : true;
+      // If marked, must be in phase 2.
+      let marksLogic = (data.phase2Marks != null && data.phase2Marks.keys().size() > 0) ? (data.programPhase == 'PHASE_2') : true;
+      return cohortLogic && marksLogic;
+    }
+    
+    
+
+    // EVENT VALIDATION
+    function isValidEventData(data, isCreate) {
+      // On create, serverTimestamp() is not yet a timestamp, so we skip the type check.
+      let timestampsAreValid = isCreate || (data.startDateTime is timestamp && data.endDateTime is timestamp && data.endDateTime > data.startDateTime);
+
+      return data.title is string && data.title.size() > 0 &&
+             data.description is string &&
+             data.location is string &&
+             data.category is string &&
+             timestampsAreValid &&
+             data.createdByUid == request.auth.uid &&
+             (isCreate ? (data.rsvpCount == 0 && data.rsvps is list && data.rsvps.size() == 0) : true);
+    }
+    
+    function hasOnlyAllowedEventFieldsChanged(newData, oldData) {
+        let allowedFields = ['title', 'description', 'startDateTime', 'endDateTime', 'location', 'category', 'updatedAt'];
+        return newData.diff(oldData).affectedKeys().hasOnly(allowedFields) &&
+               newData.startDateTime is timestamp && newData.endDateTime is timestamp &&
+               newData.endDateTime > newData.startDateTime;
+    }
+    
+    function isUserRsvping(newData, oldData) {
+        let allowedFields = ['rsvps', 'rsvpCount'];
+        let otherFieldsUnchanged = newData.diff(oldData).affectedKeys().hasOnly(allowedFields);
+        
+        let addingSelf = newData.rsvps == oldData.rsvps.concat([request.auth.uid]);
+        let removingSelf = oldData.rsvps == newData.rsvps.concat([request.auth.uid]);
+        let isRsvpCountCorrect = newData.rsvpCount == newData.rsvps.size();
+
+        return otherFieldsUnchanged && (addingSelf || removingSelf) && isRsvpCountCorrect;
     }
   }
 }
