@@ -1,5 +1,4 @@
 
-
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType, Comment } from '@/types';
@@ -420,21 +419,21 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
 export const getAnnouncementsStream = (callback: (announcements: Announcement[]) => void, limitCount?: number) => {
   const announcementsCol = collection(db, 'announcements');
   let q = query(announcementsCol,
-    where('isUrgent', '==', false),
-    where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
   );
 
-  if (limitCount) {
-      q = query(q, limit(limitCount));
-  }
-
   return onSnapshot(q, (querySnapshot) => {
-    const announcements: Announcement[] = [];
+    let announcements: Announcement[] = [];
     querySnapshot.forEach((doc) => {
       announcements.push({ id: doc.id, ...doc.data() } as Announcement);
     });
-    callback(announcements);
+    // Client-side filtering
+    announcements = announcements.filter(ann => !ann.isUrgent);
+    if(limitCount) {
+        callback(announcements.slice(0, limitCount));
+    } else {
+        callback(announcements);
+    }
   }, (error) => {
     console.error("Error fetching general announcements:", error);
     callback([]);
@@ -445,7 +444,6 @@ export const getUrgentAnnouncementsStream = (callback: (announcements: Announcem
   const announcementsCol = collection(db, 'announcements');
   const q = query(announcementsCol,
     where('isUrgent', '==', true),
-    where('targetAudience', '==', 'ALL'),
     orderBy('createdAt', 'desc')
   );
 
@@ -695,6 +693,10 @@ export const createIdeaFromProfile = async (
             applicantDisplayName: data.applicantDisplayName ?? '',
             applicantEmail: data.applicantEmail ?? '',
             category: data.category ?? '', // Ensure category is handled
+            yuktiId: data.yuktiId ?? null,
+            yuktiPassword: data.yuktiPassword ?? null,
+            yuktiScreenshotUrl: data.yuktiScreenshotUrl ?? null,
+            yuktiScreenshotFileName: data.yuktiScreenshotFileName ?? null,
         } as IdeaSubmission;
     });
     existingIdeaToUpdate = ideas.find(idea => idea.status === 'ARCHIVED_BY_ADMIN') ||
@@ -771,6 +773,10 @@ export const createIdeaFromProfile = async (
         sanction2UtilizationReviewedBy: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationReviewedBy ?? null),
         sanction2UtilizationReviewedAt: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : (existingIdeaToUpdate.sanction2UtilizationReviewedAt ?? null),
         incubationDocuments: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? {} : (existingIdeaToUpdate.incubationDocuments || {}),
+        yuktiId: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.yuktiId,
+        yuktiPassword: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.yuktiPassword,
+        yuktiScreenshotUrl: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.yuktiScreenshotUrl,
+        yuktiScreenshotFileName: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.yuktiScreenshotFileName,
       };
       await updateDoc(ideaDocRef, updateData);
       await logUserActivity(
@@ -835,6 +841,10 @@ export const createIdeaFromProfile = async (
         studioLocation: null, // Explicitly set to null
         applicantDisplayName: userProfile.displayName || userProfile.fullName || 'N/A',
         applicantEmail: userProfile.email || 'N/A',
+        yuktiId: null,
+        yuktiPassword: null,
+        yuktiScreenshotUrl: null,
+        yuktiScreenshotFileName: null,
       };
       ideaDocRef = await addDoc(collection(db, 'ideas'), newIdeaData);
       await logUserActivity(
@@ -999,6 +1009,10 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
       sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
       incubationDocuments: ideaData.incubationDocuments || {},
+      yuktiId: ideaData.yuktiId ?? null,
+      yuktiPassword: ideaData.yuktiPassword ?? null,
+      yuktiScreenshotUrl: ideaData.yuktiScreenshotUrl ?? null,
+      yuktiScreenshotFileName: ideaData.yuktiScreenshotFileName ?? null,
     } as IdeaSubmission);
   });
 
@@ -1104,6 +1118,10 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       sanction2UtilizationReviewedBy: ideaData.sanction2UtilizationReviewedBy ?? null,
       sanction2UtilizationReviewedAt: ideaData.sanction2UtilizationReviewedAt ?? null,
       incubationDocuments: ideaData.incubationDocuments || {},
+      yuktiId: ideaData.yuktiId ?? null,
+      yuktiPassword: ideaData.yuktiPassword ?? null,
+      yuktiScreenshotUrl: ideaData.yuktiScreenshotUrl ?? null,
+      yuktiScreenshotFileName: ideaData.yuktiScreenshotFileName ?? null,
     } as IdeaSubmission);
   });
 
@@ -1221,6 +1239,10 @@ export const updateIdeaStatusAndPhase = async (
     updates.sanction2UtilizationReviewedAt = deleteField();
     updates.incubationDocuments = {};
     updates.updatedAt = serverTimestamp();
+    updates.yuktiId = deleteField();
+    updates.yuktiPassword = deleteField();
+    updates.yuktiScreenshotUrl = deleteField();
+    updates.yuktiScreenshotFileName = deleteField();
   } else {
     updates.programPhase = null;
     updates.nextPhaseDate = null;
@@ -1286,6 +1308,8 @@ export const updateIdeaStatusAndPhase = async (
         const batch = writeBatch(db);
         Array.from(teamUids).forEach(uid => {
             const notifRef = doc(collection(db, 'notifications'));
+            const link = allAdminUids.includes(uid) ? `/dashboard/admin/view-applications` : `/dashboard`;
+
             batch.set(notifRef, {
                 userId: uid,
                 title: notificationTitle,
@@ -1439,6 +1463,10 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
         sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
         incubationDocuments: data.incubationDocuments || {},
+        yuktiId: data.yuktiId ?? null,
+        yuktiPassword: data.yuktiPassword ?? null,
+        yuktiScreenshotUrl: data.yuktiScreenshotUrl ?? null,
+        yuktiScreenshotFileName: data.yuktiScreenshotFileName ?? null,
     } as IdeaSubmission);
   });
   return userIdeas;
@@ -1802,6 +1830,10 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
         sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
         incubationDocuments: data.incubationDocuments || {},
+        yuktiId: data.yuktiId ?? null,
+        yuktiPassword: data.yuktiPassword ?? null,
+        yuktiScreenshotUrl: data.yuktiScreenshotUrl ?? null,
+        yuktiScreenshotFileName: data.yuktiScreenshotFileName ?? null,
     } as IdeaSubmission;
   }
   return null;
@@ -1964,7 +1996,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments' | 'comments'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments' | 'comments' | 'yuktiId' | 'yuktiPassword' | 'yuktiScreenshotUrl' | 'yuktiScreenshotFileName'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -2014,6 +2046,10 @@ export const createIdeaSubmission = async (
     submittedAt: serverTimestamp() as Timestamp,
     updatedAt: serverTimestamp() as Timestamp,
     createdAt: serverTimestamp() as Timestamp,
+    yuktiId: null,
+    yuktiPassword: null,
+    yuktiScreenshotUrl: null,
+    yuktiScreenshotFileName: null,
   };
 
   if (ideaData.fileURL) newIdeaPayload.fileURL = ideaData.fileURL;
@@ -2172,6 +2208,10 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         sanction2UtilizationReviewedBy: data.sanction2UtilizationReviewedBy ?? null,
         sanction2UtilizationReviewedAt: data.sanction2UtilizationReviewedAt ?? null,
         incubationDocuments: data.incubationDocuments || {},
+        yuktiId: data.yuktiId ?? null,
+        yuktiPassword: data.yuktiPassword ?? null,
+        yuktiScreenshotUrl: data.yuktiScreenshotUrl ?? null,
+        yuktiScreenshotFileName: data.yuktiScreenshotFileName ?? null,
     } as IdeaSubmission;
   }
   return null;
@@ -2693,4 +2733,54 @@ export const addCommentToIdea = async (
   }
 };
 
+// Yukti Portal Functions
+export const updateYuktiDetailsFS = async (
+    ideaId: string,
+    ideaTitle: string,
+    yuktiData: {
+        yuktiId: string;
+        yuktiPassword?: string;
+        screenshotUrl: string;
+        screenshotFileName: string;
+    },
+    actorProfile: UserProfile
+): Promise<void> => {
+    const ideaRef = doc(db, 'ideas', ideaId);
+    const updates = {
+        yuktiId: yuktiData.yuktiId,
+        yuktiPassword: yuktiData.yuktiPassword,
+        yuktiScreenshotUrl: yuktiData.screenshotUrl,
+        yuktiScreenshotFileName: yuktiData.screenshotFileName,
+        updatedAt: serverTimestamp(),
+    };
+    await updateDoc(ideaRef, updates as any);
+
+    await logUserActivity(
+        actorProfile.uid,
+        actorProfile.displayName || actorProfile.fullName,
+        'IDEA_YUKTI_DETAILS_SUBMITTED',
+        { type: 'IDEA', id: ideaId, displayName: ideaTitle },
+        { yuktiId: yuktiData.yuktiId }
+    );
+};
+
+export const getAllIdeasWithYuktiDetails = async (): Promise<IdeaSubmission[]> => {
+    const ideasCol = collection(db, 'ideas');
+    const q = query(ideasCol, where('yuktiId', '>', ''), orderBy('yuktiId'), orderBy('updatedAt', 'desc'));
+    const ideasSnapshot = await getDocs(q);
+
+    if (ideasSnapshot.empty) {
+        return [];
+    }
+    
+    const ideaSubmissions: IdeaSubmission[] = [];
+    ideasSnapshot.docs.forEach(ideaDoc => {
+        ideaSubmissions.push({
+            id: ideaDoc.id,
+            ...ideaDoc.data()
+        } as IdeaSubmission);
+    });
+
+    return ideaSubmissions;
+};
     

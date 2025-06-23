@@ -167,6 +167,12 @@ export interface IdeaSubmission {
   nextPhaseVenue?: string | null;
   nextPhaseGuidelines?: string | null;
 
+  // Yukti Portal Details
+  yuktiId?: string | null;
+  yuktiPassword?: string | null;
+  yuktiScreenshotUrl?: string | null;
+  yuktiScreenshotFileName?: string | null;
+
   // Incubation Funding Fields
   fundingSource?: FundingSource | null;
   totalFundingAllocated?: number | null;
@@ -313,6 +319,7 @@ export type ActivityLogAction =
   | 'IDEA_EXPENSE_UPLOADED'
   | 'IDEA_APPLIED_FOR_NEXT_SANCTION'
   | 'IDEA_INCUBATION_DOCUMENT_UPLOADED'
+  | 'IDEA_YUKTI_DETAILS_SUBMITTED'
   | 'ADMIN_COMMENT_ADDED'
   | 'USER_COMMENT_ADDED'
   | 'ADMIN_USER_ROLE_UPDATED'
@@ -347,6 +354,7 @@ export const ALL_ACTIVITY_LOG_ACTIONS: ActivityLogAction[] = [
   'IDEA_TEAM_MEMBER_ADDED', 'IDEA_TEAM_MEMBER_UPDATED', 'IDEA_TEAM_MEMBER_REMOVED',
   'USER_GENERATED_PITCH_DECK_OUTLINE',
   'IDEA_BENEFICIARY_DETAILS_UPDATED', 'IDEA_EXPENSE_UPLOADED', 'IDEA_APPLIED_FOR_NEXT_SANCTION', 'IDEA_INCUBATION_DOCUMENT_UPLOADED',
+  'IDEA_YUKTI_DETAILS_SUBMITTED',
   'ADMIN_COMMENT_ADDED', 'USER_COMMENT_ADDED',
   'ADMIN_USER_ROLE_UPDATED', 'ADMIN_IDEA_STATUS_PHASE_UPDATED', 'ADMIN_IDEA_MENTOR_ASSIGNED',
   'ADMIN_IDEA_PHASE2_MARK_SUBMITTED', 'ADMIN_IDEA_ARCHIVED_FOR_REVISION', 'ADMIN_IDEA_ASSIGNED_TO_COHORT',

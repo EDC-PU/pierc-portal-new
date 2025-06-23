@@ -19,7 +19,7 @@ import {
   SidebarRail,
 } from '@/components/ui/sidebar';
 import { Button } from '@/components/ui/button';
-import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote, Calendar, Bell, CalendarCheck, Briefcase, ChevronLeft } from 'lucide-react';
+import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote, Calendar, Bell, CalendarCheck, Briefcase, ChevronLeft, Sparkles } from 'lucide-react';
 import { useSidebar } from '@/hooks/use-sidebar';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
@@ -69,6 +69,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const adminMenuItems = [
     { label: 'Manage Announcements', href: '/dashboard/admin/manage-announcements', icon: Megaphone, roles: ['ADMIN_FACULTY'] },
     { label: 'View Applications', href: '/dashboard/admin/view-applications', icon: BarChart3, roles: ['ADMIN_FACULTY'] },
+    { label: 'Yukti Submissions', href: '/dashboard/admin/yukti', icon: Sparkles, roles: ['ADMIN_FACULTY'] },
     { label: 'Incubatee Details', href: '/dashboard/admin/incubatee-details', icon: Briefcase, roles: ['ADMIN_FACULTY'] },
     { label: 'Manage Cohorts', href: '/dashboard/admin/manage-cohorts', icon: CohortIcon, roles: ['ADMIN_FACULTY'] },
     { label: 'Manage Events', href: '/dashboard/admin/manage-events', icon: CalendarCheck, roles: ['ADMIN_FACULTY'] },

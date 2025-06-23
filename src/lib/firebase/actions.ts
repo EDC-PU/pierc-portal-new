@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Server actions for the PIERC portal, primarily for file uploads using the Admin SDK.
@@ -180,4 +181,46 @@ export async function uploadAnnouncementAttachment(input: UploadAnnouncementAtta
     attachmentURL: publicUrl,
     attachmentName: validatedInput.fileName,
   };
+}
+
+// --- From upload-yukti-screenshot-flow.ts ---
+
+const UploadYuktiScreenshotInputSchema = z.object({
+  ideaId: z.string().describe('The ID of the idea submission this screenshot belongs to.'),
+  fileName: z.string().describe('The original name of the screenshot file.'),
+  fileDataUri: z
+    .string()
+    .describe(
+      "The screenshot file content as a data URI. Expected format: 'data:<mimetype>;base64,<encoded_data>'."
+    ),
+});
+export type UploadYuktiScreenshotInput = z.infer<typeof UploadYuktiScreenshotInputSchema>;
+
+const UploadYuktiScreenshotOutputSchema = z.object({
+  screenshotUrl: z.string().describe('The public URL where the screenshot is stored.'),
+  screenshotFileName: z.string().describe('The name of the screenshot file stored.'),
+});
+export type UploadYuktiScreenshotOutput = z.infer<typeof UploadYuktiScreenshotOutputSchema>;
+
+export async function uploadYuktiScreenshot(input: UploadYuktiScreenshotInput): Promise<UploadYuktiScreenshotOutput> {
+    const validatedInput = UploadYuktiScreenshotInputSchema.parse(input);
+    const bucket = adminStorage.bucket();
+    const matches = validatedInput.fileDataUri.match(/^data:(.+);base64,(.*)$/);
+    if (!matches || matches.length !== 3) {
+        throw new Error('Invalid Data URI format.');
+    }
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+    const fileExtension = validatedInput.fileName.split('.').pop() || 'png';
+    const uniqueFileName = `yukti-screenshot-${nanoid()}.${fileExtension}`;
+    const filePath = `yukti_screenshots/${validatedInput.ideaId}/${uniqueFileName}`;
+    const file = bucket.file(filePath);
+    await file.save(buffer, { metadata: { contentType: mimeType } });
+    await file.makePublic();
+    const publicUrl = file.publicUrl();
+    return {
+      screenshotUrl: publicUrl,
+      screenshotFileName: validatedInput.fileName,
+    };
 }
