@@ -242,17 +242,12 @@ export default function StudentDashboard() {
             const updatedSelected = ideas.find(idea => idea.id === currentSelectedIdeaIdToPreserve);
             setSelectedIdeaForTeamMgmt(updatedSelected || null);
         } else if (ideas.length > 0 && !selectedIdeaForTeamMgmt) {
-             // No specific idea to preserve, but if an idea was previously selected for fund mgmt, try to keep it if still incubated.
             const currentFundMgmtIdea = ideaForFundManagementTab;
             if (currentFundMgmtIdea) {
                  const stillIncubated = ideas.find(i => i.id === currentFundMgmtIdea.id && i.programPhase === 'INCUBATED');
-                 if (stillIncubated) {
-                    // Keep it implicitly by not changing selectedIdeaForTeamMgmt if it was already set for funding
-                 } else {
-                    setSelectedIdeaForTeamMgmt(null); // Or select the first idea
+                 if (!stillIncubated) {
+                    setSelectedIdeaForTeamMgmt(null);
                  }
-            } else {
-                // setSelectedIdeaForTeamMgmt(ideas[0]); // Optionally select the first idea if none specifically selected
             }
         } else if (ideas.length === 0) {
             setSelectedIdeaForTeamMgmt(null);
@@ -312,23 +307,26 @@ export default function StudentDashboard() {
   }, [selectedIdeaForTeamMgmt, replace, isTeamMemberForIdea]);
   
   const ideaForFundManagementTab = useMemo(() => {
-    // Finds the first incubated idea to display in the funding tab.
-    // The UI can be enhanced later to select between multiple incubated ideas if needed.
+    if (isTeamMemberForIdea?.programPhase === 'INCUBATED') {
+        return isTeamMemberForIdea;
+    }
     const incubatedIdeas = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
     return incubatedIdeas[0] || null;
-  }, [userIdeas]);
+  }, [userIdeas, isTeamMemberForIdea]);
 
   useEffect(() => {
-    const incubatedIdeas = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
+    const ideasToCheck = isTeamMemberForIdea ? [isTeamMemberForIdea] : userIdeas;
+    const incubatedIdeas = ideasToCheck.filter(idea => idea.programPhase === 'INCUBATED');
+    
     if (incubatedIdeas.length > 0) {
         const hasUnseenIncubation = incubatedIdeas.some(
             idea => idea.id && !localStorage.getItem(`hasSeenIncubationTabs_${idea.id}`)
         );
         setShowNewIncubationBadge(hasUnseenIncubation);
     } else {
-        setShowNewIncubationBadge(false); // Ensure it's hidden if no ideas are incubated
+        setShowNewIncubationBadge(false);
     }
-  }, [userIdeas]);
+  }, [userIdeas, isTeamMemberForIdea]);
 
 
   useEffect(() => {
@@ -436,7 +434,12 @@ export default function StudentDashboard() {
 
         await updateIncubationDocumentFS(ideaForFundManagementTab.id!, ideaForFundManagementTab.title, docType, uploadResult, userProfile);
         toast({ title: "Document Uploaded", description: `${file.name} has been successfully uploaded.` });
-        await fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
+        if (isTeamMemberForIdea) {
+          // Team members don't have the fetch function, but we need to update state
+          // For simplicity, we can reload or ideally get the updated idea from the server
+        } else {
+          await fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
+        }
 
     } catch (error) {
         console.error(`Error uploading ${docType}:`, error);
@@ -455,7 +458,7 @@ export default function StudentDashboard() {
 
     setIsUploadingPpt(true);
     setUploadError(null);
-    const ideaToUpdate = userIdeas.find(idea => idea.id === uploadingPptIdeaId);
+    const ideaToUpdate = isTeamMemberForIdea || userIdeas.find(idea => idea.id === uploadingPptIdeaId);
     if (!ideaToUpdate) {
         toast({ title: "Upload Error", description: "Idea context not found for upload.", variant: "destructive" });
         setIsUploadingPpt(false);
@@ -472,7 +475,7 @@ export default function StudentDashboard() {
 
       await updateIdeaPhase2PptDetails(uploadingPptIdeaId, ideaToUpdate.title, flowResult.pptUrl, flowResult.pptFileName, userProfile);
       toast({ title: "Upload Successful", description: `${flowResult.pptFileName} has been uploaded.` });
-      fetchUserIdeasAndUpdateState(uploadingPptIdeaId);
+      if (!isTeamMemberForIdea) fetchUserIdeasAndUpdateState(uploadingPptIdeaId);
 
     } catch (error) {
       console.error("Error during PPT upload process:", error);
@@ -526,7 +529,7 @@ export default function StudentDashboard() {
       toast({ title: "Pitch Deck Outline Generated!", description: "Review the AI-suggested outline." });
       
       await updateIdeaOutlineAIGeneratedStatus(idea.id!, idea.title, true, userProfile);
-      fetchUserIdeasAndUpdateState(idea.id); 
+      if (!isTeamMemberForIdea) fetchUserIdeasAndUpdateState(idea.id); 
 
     } catch (error) {
       console.error("Error generating pitch deck outline:", error);
@@ -664,7 +667,7 @@ export default function StudentDashboard() {
     try {
       await updateIdeaBeneficiaryDetailsFS(ideaForFundManagementTab.id, ideaForFundManagementTab.title, data, userProfile);
       toast({ title: "Beneficiary Details Saved", description: "Your bank details for funding have been updated." });
-      fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
+      if(!isTeamMemberForIdea) fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
       setIsBeneficiaryModalOpen(false);
     } catch (error: any) {
       toast({ title: "Save Error", description: error.message || "Could not save beneficiary details.", variant: "destructive" });
@@ -696,7 +699,7 @@ export default function StudentDashboard() {
 
       await addExpenseToSanctionFS(ideaForFundManagementTab.id, ideaForFundManagementTab.title, currentSanctionForExpense, newExpense, userProfile);
       toast({ title: "Expense Submitted", description: `Expense for Sanction ${currentSanctionForExpense} recorded.` });
-      fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
+      if(!isTeamMemberForIdea) fetchUserIdeasAndUpdateState(ideaForFundManagementTab.id);
       setIsExpenseModalOpen(false);
       resetExpenseForm({description: '', amount: 0, proofFile: null});
     } catch (error: any) {
@@ -719,7 +722,7 @@ export default function StudentDashboard() {
     try {
         await applyForNextSanctionFS(idea.id, idea.title, 1, userProfile); 
         toast({ title: "Application Submitted", description: "Your application for Sanction 2 has been noted for admin review."});
-        fetchUserIdeasAndUpdateState(idea.id);
+        if(!isTeamMemberForIdea) fetchUserIdeasAndUpdateState(idea.id);
     } catch (error: any) {
         toast({ title: "Application Error", description: error.message || "Could not submit application for next sanction.", variant: "destructive"});
     }
@@ -727,12 +730,12 @@ export default function StudentDashboard() {
 
   const handleTabChange = (value: string) => {
     if (value === 'fundManagement' || value === 'incubationDocuments') {
-        const incubatedIdeas = userIdeas.filter(idea => idea.programPhase === 'INCUBATED');
+        const ideasToCheck = isTeamMemberForIdea ? [isTeamMemberForIdea] : userIdeas;
+        const incubatedIdeas = ideasToCheck.filter(idea => idea.programPhase === 'INCUBATED');
         if (incubatedIdeas.length > 0) {
             incubatedIdeas.forEach(idea => {
                 if (idea.id) {
-                    const key = `hasSeenIncubationTabs_${idea.id}`;
-                    localStorage.setItem(key, 'true');
+                    localStorage.setItem(`hasSeenIncubationTabs_${idea.id}`, 'true');
                 }
             });
             setShowNewIncubationBadge(false);
@@ -888,86 +891,11 @@ export default function StudentDashboard() {
     );
   }
 
-  if (isTeamMemberForIdea && userProfile) {
-    const assignedCohort = isTeamMemberForIdea.cohortId ? allCohorts.find(c => c.id === isTeamMemberForIdea.cohortId) : null;
-    return (
-      <div className="space-y-6 animate-slide-in-up">
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-headline text-2xl flex items-center">
-              <Briefcase className="mr-3 h-7 w-7 text-primary" /> Team Member Dashboard
-            </CardTitle>
-            <CardDescription>
-              Welcome, {userProfile?.displayName || userProfile?.fullName || user?.displayName || 'Team Member'}!
-              You are part of the project: <span className="font-semibold text-primary">{isTeamMemberForIdea.title}</span>.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        {renderIdeaDetails(isTeamMemberForIdea, assignedCohort)}
-        
-         {isTeamMemberForIdea.programPhase === 'INCUBATED' && (
-            <Card className="shadow-lg">
-                <CardHeader>
-                    <CardTitle className="font-headline text-xl text-primary flex items-center"><DollarSign className="mr-2 h-5 w-5"/>Incubation Funding Status</CardTitle>
-                    <CardDescription>Overview of your idea's funding from PIERC.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    <div className="text-sm"><strong>Total Allocated:</strong> {isTeamMemberForIdea.totalFundingAllocated ? `₹${isTeamMemberForIdea.totalFundingAllocated.toLocaleString()}` : 'Not Set'}</div>
-                    <div className="text-sm"><strong>Sanction 1 Amount:</strong> {isTeamMemberForIdea.sanction1Amount ? `₹${isTeamMemberForIdea.sanction1Amount.toLocaleString()}` : 'Not Set'}</div>
-                    <div><strong>Sanction 1 Disbursed:</strong> {isTeamMemberForIdea.sanction1DisbursedAt ? formatDate(isTeamMemberForIdea.sanction1DisbursedAt) : <Badge variant="outline">Pending</Badge>}</div>
-                    <div><strong>Sanction 1 Utilization:</strong> <Badge variant={isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? 'default' : (isTeamMemberForIdea.sanction1UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{isTeamMemberForIdea.sanction1UtilizationStatus || 'Pending Review'}</Badge></div>
-                    {isTeamMemberForIdea.sanction1UtilizationRemarks && <div className="text-xs text-muted-foreground italic">Admin Remarks (S1): {isTeamMemberForIdea.sanction1UtilizationRemarks}</div>}
-                    <hr className="my-2"/>
-                    <div className="text-sm"><strong>Sanction 2 Amount:</strong> {isTeamMemberForIdea.sanction2Amount ? `₹${isTeamMemberForIdea.sanction2Amount.toLocaleString()}` : 'Not Set'}</div>
-                    <div><strong>Sanction 2 Disbursed:</strong> {isTeamMemberForIdea.sanction2DisbursedAt ? formatDate(isTeamMemberForIdea.sanction2DisbursedAt) : (isTeamMemberForIdea.sanction1UtilizationStatus === 'APPROVED' ? <Badge variant="outline">Pending</Badge> : <Badge variant="outline">Awaiting S1 Approval</Badge>)}</div>
-                    <div><strong>Sanction 2 Utilization:</strong> <Badge variant={isTeamMemberForIdea.sanction2UtilizationStatus === 'APPROVED' ? 'default' : (isTeamMemberForIdea.sanction2UtilizationStatus === 'REJECTED' ? 'destructive' : 'secondary')}>{isTeamMemberForIdea.sanction2UtilizationStatus || 'Pending Review'}</Badge></div>
-                    {isTeamMemberForIdea.sanction2UtilizationRemarks && <div className="text-xs text-muted-foreground italic">Admin Remarks (S2): {isTeamMemberForIdea.sanction2UtilizationRemarks}</div>}
-                </CardContent>
-            </Card>
-        )}
-
-
-        {teamLeaderProfileForMember && (
-          <Card className="shadow-lg">
-            <CardHeader>
-              <CardTitle className="font-headline text-xl flex items-center">
-                <UserCheckIcon className="mr-2 h-6 w-6 text-primary" /> Team Leader Information
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-1.5 text-sm">
-              <p><strong>Name:</strong> {teamLeaderProfileForMember.fullName || teamLeaderProfileForMember.displayName || 'N/A'}</p>
-              <p><strong>Email:</strong> {teamLeaderProfileForMember.email || 'N/A'}</p>
-              <p><strong>Contact:</strong> {teamLeaderProfileForMember.contactNumber || 'N/A'}</p>
-            </CardContent>
-          </Card>
-        )}
-         <Card>
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">Quick Links</CardTitle>
-          </CardHeader>
-          <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Button variant="outline" onClick={() => router.push('/dashboard/incubation-phases')}>
-                View Incubation Phases <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button variant="outline" onClick={() => router.push('/dashboard/announcements')}>
-                Check Announcements <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-               <Button variant="outline" onClick={() => router.push('/profile-setup')}>
-                My Profile <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-
   return (
     <Tabs defaultValue="overview" className="space-y-6" onValueChange={handleTabChange}>
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
         <TabsTrigger value="overview">Overview & Submissions</TabsTrigger>
-        <TabsTrigger value="manageTeam">Manage Team (Max 4)</TabsTrigger>
+        {!isTeamMemberForIdea && <TabsTrigger value="manageTeam">Manage Team (Max 4)</TabsTrigger>}
         {ideaForFundManagementTab && (
             <TabsTrigger value="fundManagement">
                 Fund Management
@@ -985,65 +913,57 @@ export default function StudentDashboard() {
       <TabsContent value="overview" className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle className="font-headline text-2xl">Student Dashboard</CardTitle>
+            <CardTitle className="font-headline text-2xl">
+              {isTeamMemberForIdea ? 'Team Member Dashboard' : 'Student Dashboard'}
+            </CardTitle>
+            <CardDescription>
+              Welcome, {userProfile?.displayName || user?.displayName || 'Innovator'}! 
+              {isTeamMemberForIdea ? ` You are a member of "${isTeamMemberForIdea.title}".` : ' Here are your resources and tools.'}
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground">Welcome, {userProfile?.displayName || user?.displayName || 'Student'}! Here are your resources and tools.</p>
-          </CardContent>
         </Card>
+        
+        {isTeamMemberForIdea && teamLeaderProfileForMember && (
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="font-headline text-xl flex items-center">
+                <UserCheckIcon className="mr-2 h-6 w-6 text-primary" /> Team Leader Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5 text-sm">
+              <p><strong>Name:</strong> {teamLeaderProfileForMember.fullName || teamLeaderProfileForMember.displayName || 'N/A'}</p>
+              <p><strong>Email:</strong> {teamLeaderProfileForMember.email || 'N/A'}</p>
+              <p><strong>Contact:</strong> {teamLeaderProfileForMember.contactNumber || 'N/A'}</p>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center text-lg"><Rss className="mr-2 h-5 w-5 text-primary"/>Recent Announcements</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="flex items-center text-lg"><Rss className="mr-2 h-5 w-5 text-primary"/>Recent Announcements</CardTitle></CardHeader>
                 <CardContent>
                     {loadingDashboardWidgets ? (
                         <div className="flex items-center justify-center p-4"><Loader2 className="animate-spin" /></div>
                     ) : recentAnnouncements.length > 0 ? (
-                        <ul className="space-y-3">
-                            {recentAnnouncements.map(ann => (
-                                <li key={ann.id} className="text-sm">
-                                    <p className="font-semibold truncate">{ann.title}</p>
-                                    <p className="text-xs text-muted-foreground">{formatDate(ann.createdAt)}</p>
-                                </li>
-                            ))}
-                        </ul>
+                        <ul className="space-y-3">{recentAnnouncements.map(ann => (<li key={ann.id} className="text-sm"><p className="font-semibold truncate">{ann.title}</p><p className="text-xs text-muted-foreground">{formatDate(ann.createdAt)}</p></li>))}</ul>
                     ) : (
                         <p className="text-sm text-muted-foreground text-center py-4">No recent announcements.</p>
                     )}
                 </CardContent>
-                <CardFooter>
-                    <Button variant="link" size="sm" className="p-0" onClick={() => router.push('/dashboard/announcements')}>
-                        View All Announcements <ArrowRight className="ml-1 h-4 w-4"/>
-                    </Button>
-                </CardFooter>
+                <CardFooter><Button variant="link" size="sm" className="p-0" onClick={() => router.push('/dashboard/announcements')}>View All Announcements <ArrowRight className="ml-1 h-4 w-4"/></Button></CardFooter>
             </Card>
             <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center text-lg"><CalendarIcon className="mr-2 h-5 w-5 text-primary"/>Upcoming Events</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle className="flex items-center text-lg"><CalendarIcon className="mr-2 h-5 w-5 text-primary"/>Upcoming Events</CardTitle></CardHeader>
                 <CardContent>
                      {loadingDashboardWidgets ? (
                         <div className="flex items-center justify-center p-4"><Loader2 className="animate-spin" /></div>
                     ) : upcomingEvents.length > 0 ? (
-                        <ul className="space-y-3">
-                            {upcomingEvents.map(event => (
-                                <li key={event.id} className="text-sm">
-                                    <p className="font-semibold truncate">{event.title}</p>
-                                    <p className="text-xs text-muted-foreground">{formatDate(event.startDateTime)} at {format(event.startDateTime.toDate(), 'p')}</p>
-                                </li>
-                            ))}
-                        </ul>
+                        <ul className="space-y-3">{upcomingEvents.map(event => (<li key={event.id} className="text-sm"><p className="font-semibold truncate">{event.title}</p><p className="text-xs text-muted-foreground">{formatDate(event.startDateTime)} at {format(event.startDateTime.toDate(), 'p')}</p></li>))}</ul>
                     ) : (
                         <p className="text-sm text-muted-foreground text-center py-4">No upcoming events.</p>
                     )}
                 </CardContent>
-                <CardFooter>
-                    <Button variant="link" size="sm" className="p-0" onClick={() => router.push('/dashboard/events')}>
-                        View Events Calendar <ArrowRight className="ml-1 h-4 w-4"/>
-                    </Button>
-                </CardFooter>
+                <CardFooter><Button variant="link" size="sm" className="p-0" onClick={() => router.push('/dashboard/events')}>View Events Calendar <ArrowRight className="ml-1 h-4 w-4"/></Button></CardFooter>
             </Card>
         </div>
 
@@ -1052,235 +972,131 @@ export default function StudentDashboard() {
           <CardHeader>
             <div className="flex items-center gap-2">
               <FileCheck2 className="h-6 w-6 text-primary" />
-              <CardTitle className="font-headline text-xl">My Idea Submissions</CardTitle>
+              <CardTitle className="font-headline text-xl">My Idea Submission</CardTitle>
             </div>
-            <CardDescription>Track the status and phase of your innovative ideas submitted to PIERC.</CardDescription>
+            <CardDescription>
+                {isTeamMemberForIdea ? `Details for the project you are a part of.` : `Track the status and phase of your innovative ideas submitted to PIERC.`}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {isUploadingPpt && uploadingPptIdeaId ? (
-                 <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
-                    <p className="ml-2 text-muted-foreground">Uploading presentation for selected idea...</p>
-                </div>
+                 <div className="flex items-center justify-center py-8"><Loader2 className="h-8 w-8 animate-spin text-primary" /><p className="ml-2 text-muted-foreground">Uploading presentation for selected idea...</p></div>
+            ) : isTeamMemberForIdea ? (
+                renderIdeaDetails(isTeamMemberForIdea, allCohorts.find(c => c.id === isTeamMemberForIdea.cohortId) || null)
             ) : userIdeas.length === 0 ? (
               <p className="text-center text-muted-foreground py-8">You haven't submitted any ideas yet. Your ideas will appear here once your profile (including startup details) is saved.</p>
             ) : (
               <ScrollArea className="h-auto pr-3" key={userIdeas.map(i=>i.id).join(',')}>
-                <div className="space-y-4">
-                  {userIdeas.map((idea) => {
-                    const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null;
-                    return (
-                        <div key={idea.id}>
-                           {renderIdeaDetails(idea, assignedCohort)}
-                        </div>
-                    );
-                  })}
-                </div>
+                <div className="space-y-4">{userIdeas.map((idea) => {const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null; return (<div key={idea.id}>{renderIdeaDetails(idea, assignedCohort)}</div>);})}</div>
               </ScrollArea>
             )}
           </CardContent>
           <CardFooter>
-              <p className="text-xs text-muted-foreground">Your idea submissions are automatically created or updated when you save your profile with startup details.</p>
+              <p className="text-xs text-muted-foreground">{isTeamMemberForIdea ? 'As a team member, you can provide feedback and view progress on this idea.' : 'Your idea submissions are automatically created or updated when you save your profile with startup details.'}</p>
           </CardFooter>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">Learning Resources</CardTitle>
-            <CardDescription>A curated playlist to help you on your entrepreneurial journey.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <YoutubePlaylist />
-          </CardContent>
+          <CardHeader><CardTitle className="font-headline text-xl">Learning Resources</CardTitle><CardDescription>A curated playlist to help you on your entrepreneurial journey.</CardDescription></CardHeader>
+          <CardContent><YoutubePlaylist /></CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">Quick Links</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="font-headline text-xl">Quick Links</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Button variant="outline" onClick={() => router.push('/dashboard/incubation-phases')}>
-                View Incubation Phases <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button variant="outline" onClick={() => router.push('/dashboard/announcements')}>
-                Check Announcements <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button variant="outline" onClick={() => router.push('/dashboard/events')}>
-                View Events Calendar <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
-              <Button variant="outline" onClick={() => router.push('/profile-setup')}>
-                My Profile <ArrowRight className="ml-2 h-4 w-4" />
-              </Button>
+              <Button variant="outline" onClick={() => router.push('/dashboard/incubation-phases')}>View Incubation Phases <ArrowRight className="ml-2 h-4 w-4" /></Button>
+              <Button variant="outline" onClick={() => router.push('/dashboard/announcements')}>Check Announcements <ArrowRight className="ml-2 h-4 w-4" /></Button>
+              <Button variant="outline" onClick={() => router.push('/dashboard/events')}>View Events Calendar <ArrowRight className="ml-2 h-4 w-4" /></Button>
+              <Button variant="outline" onClick={() => router.push('/profile-setup')}>My Profile <ArrowRight className="ml-2 h-4 w-4" /></Button>
           </CardContent>
         </Card>
       </TabsContent>
 
-      <TabsContent value="manageTeam" className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="font-headline text-xl">Manage Team Members</CardTitle>
-            <CardDescription>Select an idea to add, edit, or view its team members. You can add up to 4 members.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {userIdeas.filter(idea => idea.status !== 'ARCHIVED_BY_ADMIN').length === 0 ? (
-              <p className="text-muted-foreground">You have no active idea submissions to manage teams for. Archived ideas cannot have their teams managed here directly.</p>
-            ) : (
-              <div className="space-y-2 mb-6">
-                <Label>Select an Active Idea to Manage its Team:</Label>
-                <ScrollArea className="h-auto max-h-40 border rounded-md">
-                  <div className="p-2 space-y-1">
-                  {userIdeas.filter(idea => idea.status !== 'ARCHIVED_BY_ADMIN').map(idea => (
-                    <Button
-                      key={idea.id}
-                      variant={selectedIdeaForTeamMgmt?.id === idea.id ? "default" : "outline"}
-                      className="w-full justify-start text-left"
-                      onClick={() => setSelectedIdeaForTeamMgmt(idea)}
-                    >
-                      {idea.title}
-                    </Button>
-                  ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            )}
-
-            {selectedIdeaForTeamMgmt && selectedIdeaForTeamMgmt.status !== 'ARCHIVED_BY_ADMIN' && (
-              <form onSubmit={handleSubmit(handleSaveTeamTable)} className="space-y-6">
-                <h3 className="text-lg font-semibold mb-1">Edit Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
-                <p className="text-sm text-muted-foreground mb-3">
-                    Current Members: {(selectedIdeaForTeamMgmt.structuredTeamMembers || []).length} / 4.
-                    Fill in the table below. Empty rows (no name) will be ignored.
-                </p>
-
-                {teamManagementErrors.members?.root && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.root.message}</p>}
-                {teamManagementErrors.members?.message && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.message}</p>}
-
-
-                <div className="overflow-x-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead className="w-[100px]">Member #</TableHead>
-                                <TableHead className="min-w-[150px]">Name</TableHead>
-                                <TableHead className="min-w-[200px]">Email</TableHead>
-                                <TableHead className="min-w-[120px]">Phone</TableHead>
-                                <TableHead className="min-w-[150px]">Institute</TableHead>
-                                <TableHead className="min-w-[150px]">Department</TableHead>
-                                <TableHead className="min-w-[150px]">Enrollment No.</TableHead>
-                                <TableHead className="w-[50px] text-right">Del</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {fields.map((item, index) => (
-                                <TableRow key={item.id}>
-                                    <TableCell className="p-1 font-medium text-muted-foreground">Member {index + 1}</TableCell>
-                                    <TableCell className="p-1">
-                                        <Controller
-                                            name={`members.${index}.name`}
-                                            control={control}
-                                            render={({ field }) => <Input {...field} placeholder="Full Name" className="text-xs h-9" />}
-                                        />
-                                        {teamManagementErrors.members?.[index]?.name && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.name?.message}</p>}
-                                        {teamManagementErrors.members?.[index]?.root && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.root?.message}</p>}
-                                    </TableCell>
-                                    <TableCell className="p-1">
-                                        <Controller
-                                            name={`members.${index}.email`}
-                                            control={control}
-                                            render={({ field }) => <Input type="email" {...field} placeholder="Email Address" className="text-xs h-9" />}
-                                        />
-                                        {teamManagementErrors.members?.[index]?.email && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.email?.message}</p>}
-                                    </TableCell>
-                                    <TableCell className="p-1">
-                                        <Controller
-                                            name={`members.${index}.phone`}
-                                            control={control}
-                                            render={({ field }) => <Input type="tel" {...field} placeholder="Phone Number" className="text-xs h-9" />}
-                                        />
-                                        {teamManagementErrors.members?.[index]?.phone && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.phone?.message}</p>}
-                                    </TableCell>
-                                    <TableCell className="p-1">
-                                        <Controller
-                                            name={`members.${index}.institute`}
-                                            control={control}
-                                            render={({ field }) => <Input {...field} placeholder="Institute Name" className="text-xs h-9" />}
-                                        />
-                                        {teamManagementErrors.members?.[index]?.institute && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.institute?.message}</p>}
-                                    </TableCell>
-                                    <TableCell className="p-1">
-                                        <Controller
-                                            name={`members.${index}.department`}
-                                            control={control}
-                                            render={({ field }) => <Input {...field} placeholder="Department" className="text-xs h-9" />}
-                                        />
-                                        {teamManagementErrors.members?.[index]?.department && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.department?.message}</p>}
-                                    </TableCell>
-                                     <TableCell className="p-1">
-                                        <Controller
-                                            name={`members.${index}.enrollmentNumber`}
-                                            control={control}
-                                            render={({ field }) => <Input {...field} placeholder="Enrollment (Optional)" className="text-xs h-9" />}
-                                        />
-                                    </TableCell>
-                                    <TableCell className="p-1 text-right">
-                                        <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
-                                        {getValues(`members.${index}.id`) && (selectedIdeaForTeamMgmt.structuredTeamMembers || []).some(m => m.id === getValues(`members.${index}.id`)) && (
-                                            <AlertDialog>
-                                                <AlertDialogTrigger asChild>
-                                                    <Button
-                                                      variant="ghost"
-                                                      size="icon"
-                                                      className="text-destructive hover:text-destructive h-8 w-8"
-                                                      onClick={() => {
-                                                        const memberIdInRow = getValues(`members.${index}.id`);
-                                                        const memberData = (selectedIdeaForTeamMgmt.structuredTeamMembers || []).find(m => m.id === memberIdInRow);
-                                                        if(memberData) {
-                                                            setMemberToRemove(memberData);
-                                                        }
-                                                    }}>
-                                                        <Trash2 className="h-4 w-4" />
-                                                    </Button>
-                                                </AlertDialogTrigger>
-                                                {memberToRemove && memberToRemove.id === getValues(`members.${index}.id`) && (
-                                                    <AlertDialogContent>
-                                                        <AlertDialogHeader>
-                                                        <AlertDialogTitle>Remove {memberToRemove.name || 'this member'}?</AlertDialogTitle>
-                                                        <AlertDialogDescription>
-                                                            Are you sure you want to remove {memberToRemove.name || 'this member'} from the team for "{selectedIdeaForTeamMgmt!.title}"? This action is permanent.
-                                                        </AlertDialogDescription>
-                                                        </AlertDialogHeader>
-                                                        <AlertDialogFooter>
-                                                        <AlertDialogCancel onClick={() => setMemberToRemove(null)}>Cancel</AlertDialogCancel>
-                                                        <AlertDialogAction onClick={() => handleRemoveTeamMember(memberToRemove!.id)} className="bg-destructive hover:bg-destructive/90">
-                                                            Remove Member
-                                                        </AlertDialogAction>
-                                                        </AlertDialogFooter>
-                                                    </AlertDialogContent>
-                                                )}
-                                            </AlertDialog>
-                                        )}
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
+      {!isTeamMemberForIdea && (
+        <TabsContent value="manageTeam" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-headline text-xl">Manage Team Members</CardTitle>
+              <CardDescription>Select an idea to add, edit, or view its team members. You can add up to 4 members.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {userIdeas.filter(idea => idea.status !== 'ARCHIVED_BY_ADMIN').length === 0 ? (
+                <p className="text-muted-foreground">You have no active idea submissions to manage teams for. Archived ideas cannot have their teams managed here directly.</p>
+              ) : (
+                <div className="space-y-2 mb-6">
+                  <Label>Select an Active Idea to Manage its Team:</Label>
+                  <ScrollArea className="h-auto max-h-40 border rounded-md">
+                    <div className="p-2 space-y-1">
+                    {userIdeas.filter(idea => idea.status !== 'ARCHIVED_BY_ADMIN').map(idea => (
+                      <Button key={idea.id} variant={selectedIdeaForTeamMgmt?.id === idea.id ? "default" : "outline"} className="w-full justify-start text-left" onClick={() => setSelectedIdeaForTeamMgmt(idea)}>{idea.title}</Button>
+                    ))}
+                    </div>
+                  </ScrollArea>
                 </div>
-                 {teamManagementErrors && Object.keys(teamManagementErrors).length > 0 && !teamManagementErrors.members && (
-                    <p className="text-sm text-destructive mt-1">
-                        Please correct the errors in the form. Remember, if a name is provided for a member, all other fields (except Enrollment No.) for that member become required.
-                    </p>
-                )}
+              )}
 
+              {selectedIdeaForTeamMgmt && selectedIdeaForTeamMgmt.status !== 'ARCHIVED_BY_ADMIN' && (
+                <form onSubmit={handleSubmit(handleSaveTeamTable)} className="space-y-6">
+                  <h3 className="text-lg font-semibold mb-1">Edit Team for: <span className="text-primary">{selectedIdeaForTeamMgmt.title}</span></h3>
+                  <p className="text-sm text-muted-foreground mb-3">Current Members: {(selectedIdeaForTeamMgmt.structuredTeamMembers || []).length} / 4. Fill in the table below. Empty rows (no name) will be ignored.</p>
+                  {teamManagementErrors.members?.root && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.root.message}</p>}
+                  {teamManagementErrors.members?.message && <p className="text-sm text-destructive -mt-2 mb-2">{teamManagementErrors.members.message}</p>}
 
-                <Button type="submit" disabled={isSubmittingTeamTable} className="mt-4">
-                    {isSubmittingTeamTable && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    <Save className="mr-2 h-4 w-4"/> Save Team Changes
-                </Button>
-              </form>
-            )}
-          </CardContent>
-        </Card>
-      </TabsContent>
+                  <div className="overflow-x-auto">
+                      <Table>
+                          <TableHeader><TableRow><TableHead className="w-[100px]">Member #</TableHead><TableHead className="min-w-[150px]">Name</TableHead><TableHead className="min-w-[200px]">Email</TableHead><TableHead className="min-w-[120px]">Phone</TableHead><TableHead className="min-w-[150px]">Institute</TableHead><TableHead className="min-w-[150px]">Department</TableHead><TableHead className="min-w-[150px]">Enrollment No.</TableHead><TableHead className="w-[50px] text-right">Del</TableHead></TableRow></TableHeader>
+                          <TableBody>
+                              {fields.map((item, index) => (
+                                  <TableRow key={item.id}>
+                                      <TableCell className="p-1 font-medium text-muted-foreground">Member {index + 1}</TableCell>
+                                      <TableCell className="p-1">
+                                          <Controller name={`members.${index}.name`} control={control} render={({ field }) => <Input {...field} placeholder="Full Name" className="text-xs h-9" />} />
+                                          {teamManagementErrors.members?.[index]?.name && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.name?.message}</p>}
+                                          {teamManagementErrors.members?.[index]?.root && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.root?.message}</p>}
+                                      </TableCell>
+                                      <TableCell className="p-1">
+                                          <Controller name={`members.${index}.email`} control={control} render={({ field }) => <Input type="email" {...field} placeholder="Email Address" className="text-xs h-9" />} />
+                                          {teamManagementErrors.members?.[index]?.email && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.email?.message}</p>}
+                                      </TableCell>
+                                      <TableCell className="p-1">
+                                          <Controller name={`members.${index}.phone`} control={control} render={({ field }) => <Input type="tel" {...field} placeholder="Phone Number" className="text-xs h-9" />} />
+                                          {teamManagementErrors.members?.[index]?.phone && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.phone?.message}</p>}
+                                      </TableCell>
+                                      <TableCell className="p-1">
+                                          <Controller name={`members.${index}.institute`} control={control} render={({ field }) => <Input {...field} placeholder="Institute Name" className="text-xs h-9" />} />
+                                          {teamManagementErrors.members?.[index]?.institute && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.institute?.message}</p>}
+                                      </TableCell>
+                                      <TableCell className="p-1">
+                                          <Controller name={`members.${index}.department`} control={control} render={({ field }) => <Input {...field} placeholder="Department" className="text-xs h-9" />} />
+                                          {teamManagementErrors.members?.[index]?.department && <p className="text-xs text-destructive mt-0.5">{teamManagementErrors.members?.[index]?.department?.message}</p>}
+                                      </TableCell>
+                                       <TableCell className="p-1">
+                                          <Controller name={`members.${index}.enrollmentNumber`} control={control} render={({ field }) => <Input {...field} placeholder="Enrollment (Optional)" className="text-xs h-9" />} />
+                                      </TableCell>
+                                      <TableCell className="p-1 text-right">
+                                          <Controller name={`members.${index}.id`} control={control} render={({ field }) => <input type="hidden" {...field} />} />
+                                          {getValues(`members.${index}.id`) && (selectedIdeaForTeamMgmt.structuredTeamMembers || []).some(m => m.id === getValues(`members.${index}.id`)) && (
+                                              <AlertDialog>
+                                                  <AlertDialogTrigger asChild><Button variant="ghost" size="icon" className="text-destructive hover:text-destructive h-8 w-8" onClick={() => {const memberIdInRow = getValues(`members.${index}.id`); const memberData = (selectedIdeaForTeamMgmt.structuredTeamMembers || []).find(m => m.id === memberIdInRow); if(memberData){setMemberToRemove(memberData);}}}><Trash2 className="h-4 w-4" /></Button></AlertDialogTrigger>
+                                                  {memberToRemove && memberToRemove.id === getValues(`members.${index}.id`) && (<AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Remove {memberToRemove.name || 'this member'}?</AlertDialogTitle><AlertDialogDescription>Are you sure you want to remove {memberToRemove.name || 'this member'} from the team for "{selectedIdeaForTeamMgmt!.title}"? This action is permanent.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel onClick={() => setMemberToRemove(null)}>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => handleRemoveTeamMember(memberToRemove!.id)} className="bg-destructive hover:bg-destructive/90">Remove Member</AlertDialogAction></AlertDialogFooter></AlertDialogContent>)}
+                                              </AlertDialog>
+                                          )}
+                                      </TableCell>
+                                  </TableRow>
+                              ))}
+                          </TableBody>
+                      </Table>
+                  </div>
+                   {teamManagementErrors && Object.keys(teamManagementErrors).length > 0 && !teamManagementErrors.members && (
+                      <p className="text-sm text-destructive mt-1">Please correct the errors in the form. Remember, if a name is provided for a member, all other fields (except Enrollment No.) for that member become required.</p>
+                  )}
+                  <Button type="submit" disabled={isSubmittingTeamTable} className="mt-4">{isSubmittingTeamTable && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}<Save className="mr-2 h-4 w-4"/> Save Team Changes</Button>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      )}
       
       {ideaForFundManagementTab && (
         <TabsContent value="fundManagement" className="space-y-6">
@@ -1329,24 +1145,8 @@ export default function StudentDashboard() {
                                     <div>
                                         <h4 className="text-sm font-semibold mt-2 mb-1">Uploaded Expenses (Sanction 1):</h4>
                                         <Table>
-                                            <TableHeader>
-                                                <TableRow>
-                                                    <TableHead>Description</TableHead>
-                                                    <TableHead className="text-right">Amount</TableHead>
-                                                    <TableHead>Proof</TableHead>
-                                                    <TableHead className="text-right">Uploaded</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {ideaForFundManagementTab.sanction1Expenses?.map(exp => (
-                                                    <TableRow key={exp.id}>
-                                                        <TableCell className="text-xs">{exp.description}</TableCell>
-                                                        <TableCell className="text-xs text-right">₹{exp.amount.toLocaleString()}</TableCell>
-                                                        <TableCell><a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs">{exp.proofFileName}</a></TableCell>
-                                                        <TableCell className="text-xs text-right">{formatDate(exp.uploadedAt)}</TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
+                                            <TableHeader><TableRow><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Proof</TableHead><TableHead className="text-right">Uploaded</TableHead></TableRow></TableHeader>
+                                            <TableBody>{ideaForFundManagementTab.sanction1Expenses?.map(exp => (<TableRow key={exp.id}><TableCell className="text-xs">{exp.description}</TableCell><TableCell className="text-xs text-right">₹{exp.amount.toLocaleString()}</TableCell><TableCell><a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs">{exp.proofFileName}</a></TableCell><TableCell className="text-xs text-right">{formatDate(exp.uploadedAt)}</TableCell></TableRow>))}</TableBody>
                                         </Table>
                                     </div>
                                 )}
@@ -1377,24 +1177,8 @@ export default function StudentDashboard() {
                                            <div>
                                                 <h4 className="text-sm font-semibold mt-2 mb-1">Uploaded Expenses (Sanction 2):</h4>
                                                 <Table>
-                                                    <TableHeader>
-                                                        <TableRow>
-                                                            <TableHead>Description</TableHead>
-                                                            <TableHead className="text-right">Amount</TableHead>
-                                                            <TableHead>Proof</TableHead>
-                                                            <TableHead className="text-right">Uploaded</TableHead>
-                                                        </TableRow>
-                                                    </TableHeader>
-                                                    <TableBody>
-                                                        {ideaForFundManagementTab.sanction2Expenses?.map(exp => (
-                                                            <TableRow key={exp.id}>
-                                                                <TableCell className="text-xs">{exp.description}</TableCell>
-                                                                <TableCell className="text-xs text-right">₹{exp.amount.toLocaleString()}</TableCell>
-                                                                <TableCell><a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs">{exp.proofFileName}</a></TableCell>
-                                                                <TableCell className="text-xs text-right">{formatDate(exp.uploadedAt)}</TableCell>
-                                                            </TableRow>
-                                                        ))}
-                                                    </TableBody>
+                                                    <TableHeader><TableRow><TableHead>Description</TableHead><TableHead className="text-right">Amount</TableHead><TableHead>Proof</TableHead><TableHead className="text-right">Uploaded</TableHead></TableRow></TableHeader>
+                                                    <TableBody>{ideaForFundManagementTab.sanction2Expenses?.map(exp => (<TableRow key={exp.id}><TableCell className="text-xs">{exp.description}</TableCell><TableCell className="text-xs text-right">₹{exp.amount.toLocaleString()}</TableCell><TableCell><a href={exp.proofUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline text-xs">{exp.proofFileName}</a></TableCell><TableCell className="text-xs text-right">{formatDate(exp.uploadedAt)}</TableCell></TableRow>))}</TableBody>
                                                 </Table>
                                             </div>
                                         )}
@@ -1453,13 +1237,7 @@ export default function StudentDashboard() {
                                                     {isUploadingThis ? 'Uploading...' : 'Upload'}
                                                 </Label>
                                             </Button>
-                                            <Input
-                                                id={`upload-${docInfo.type}`}
-                                                type="file"
-                                                className="hidden"
-                                                onChange={(e) => handleDocumentUpload(e, docInfo.type)}
-                                                disabled={isUploadingThis}
-                                            />
+                                            <Input id={`upload-${docInfo.type}`} type="file" className="hidden" onChange={(e) => handleDocumentUpload(e, docInfo.type)} disabled={isUploadingThis}/>
                                         </div>
                                     )}
                                 </div>
@@ -1473,30 +1251,14 @@ export default function StudentDashboard() {
       )}
 
 
-      <Dialog open={isOutlineModalOpen} onOpenChange={(isOpen) => {
-            if (!isOpen) {
-                setIsOutlineModalOpen(false);
-                setGeneratedOutline(null); 
-                setGeneratingOutlineIdeaId(null); 
-                setOutlineError(null);
-            } else {
-                setIsOutlineModalOpen(isOpen);
-            }
-        }}>
+      <Dialog open={isOutlineModalOpen} onOpenChange={(isOpen) => { if (!isOpen) { setIsOutlineModalOpen(false); setGeneratedOutline(null); setGeneratingOutlineIdeaId(null); setOutlineError(null); } else { setIsOutlineModalOpen(isOpen); } }}>
             <ModalContent className="sm:max-w-2xl md:max-w-3xl max-h-[90vh]">
                 <ModalHeader>
-                    <ModalTitle className="font-headline text-xl flex items-center">
-                        <AiIcon className="h-6 w-6 mr-2 text-primary"/> AI Generated Pitch Deck Outline
-                    </ModalTitle>
-                    <ModalDescription>
-                        For idea: <span className="font-semibold">{userIdeas.find(i => i.id === generatingOutlineIdeaId)?.title || 'Selected Idea'}</span>.
-                        This is a suggestion to help you get started. Customize it to best fit your vision.
-                    </ModalDescription>
+                    <ModalTitle className="font-headline text-xl flex items-center"><AiIcon className="h-6 w-6 mr-2 text-primary"/> AI Generated Pitch Deck Outline</ModalTitle>
+                    <ModalDescription>For idea: <span className="font-semibold">{userIdeas.find(i => i.id === generatingOutlineIdeaId)?.title || 'Selected Idea'}</span>. This is a suggestion to help you get started. Customize it to best fit your vision.</ModalDescription>
                 </ModalHeader>
                 {outlineError && !generatedOutline ? ( 
-                    <div className="py-4 text-destructive text-center">
-                        <p>Error generating outline: {outlineError}</p>
-                    </div>
+                    <div className="py-4 text-destructive text-center"><p>Error generating outline: {outlineError}</p></div>
                 ) : generatedOutline ? (
                 <ScrollArea className="max-h-[calc(90vh-14rem)] overflow-y-auto p-1 pr-3">
                     <Accordion type="multiple" defaultValue={Object.keys(generatedOutline).map(key => key)} className="w-full">
@@ -1505,15 +1267,9 @@ export default function StudentDashboard() {
                             const formattedKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
                             return (
                                 <AccordionItem value={key} key={key}>
-                                    <AccordionTrigger className="text-md font-semibold hover:bg-muted/50 px-2 py-3">
-                                        {slide.title || formattedKey}
-                                    </AccordionTrigger>
+                                    <AccordionTrigger className="text-md font-semibold hover:bg-muted/50 px-2 py-3">{slide.title || formattedKey}</AccordionTrigger>
                                     <AccordionContent className="px-2 py-2 bg-muted/20 rounded-b-md">
-                                        <ul className="list-disc space-y-1 pl-5 text-sm text-foreground/90">
-                                            {slide.keyPoints.map((point, index) => (
-                                                <li key={index}>{point}</li>
-                                            ))}
-                                        </ul>
+                                        <ul className="list-disc space-y-1 pl-5 text-sm text-foreground/90">{slide.keyPoints.map((point, index) => (<li key={index}>{point}</li>))}</ul>
                                     </AccordionContent>
                                 </AccordionItem>
                             );
@@ -1521,28 +1277,14 @@ export default function StudentDashboard() {
                     </Accordion>
                 </ScrollArea>
                 ) : ( 
-                     <div className="py-4 text-muted-foreground text-center">
-                        <p>No outline to display. Try generating one.</p>
-                    </div>
+                     <div className="py-4 text-muted-foreground text-center"><p>No outline to display. Try generating one.</p></div>
                 )}
                 <ModalFooter className="mt-4 flex justify-between items-center">
-                    <Button 
-                        variant="outline" 
-                        onClick={() => handleDownloadOutline(generatedOutline, userIdeas.find(i => i.id === generatingOutlineIdeaId)?.title || 'MyIdea')}
-                        disabled={!generatedOutline || isGeneratingOutline}
-                    >
-                        <Download className="mr-2 h-4 w-4" /> Download Outline
-                    </Button>
-                    <Button variant="outline" onClick={() => {
-                        setIsOutlineModalOpen(false);
-                        setGeneratedOutline(null);
-                        setGeneratingOutlineIdeaId(null);
-                        setOutlineError(null);
-                    }}>Close</Button>
+                    <Button variant="outline" onClick={() => handleDownloadOutline(generatedOutline, userIdeas.find(i => i.id === generatingOutlineIdeaId)?.title || 'MyIdea')} disabled={!generatedOutline || isGeneratingOutline}><Download className="mr-2 h-4 w-4" /> Download Outline</Button>
+                    <Button variant="outline" onClick={() => { setIsOutlineModalOpen(false); setGeneratedOutline(null); setGeneratingOutlineIdeaId(null); setOutlineError(null); }}>Close</Button>
                 </ModalFooter>
             </ModalContent>
         </Dialog>
-      )}
 
       {isBeneficiaryModalOpen && ideaForFundManagementTab && (
         <Dialog open={isBeneficiaryModalOpen} onOpenChange={setIsBeneficiaryModalOpen}>
@@ -1554,15 +1296,7 @@ export default function StudentDashboard() {
                     <div><Label htmlFor="beneficiaryAccountNo">Account Number</Label><Controller name="beneficiaryAccountNo" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryAccountNo" {...field} />} />{beneficiaryErrors.beneficiaryAccountNo && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryAccountNo.message}</p>}</div>
                     <div>
                         <Label htmlFor="beneficiaryAccountType">Account Type</Label>
-                        <Controller name="beneficiaryAccountType" control={beneficiaryControl} render={({field}) => (
-                            <Select onValueChange={field.onChange} value={field.value || undefined}>
-                                <SelectTrigger id="beneficiaryAccountType"><SelectValue placeholder="Select account type" /></SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="SAVINGS">Savings</SelectItem>
-                                    <SelectItem value="CURRENT">Current</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        )} />
+                        <Controller name="beneficiaryAccountType" control={beneficiaryControl} render={({field}) => (<Select onValueChange={field.onChange} value={field.value || undefined}><SelectTrigger id="beneficiaryAccountType"><SelectValue placeholder="Select account type" /></SelectTrigger><SelectContent><SelectItem value="SAVINGS">Savings</SelectItem><SelectItem value="CURRENT">Current</SelectItem></SelectContent></Select>)} />
                         {beneficiaryErrors.beneficiaryAccountType && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryAccountType.message}</p>}
                     </div>
                     <div><Label htmlFor="beneficiaryBankName">Bank Name</Label><Controller name="beneficiaryBankName" control={beneficiaryControl} render={({field}) => <Input id="beneficiaryBankName" {...field} placeholder="e.g., State Bank of India"/>} />{beneficiaryErrors.beneficiaryBankName && <p className="text-xs text-destructive mt-1">{beneficiaryErrors.beneficiaryBankName.message}</p>}</div>
