@@ -1,4 +1,5 @@
 
+
 import { db, functions as firebaseFunctions, auth } from './config';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query, orderBy, serverTimestamp, onSnapshot, where, writeBatch, getDocs, Timestamp, getCountFromServer, deleteField, arrayUnion, arrayRemove, limit } from 'firebase/firestore';
 import type { UserProfile, Announcement, Role, ApplicantCategory, CurrentStage, IdeaSubmission, Cohort, SystemSettings, IdeaStatus, ProgramPhase, AdminMark, TeamMember, MentorName, ActivityLogAction, ActivityLogTarget, ActivityLogEntry, CohortScheduleEntry, ExpenseEntry, SanctionApprovalStatus, BeneficiaryAccountType, FundingSource, PortalEvent, EventCategory, AppNotification, IncubationDocumentType, Comment } from '@/types';
@@ -522,15 +523,16 @@ export const getDashboardAnnouncementsStream = (cohortId: string | null, callbac
 
     const processAndCallback = () => {
         const announcements = Array.from(announcementsMap.values());
-        announcements.sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
-        callback(announcements.slice(0, limitCount));
+        // Client-side filtering for isUrgent and sorting
+        const filteredAndSorted = announcements
+            .filter(ann => !ann.isUrgent)
+            .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+        callback(filteredAndSorted.slice(0, limitCount));
     };
 
+    // Query for ALL, no sorting on server
     const qAll = query(announcementsCol,
-        where('targetAudience', '==', 'ALL'),
-        where('isUrgent', '==', false),
-        orderBy('createdAt', 'desc'),
-        limit(limitCount)
+        where('targetAudience', '==', 'ALL')
     );
 
     const unsubAll = onSnapshot(qAll, (snapshot) => {
@@ -546,12 +548,10 @@ export const getDashboardAnnouncementsStream = (cohortId: string | null, callbac
 
     let unsubCohort: (() => void) | null = null;
     if (cohortId) {
+        // Query for SPECIFIC_COHORT, no sorting on server
         const qCohort = query(announcementsCol,
             where('targetAudience', '==', 'SPECIFIC_COHORT'),
-            where('cohortId', '==', cohortId),
-            where('isUrgent', '==', false),
-            orderBy('createdAt', 'desc'),
-            limit(limitCount)
+            where('cohortId', '==', cohortId)
         );
         unsubCohort = onSnapshot(qCohort, (snapshot) => {
             snapshot.docChanges().forEach((change) => {
@@ -573,59 +573,30 @@ export const getDashboardAnnouncementsStream = (cohortId: string | null, callbac
 
 export const getDashboardEventsStream = (cohortId: string | null, callback: (events: PortalEvent[]) => void, limitCount: number) => {
     const eventsCol = collection(db, 'events');
-    const eventsMap = new Map<string, PortalEvent>();
-
-    const processAndCallback = () => {
-        const events = Array.from(eventsMap.values());
-        events.sort((a, b) => a.startDateTime.toMillis() - b.startDateTime.toMillis());
-        callback(events.slice(0, limitCount));
-    };
-
-    const qAll = query(
+    const q = query(
         eventsCol,
         where('startDateTime', '>=', Timestamp.now()),
-        where('targetAudience', '==', 'ALL'),
-        orderBy('startDateTime', 'asc'),
-        limit(limitCount)
+        orderBy('startDateTime', 'asc')
     );
 
-    const unsubAll = onSnapshot(qAll, (snapshot) => {
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "removed") {
-                eventsMap.delete(change.doc.id);
-            } else {
-                eventsMap.set(change.doc.id, { id: change.doc.id, ...change.doc.data() } as PortalEvent);
-            }
+    return onSnapshot(q, (snapshot) => {
+        const allFutureEvents: PortalEvent[] = [];
+        snapshot.forEach((doc) => {
+            allFutureEvents.push({ id: doc.id, ...doc.data() } as PortalEvent);
         });
-        processAndCallback();
-    }, (error) => console.error("Error fetching 'ALL' audience events:", error));
 
-    let unsubCohort: (() => void) | null = null;
-    if (cohortId) {
-        const qCohort = query(
-            eventsCol,
-            where('startDateTime', '>=', Timestamp.now()),
-            where('targetAudience', '==', 'SPECIFIC_COHORT'),
-            where('cohortId', '==', cohortId),
-            orderBy('startDateTime', 'asc'),
-            limit(limitCount)
+        // Client-side filtering
+        const userVisibleEvents = allFutureEvents.filter(event => 
+            event.targetAudience === 'ALL' || 
+            (event.targetAudience === 'SPECIFIC_COHORT' && event.cohortId === cohortId)
         );
-        unsubCohort = onSnapshot(qCohort, (snapshot) => {
-            snapshot.docChanges().forEach((change) => {
-                if (change.type === "removed") {
-                    eventsMap.delete(change.doc.id);
-                } else {
-                    eventsMap.set(change.doc.id, { id: change.doc.id, ...change.doc.data() } as PortalEvent);
-                }
-            });
-            processAndCallback();
-        }, (error) => console.error(`Error fetching events for cohort ${cohortId}:`, error));
-    }
+        
+        callback(userVisibleEvents.slice(0, limitCount));
 
-    return () => {
-        unsubAll();
-        if (unsubCohort) unsubCohort();
-    };
+    }, (error) => {
+        console.error("Error fetching upcoming events:", error);
+        callback([]);
+    });
 };
 
 
