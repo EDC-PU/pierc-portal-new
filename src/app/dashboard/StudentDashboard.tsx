@@ -329,11 +329,11 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     const ideasToCheck = isTeamMemberForIdea ? [isTeamMemberForIdea] : userIdeas;
-    const incubatedIdeas = ideasToCheck.filter(idea => idea.programPhase === 'INCUBATED');
+    const incubatedIdeas = ideasToCheck.filter(idea => idea && idea.programPhase === 'INCUBATED');
     
     if (incubatedIdeas.length > 0) {
         const hasUnseenIncubation = incubatedIdeas.some(
-            idea => idea.id && !localStorage.getItem(`hasSeenIncubationTabs_${idea.id}`)
+            idea => idea.id && (typeof window !== 'undefined') && !localStorage.getItem(`hasSeenIncubationTabs_${idea.id}`)
         );
         setShowNewIncubationBadge(hasUnseenIncubation);
     } else {
@@ -773,9 +773,9 @@ export default function StudentDashboard() {
   };
 
   const handleTabChange = (value: string) => {
-    if (value === 'fundManagement' || value === 'incubationDocuments') {
+    if ((value === 'fundManagement' || value === 'incubationDocuments') && typeof window !== 'undefined') {
         const ideasToCheck = isTeamMemberForIdea ? [isTeamMemberForIdea] : userIdeas;
-        const incubatedIdeas = ideasToCheck.filter(idea => idea.programPhase === 'INCUBATED');
+        const incubatedIdeas = ideasToCheck.filter(idea => idea && idea.programPhase === 'INCUBATED');
         if (incubatedIdeas.length > 0) {
             incubatedIdeas.forEach(idea => {
                 if (idea.id) {
@@ -790,36 +790,36 @@ export default function StudentDashboard() {
 
   const renderIdeaDetails = (idea: IdeaSubmission, assignedCohort: Cohort | null) => {
     return (
-    <div className="space-y-6 animate-slide-in-up">
+      <div className="space-y-6 animate-slide-in-up">
         <Card className="shadow-lg">
-        <CardHeader>
+          <CardHeader>
             <CardTitle className="font-headline text-xl text-primary">{idea.title}</CardTitle>
             <CardDescription>Project Details & Current Status</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+          </CardHeader>
+          <CardContent className="space-y-4">
             <div>
-            <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
-             <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
+              <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
+              <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
                 <ReactMarkdown components={MarkdownDisplayComponents}>{idea.problem || ''}</ReactMarkdown>
-            </div>
+              </div>
             </div>
             <div>
-            <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
-            <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
+              <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
+              <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
                 <ReactMarkdown components={MarkdownDisplayComponents}>{idea.solution || ''}</ReactMarkdown>
-            </div>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-            <div>
+              <div>
                 <Label className="text-sm font-semibold text-muted-foreground">Submission Status</Label>
                 <div><Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{idea.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
-            </div>
-            {idea.programPhase && (
+              </div>
+              {idea.programPhase && (
                 <div>
-                <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
-                <div><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></div>
+                  <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
+                  <div><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></div>
                 </div>
-            )}
+              )}
             </div>
             {idea.programPhase === 'COHORT' && idea.mentor && (
                 <div className="pt-2">
@@ -876,70 +876,6 @@ export default function StudentDashboard() {
                     ) : null}
                 </>
             )}
-            {idea.programPhase === 'PHASE_2' && (
-                <Card className="mt-4 border-amber-500/50 bg-amber-500/5 shadow-md">
-                    <CardHeader>
-                        <CardTitle className="text-lg font-semibold text-amber-700 dark:text-amber-400 flex items-center">
-                            <Sparkles className="h-5 w-5 mr-2"/> Action Required: Yukti Portal Registration
-                        </CardTitle>
-                        <CardDescription>
-                            Please register on the Yukti Portal before your Phase 2 presentation and submit the details below.
-                        </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                        <ol className="list-decimal list-inside text-sm space-y-1 text-amber-900 dark:text-amber-200">
-                            <li>Visit <a href="https://yukti.mic.gov.in/" target="_blank" rel="noopener noreferrer" className="underline font-semibold">https://yukti.mic.gov.in/</a></li>
-                            <li>Click "Register" and create your account. Select "Gujarat" as State and "Parul University" as institute.</li>
-                            <li>Log in and add the details of your Startup/Idea/Innovation on the Yukti portal.</li>
-                            <li>Take a screenshot of your submitted idea on Yukti.</li>
-                            <li>Save your Yukti ID, Password, and the screenshot below.</li>
-                        </ol>
-                        
-                        {idea.yuktiId ? (
-                            <div className="pt-4 border-t border-amber-500/30">
-                                <h4 className="text-md font-semibold text-green-700 dark:text-green-400">Yukti Details Submitted</h4>
-                                <div className="text-sm mt-2 space-y-1">
-                                    <p><strong>Yukti ID:</strong> {idea.yuktiId}</p>
-                                    <p><strong>Password:</strong> ••••••••</p>
-                                    {idea.yuktiScreenshotUrl && (
-                                        <a href={idea.yuktiScreenshotUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium flex items-center gap-1">
-                                            <Eye className="h-4 w-4"/> View Submitted Screenshot
-                                        </a>
-                                    )}
-                                </div>
-                                <p className="text-xs text-muted-foreground mt-2">To update, please fill out the form again with new details.</p>
-                            </div>
-                        ) : null}
-
-                        <form onSubmit={handleYuktiSubmit((data) => onYuktiSubmit(data, idea))} className="space-y-4 pt-4 border-t border-amber-500/30">
-                             <div>
-                                <Label htmlFor="yuktiId">Yukti Portal ID</Label>
-                                <Controller name="yuktiId" control={yuktiControl} render={({ field }) => <Input id="yuktiId" placeholder="Your Yukti ID" {...field} />} />
-                                {yuktiErrors.yuktiId && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiId.message}</p>}
-                            </div>
-                             <div>
-                                <Label htmlFor="yuktiPassword">Yukti Portal Password</Label>
-                                <Controller name="yuktiPassword" control={yuktiControl} render={({ field }) => <Input id="yuktiPassword" type="password" placeholder="••••••••" {...field} />} />
-                                {yuktiErrors.yuktiPassword && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiPassword.message}</p>}
-                            </div>
-                            <div>
-                                <Label htmlFor="yuktiScreenshot">Yukti Submission Screenshot</Label>
-                                <Controller
-                                    name="yuktiScreenshot"
-                                    control={yuktiControl}
-                                    render={({ field: { onChange, value, ...rest } }) => (
-                                        <Input id="yuktiScreenshot" type="file" accept="image/png, image/jpeg" onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)} {...rest} />
-                                    )}
-                                />
-                                {yuktiErrors.yuktiScreenshot && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiScreenshot.message}</p>}
-                            </div>
-                            <Button type="submit" disabled={isSubmittingYukti}>
-                                {isSubmittingYukti && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Submit Yukti Details
-                            </Button>
-                        </form>
-                    </CardContent>
-                </Card>
-            )}
             {idea.programPhase === 'PHASE_2' && idea.phase2PptUrl && (
                 <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
                     <CardHeader className="pb-2 pt-4 px-4">
@@ -983,9 +919,74 @@ export default function StudentDashboard() {
             <div className="mt-4 pt-4 border-t">
                 <IdeaComments idea={idea} currentUserProfile={userProfile!} onCommentPosted={() => fetchUserIdeasAndUpdateState(idea.id)} />
             </div>
-        </CardContent>
+          </CardContent>
         </Card>
-    </div>
+        
+        {idea.programPhase === 'PHASE_2' && (
+          <Card className="mt-4 border-amber-500/50 bg-amber-500/5 shadow-md">
+            <CardHeader>
+                <CardTitle className="text-lg font-semibold text-amber-700 dark:text-amber-400 flex items-center">
+                    <Sparkles className="h-5 w-5 mr-2"/> Action Required: Yukti Portal Registration
+                </CardTitle>
+                <CardDescription>
+                    Please register on the Yukti Portal before your Phase 2 presentation and submit the details below.
+                </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                <ol className="list-decimal list-inside text-sm space-y-1 text-amber-900 dark:text-amber-200">
+                    <li>Visit <a href="https://yukti.mic.gov.in/" target="_blank" rel="noopener noreferrer" className="underline font-semibold">https://yukti.mic.gov.in/</a></li>
+                    <li>Click "Register" and create your account. Select "Gujarat" as State and "Parul University" as institute.</li>
+                    <li>Log in and add the details of your Startup/Idea/Innovation on the Yukti portal.</li>
+                    <li>Take a screenshot of your submitted idea on Yukti.</li>
+                    <li>Save your Yukti ID, Password, and the screenshot below.</li>
+                </ol>
+                
+                {idea.yuktiId ? (
+                    <div className="pt-4 border-t border-amber-500/30">
+                        <h4 className="text-md font-semibold text-green-700 dark:text-green-400">Yukti Details Submitted</h4>
+                        <div className="text-sm mt-2 space-y-1">
+                            <p><strong>Yukti ID:</strong> {idea.yuktiId}</p>
+                            <p><strong>Password:</strong> ••••••••</p>
+                            {idea.yuktiScreenshotUrl && (
+                                <a href={idea.yuktiScreenshotUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium flex items-center gap-1">
+                                    <Eye className="h-4 w-4"/> View Submitted Screenshot
+                                </a>
+                            )}
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">To update, please fill out the form again with new details.</p>
+                    </div>
+                ) : null}
+
+                <form onSubmit={handleYuktiSubmit((data) => onYuktiSubmit(data, idea))} className="space-y-4 pt-4 border-t border-amber-500/30">
+                      <div>
+                        <Label htmlFor="yuktiId">Yukti Portal ID</Label>
+                        <Controller name="yuktiId" control={yuktiControl} render={({ field }) => <Input id="yuktiId" placeholder="Your Yukti ID" {...field} />} />
+                        {yuktiErrors.yuktiId && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiId.message}</p>}
+                    </div>
+                      <div>
+                        <Label htmlFor="yuktiPassword">Yukti Portal Password</Label>
+                        <Controller name="yuktiPassword" control={yuktiControl} render={({ field }) => <Input id="yuktiPassword" type="password" placeholder="••••••••" {...field} />} />
+                        {yuktiErrors.yuktiPassword && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiPassword.message}</p>}
+                    </div>
+                    <div>
+                        <Label htmlFor="yuktiScreenshot">Yukti Submission Screenshot</Label>
+                        <Controller
+                            name="yuktiScreenshot"
+                            control={yuktiControl}
+                            render={({ field: { onChange, value, ...rest } }) => (
+                                <Input id="yuktiScreenshot" type="file" accept="image/png, image/jpeg" onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)} {...rest} />
+                            )}
+                        />
+                        {yuktiErrors.yuktiScreenshot && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiScreenshot.message}</p>}
+                    </div>
+                    <Button type="submit" disabled={isSubmittingYukti}>
+                        {isSubmittingYukti && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Submit Yukti Details
+                    </Button>
+                </form>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     );
   }
 
