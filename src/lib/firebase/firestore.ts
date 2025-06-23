@@ -1259,8 +1259,8 @@ export const updateIdeaStatusAndPhase = async (
     let notificationMessage = `The status of your idea has been updated to: ${newStatus.replace(/_/g, ' ').toLowerCase()}.`;
 
     if (newStatus === 'SELECTED') {
-      notificationTitle = `🎉 Congratulations! Your Idea is Selected! 🎉`;
-      notificationMessage = newPhase ? `Your idea, "${ideaTitle}", has been selected for ${getProgramPhaseLabel(newPhase)}! We're excited to see you at the next stage.` : `Your idea, "${ideaTitle}", has been selected! More details to follow.`;
+      notificationTitle = `🎉 Congratulations! Your Idea is now Incubated! 🎉`;
+      notificationMessage = newPhase ? `🎉 Congratulations! Your idea, "${ideaTitle}", has been selected for ${getProgramPhaseLabel(newPhase)}! We're excited to see you at the next stage.` : `🎉 Congratulations! Your idea, "${ideaTitle}", has been selected! More details to follow.`;
     } else if (newStatus === 'NOT_SELECTED') {
       notificationTitle = `Update on your Idea: "${ideaTitle}"`;
       notificationMessage = `Your idea has been reviewed. Please check your dashboard for feedback and guidance from our team.`;

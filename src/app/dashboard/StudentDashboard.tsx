@@ -177,6 +177,7 @@ export default function StudentDashboard() {
   const [recentAnnouncements, setRecentAnnouncements] = useState<AnnouncementType[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<PortalEvent[]>([]);
   const [loadingDashboardWidgets, setLoadingDashboardWidgets] = useState(true);
+  const [showNewIncubationBadge, setShowNewIncubationBadge] = useState(false);
 
 
   const { control, handleSubmit, reset: resetTeamManagementFormInternal, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
@@ -320,6 +321,16 @@ export default function StudentDashboard() {
     }
     return null;
   }, [userIdeas, selectedIdeaForTeamMgmt]);
+
+  useEffect(() => {
+    if (ideaForFundManagementTab?.id) {
+        const key = `hasSeenIncubationTabs_${ideaForFundManagementTab.id}`;
+        const hasSeen = localStorage.getItem(key);
+        if (!hasSeen) {
+            setShowNewIncubationBadge(true);
+        }
+    }
+  }, [ideaForFundManagementTab]);
 
 
   useEffect(() => {
@@ -716,6 +727,14 @@ export default function StudentDashboard() {
     }
   };
 
+  const handleTabChange = (value: string) => {
+    if ((value === 'fundManagement' || value === 'incubationDocuments') && ideaForFundManagementTab?.id) {
+        const key = `hasSeenIncubationTabs_${ideaForFundManagementTab.id}`;
+        localStorage.setItem(key, 'true');
+        setShowNewIncubationBadge(false);
+    }
+  };
+
 
   const renderIdeaDetails = (idea: IdeaSubmission, assignedCohort: Cohort | null) => {
     return (
@@ -940,15 +959,21 @@ export default function StudentDashboard() {
 
 
   return (
-    <Tabs defaultValue="overview" className="space-y-6">
+    <Tabs defaultValue="overview" className="space-y-6" onValueChange={handleTabChange}>
       <TabsList className="flex w-full flex-wrap items-center justify-start rounded-md bg-muted/60 p-1 mb-4 border-b-2 border-primary/30">
         <TabsTrigger value="overview">Overview & Submissions</TabsTrigger>
         <TabsTrigger value="manageTeam">Manage Team (Max 4)</TabsTrigger>
         {ideaForFundManagementTab && (
-            <TabsTrigger value="fundManagement">Fund Management</TabsTrigger>
+            <TabsTrigger value="fundManagement">
+                Fund Management
+                {showNewIncubationBadge && <span className="ml-2 h-2.5 w-2.5 rounded-full bg-primary animate-pulse" title="New" />}
+            </TabsTrigger>
         )}
         {ideaForFundManagementTab && (
-            <TabsTrigger value="incubationDocuments">Incubation Documents</TabsTrigger>
+            <TabsTrigger value="incubationDocuments">
+                Incubation Documents
+                {showNewIncubationBadge && <span className="ml-2 h-2.5 w-2.5 rounded-full bg-primary animate-pulse" title="New" />}
+            </TabsTrigger>
         )}
       </TabsList>
 
