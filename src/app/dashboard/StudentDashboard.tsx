@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -790,203 +789,136 @@ export default function StudentDashboard() {
 
   const renderIdeaDetails = (idea: IdeaSubmission, assignedCohort: Cohort | null) => {
     return (
-      <div className="space-y-6 animate-slide-in-up">
-        <Card className="shadow-lg">
-          <CardHeader>
-            <CardTitle className="font-headline text-xl text-primary">{idea.title}</CardTitle>
-            <CardDescription>Project Details & Current Status</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
-              <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
-                <ReactMarkdown components={MarkdownDisplayComponents}>{idea.problem || ''}</ReactMarkdown>
-              </div>
+      <Card className="shadow-lg">
+        <CardHeader>
+          <CardTitle className="font-headline text-xl text-primary">{idea.title}</CardTitle>
+          <CardDescription>Project Details & Current Status</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-sm font-semibold text-muted-foreground">Problem Statement</Label>
+            <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
+              <ReactMarkdown components={MarkdownDisplayComponents}>{idea.problem || ''}</ReactMarkdown>
             </div>
-            <div>
-              <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
-              <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
-                <ReactMarkdown components={MarkdownDisplayComponents}>{idea.solution || ''}</ReactMarkdown>
-              </div>
+          </div>
+          <div>
+            <Label className="text-sm font-semibold text-muted-foreground">Proposed Solution</Label>
+            <div className="text-sm bg-muted/30 p-3 rounded-md shadow-sm markdown-container">
+              <ReactMarkdown components={MarkdownDisplayComponents}>{idea.solution || ''}</ReactMarkdown>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div>
+              <Label className="text-sm font-semibold text-muted-foreground">Submission Status</Label>
+              <div><Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{idea.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
+            </div>
+            {idea.programPhase && (
               <div>
-                <Label className="text-sm font-semibold text-muted-foreground">Submission Status</Label>
-                <div><Badge variant={getStatusBadgeVariant(idea.status)} className="capitalize text-base py-1 px-3 shadow-sm">{idea.status.replace(/_/g, ' ').toLowerCase()}</Badge></div>
+                <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
+                <div><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></div>
               </div>
-              {idea.programPhase && (
-                <div>
-                  <Label className="text-sm font-semibold text-muted-foreground">Current Program Phase</Label>
-                  <div><Badge variant="outline" className="capitalize text-base py-1 px-3 shadow-sm">{getProgramPhaseLabel(idea.programPhase)}</Badge></div>
-                </div>
-              )}
-            </div>
-            {idea.programPhase === 'COHORT' && idea.mentor && (
-                <div className="pt-2">
-                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><Award className="h-4 w-4 mr-1.5 text-amber-500"/> Assigned Mentor</Label>
-                    <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{idea.mentor}</p>
-                </div>
             )}
-            {idea.programPhase === 'COHORT' && assignedCohort && (
-                <div className="pt-2">
-                    <Label className="text-sm font-semibold text-muted-foreground flex items-center"><GroupIcon className="h-4 w-4 mr-1.5 text-primary"/> Assigned Cohort</Label>
-                    <p className="text-sm p-2 bg-primary/10 rounded-md shadow-sm border border-primary/30">{assignedCohort.name}</p>
-                </div>
-            )}
-            {idea.status === 'SELECTED' && idea.programPhase && (
-                <>
-                    {idea.programPhase === 'COHORT' && assignedCohort ? (
-                    <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                        <CardHeader className="pb-2 pt-4 px-4">
-                            <CardTitle className="text-lg font-semibold text-primary flex items-center">
-                                <GroupIcon className="h-5 w-5 mr-2"/> Incubation Cohort Details
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                                Your idea is selected to be a part of "{assignedCohort.name}".
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
-                            <p><strong className="text-primary/90">Cohort Name:</strong> {assignedCohort.name}</p>
-                            <p><strong className="text-primary/90">Start Date:</strong> {formatDate(assignedCohort.startDate)}</p>
-                            <p><strong className="text-primary/90">End Date:</strong> {formatDate(assignedCohort.endDate)}</p>
-                        </CardContent>
-                    </Card>
-                    ) : (idea.programPhase === 'PHASE_1' || idea.programPhase === 'PHASE_2' || idea.programPhase === 'INCUBATED') && idea.nextPhaseDate ? (
-                    <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                        <CardHeader className="pb-2 pt-4 px-4">
-                            <CardTitle className="text-lg font-semibold text-primary flex items-center">
-                                <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
-                            </CardTitle>
-                            <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
-                        </CardHeader>
-                        <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-                                <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
-                                <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
-                            </div>
-                            <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {idea.nextPhaseVenue}</p>
-                            {idea.nextPhaseGuidelines && (
-                                <div className="pt-1">
-                                    <p className="font-medium text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
-                                    <p className="text-xs whitespace-pre-wrap bg-background/30 p-2 mt-1 rounded-md border border-border">{idea.nextPhaseGuidelines}</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-                    ) : null}
-                </>
-            )}
-            {idea.programPhase === 'PHASE_2' && idea.phase2PptUrl && (
-                <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
-                    <CardHeader className="pb-2 pt-4 px-4">
-                        <CardTitle className="text-base font-semibold text-primary flex items-center">
-                        <Download className="h-4 w-4 mr-2"/> Phase 2 Presentation (Submitted by Team)
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm px-4 pb-3">
-                        <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
-                            {idea.phase2PptFileName || 'View Presentation'}
-                        </a>
-                        {idea.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-0.5">Uploaded on {formatDate(idea.phase2PptUploadedAt)}</p>}
-                    </CardContent>
-                </Card>
-            )}
-            {idea.programPhase === 'PHASE_2' && idea.phase2Marks && Object.keys(idea.phase2Marks).length > 0 && userProfile && idea.phase2Marks[userProfile.uid] && (
-                <Card className="mt-3 border-green-500/50 bg-green-500/5 shadow-md">
-                    <CardHeader className="pb-2 pt-4 px-4">
-                        <CardTitle className="text-base font-semibold text-green-700 dark:text-green-400 flex items-center">
-                        <FileCheck2 className="h-4 w-4 mr-2"/> Your Phase 2 Marks (Submitted)
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-sm px-4 pb-3">
-                        <p>Your mark: <span className="font-bold">{idea.phase2Marks[userProfile.uid].mark ?? 'N/A'}</span> / 100</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">Submitted on {formatDate(idea.phase2Marks[userProfile.uid].markedAt)}</p>
-                    </CardContent>
-                </Card>
-            )}
-             {idea.status === 'ARCHIVED_BY_ADMIN' && (
-                <Card className="mt-3 bg-yellow-500/10 border-yellow-500/30">
-                    <CardHeader className="pb-2 pt-3 px-4">
-                        <CardTitle className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 flex items-center">
-                            <ArchiveRestore className="h-4 w-4 mr-2"/> Action Required
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent className="text-xs text-yellow-700/90 dark:text-yellow-400/90 px-4 pb-3">
-                        This idea was archived by an administrator. Please review any feedback, update your idea details in your main profile (Profile Setup page), and save your profile to resubmit it for consideration.
-                    </CardContent>
-                </Card>
-             )}
-            <div className="mt-4 pt-4 border-t">
-                <IdeaComments idea={idea} currentUserProfile={userProfile!} onCommentPosted={() => fetchUserIdeasAndUpdateState(idea.id)} />
-            </div>
-          </CardContent>
-        </Card>
-        
-        {idea.programPhase === 'PHASE_2' && (
-          <Card className="mt-4 border-amber-500/50 bg-amber-500/5 shadow-md">
-            <CardHeader>
-                <CardTitle className="text-lg font-semibold text-amber-700 dark:text-amber-400 flex items-center">
-                    <Sparkles className="h-5 w-5 mr-2"/> Action Required: Yukti Portal Registration
-                </CardTitle>
-                <CardDescription>
-                    Please register on the Yukti Portal before your Phase 2 presentation and submit the details below.
-                </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <ol className="list-decimal list-inside text-sm space-y-1 text-amber-900 dark:text-amber-200">
-                    <li>Visit <a href="https://yukti.mic.gov.in/" target="_blank" rel="noopener noreferrer" className="underline font-semibold">https://yukti.mic.gov.in/</a></li>
-                    <li>Click "Register" and create your account. Select "Gujarat" as State and "Parul University" as institute.</li>
-                    <li>Log in and add the details of your Startup/Idea/Innovation on the Yukti portal.</li>
-                    <li>Take a screenshot of your submitted idea on Yukti.</li>
-                    <li>Save your Yukti ID, Password, and the screenshot below.</li>
-                </ol>
-                
-                {idea.yuktiId ? (
-                    <div className="pt-4 border-t border-amber-500/30">
-                        <h4 className="text-md font-semibold text-green-700 dark:text-green-400">Yukti Details Submitted</h4>
-                        <div className="text-sm mt-2 space-y-1">
-                            <p><strong>Yukti ID:</strong> {idea.yuktiId}</p>
-                            <p><strong>Password:</strong> ••••••••</p>
-                            {idea.yuktiScreenshotUrl && (
-                                <a href={idea.yuktiScreenshotUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium flex items-center gap-1">
-                                    <Eye className="h-4 w-4"/> View Submitted Screenshot
-                                </a>
-                            )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-2">To update, please fill out the form again with new details.</p>
-                    </div>
-                ) : null}
-
-                <form onSubmit={handleYuktiSubmit((data) => onYuktiSubmit(data, idea))} className="space-y-4 pt-4 border-t border-amber-500/30">
-                      <div>
-                        <Label htmlFor="yuktiId">Yukti Portal ID</Label>
-                        <Controller name="yuktiId" control={yuktiControl} render={({ field }) => <Input id="yuktiId" placeholder="Your Yukti ID" {...field} />} />
-                        {yuktiErrors.yuktiId && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiId.message}</p>}
-                    </div>
-                      <div>
-                        <Label htmlFor="yuktiPassword">Yukti Portal Password</Label>
-                        <Controller name="yuktiPassword" control={yuktiControl} render={({ field }) => <Input id="yuktiPassword" type="password" placeholder="••••••••" {...field} />} />
-                        {yuktiErrors.yuktiPassword && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiPassword.message}</p>}
-                    </div>
-                    <div>
-                        <Label htmlFor="yuktiScreenshot">Yukti Submission Screenshot</Label>
-                        <Controller
-                            name="yuktiScreenshot"
-                            control={yuktiControl}
-                            render={({ field: { onChange, value, ...rest } }) => (
-                                <Input id="yuktiScreenshot" type="file" accept="image/png, image/jpeg" onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)} {...rest} />
-                            )}
-                        />
-                        {yuktiErrors.yuktiScreenshot && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiScreenshot.message}</p>}
-                    </div>
-                    <Button type="submit" disabled={isSubmittingYukti}>
-                        {isSubmittingYukti && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Submit Yukti Details
-                    </Button>
-                </form>
-            </CardContent>
-          </Card>
-        )}
-      </div>
+          </div>
+          {idea.programPhase === 'COHORT' && idea.mentor && (
+              <div className="pt-2">
+                  <Label className="text-sm font-semibold text-muted-foreground flex items-center"><Award className="h-4 w-4 mr-1.5 text-amber-500"/> Assigned Mentor</Label>
+                  <p className="text-sm p-2 bg-amber-500/10 rounded-md shadow-sm border border-amber-500/30">{idea.mentor}</p>
+              </div>
+          )}
+          {idea.programPhase === 'COHORT' && assignedCohort && (
+              <div className="pt-2">
+                  <Label className="text-sm font-semibold text-muted-foreground flex items-center"><GroupIcon className="h-4 w-4 mr-1.5 text-primary"/> Assigned Cohort</Label>
+                  <p className="text-sm p-2 bg-primary/10 rounded-md shadow-sm border border-primary/30">{assignedCohort.name}</p>
+              </div>
+          )}
+          {idea.status === 'SELECTED' && idea.programPhase && (
+              <>
+                  {idea.programPhase === 'COHORT' && assignedCohort ? (
+                  <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                      <CardHeader className="pb-2 pt-4 px-4">
+                          <CardTitle className="text-lg font-semibold text-primary flex items-center">
+                              <GroupIcon className="h-5 w-5 mr-2"/> Incubation Cohort Details
+                          </CardTitle>
+                          <CardDescription className="text-xs">
+                              Your idea is selected to be a part of "{assignedCohort.name}".
+                          </CardDescription>
+                      </CardHeader>
+                      <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
+                          <p><strong className="text-primary/90">Cohort Name:</strong> {assignedCohort.name}</p>
+                          <p><strong className="text-primary/90">Start Date:</strong> {formatDate(assignedCohort.startDate)}</p>
+                          <p><strong className="text-primary/90">End Date:</strong> {formatDate(assignedCohort.endDate)}</p>
+                      </CardContent>
+                  </Card>
+                  ) : (idea.programPhase === 'PHASE_1' || idea.programPhase === 'PHASE_2' || idea.programPhase === 'INCUBATED') && idea.nextPhaseDate ? (
+                  <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                      <CardHeader className="pb-2 pt-4 px-4">
+                          <CardTitle className="text-lg font-semibold text-primary flex items-center">
+                              <CalendarDays className="h-5 w-5 mr-2"/> Next Step: {getProgramPhaseLabel(idea.programPhase)} Meeting Scheduled
+                          </CardTitle>
+                          <CardDescription className="text-xs">Please find the details for your upcoming meeting below.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="text-sm px-4 pb-4 space-y-1.5 text-foreground/90">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+                              <p><strong className="text-primary/90">Date:</strong> {formatDateWithTime(idea.nextPhaseDate)}</p>
+                              <p><strong className="text-primary/90">Time:</strong> {idea.nextPhaseStartTime} - {idea.nextPhaseEndTime}</p>
+                          </div>
+                          <p><strong><MapPin className="inline h-4 w-4 mr-1 mb-0.5"/>Venue:</strong> {idea.nextPhaseVenue}</p>
+                          {idea.nextPhaseGuidelines && (
+                              <div className="pt-1">
+                                  <p className="font-medium text-primary/90 flex items-center"><ListChecks className="h-4 w-4 mr-1.5"/>Guidelines:</p>
+                                  <p className="text-xs whitespace-pre-wrap bg-background/30 p-2 mt-1 rounded-md border border-border">{idea.nextPhaseGuidelines}</p>
+                              </div>
+                          )}
+                      </CardContent>
+                  </Card>
+                  ) : null}
+              </>
+          )}
+          {idea.programPhase === 'PHASE_2' && idea.phase2PptUrl && (
+              <Card className="mt-3 border-primary/50 bg-primary/5 shadow-md">
+                  <CardHeader className="pb-2 pt-4 px-4">
+                      <CardTitle className="text-base font-semibold text-primary flex items-center">
+                      <Download className="h-4 w-4 mr-2"/> Phase 2 Presentation (Submitted by Team)
+                      </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm px-4 pb-3">
+                      <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
+                          {idea.phase2PptFileName || 'View Presentation'}
+                      </a>
+                      {idea.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-0.5">Uploaded on {formatDate(idea.phase2PptUploadedAt)}</p>}
+                  </CardContent>
+              </Card>
+          )}
+          {idea.programPhase === 'PHASE_2' && idea.phase2Marks && Object.keys(idea.phase2Marks).length > 0 && userProfile && idea.phase2Marks[userProfile.uid] && (
+              <Card className="mt-3 border-green-500/50 bg-green-500/5 shadow-md">
+                  <CardHeader className="pb-2 pt-4 px-4">
+                      <CardTitle className="text-base font-semibold text-green-700 dark:text-green-400 flex items-center">
+                      <FileCheck2 className="h-4 w-4 mr-2"/> Your Phase 2 Marks (Submitted)
+                      </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm px-4 pb-3">
+                      <p>Your mark: <span className="font-bold">{idea.phase2Marks[userProfile.uid].mark ?? 'N/A'}</span> / 100</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Submitted on {formatDate(idea.phase2Marks[userProfile.uid].markedAt)}</p>
+                  </CardContent>
+              </Card>
+          )}
+           {idea.status === 'ARCHIVED_BY_ADMIN' && (
+              <Card className="mt-3 bg-yellow-500/10 border-yellow-500/30">
+                  <CardHeader className="pb-2 pt-3 px-4">
+                      <CardTitle className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 flex items-center">
+                          <ArchiveRestore className="h-4 w-4 mr-2"/> Action Required
+                      </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xs text-yellow-700/90 dark:text-yellow-400/90 px-4 pb-3">
+                      This idea was archived by an administrator. Please review any feedback, update your idea details in your main profile (Profile Setup page), and save your profile to resubmit it for consideration.
+                  </CardContent>
+              </Card>
+           )}
+          <div className="mt-4 pt-4 border-t">
+              <IdeaComments idea={idea} currentUserProfile={userProfile!} onCommentPosted={() => fetchUserIdeasAndUpdateState(idea.id)} />
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
@@ -1182,8 +1114,72 @@ export default function StudentDashboard() {
                   {userIdeas.map((idea) => {
                     const assignedCohort = idea.cohortId ? allCohorts.find(c => c.id === idea.cohortId) : null;
                     return (
-                        <div key={idea.id}>
+                        <div key={idea.id} className="space-y-6">
                            {renderIdeaDetails(idea, assignedCohort)}
+                           {idea.programPhase === 'PHASE_2' && (
+                              <Card className="border-amber-500/50 bg-amber-500/5 shadow-md">
+                                <CardHeader>
+                                    <CardTitle className="text-lg font-semibold text-amber-700 dark:text-amber-400 flex items-center">
+                                        <Sparkles className="h-5 w-5 mr-2"/> Action Required: Yukti Portal Registration
+                                    </CardTitle>
+                                    <CardDescription>
+                                        Please register on the Yukti Portal before your Phase 2 presentation and submit the details below.
+                                    </CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    <ol className="list-decimal list-inside text-sm space-y-1 text-amber-900 dark:text-amber-200">
+                                        <li>Visit <a href="https://yukti.mic.gov.in/" target="_blank" rel="noopener noreferrer" className="underline font-semibold">https://yukti.mic.gov.in/</a></li>
+                                        <li>Click "Register" and create your account. Select "Gujarat" as State and "Parul University" as institute.</li>
+                                        <li>Log in and add the details of your Startup/Idea/Innovation on the Yukti portal.</li>
+                                        <li>Take a screenshot of your submitted idea on Yukti.</li>
+                                        <li>Save your Yukti ID, Password, and the screenshot below.</li>
+                                    </ol>
+                                    
+                                    {idea.yuktiId ? (
+                                        <div className="pt-4 border-t border-amber-500/30">
+                                            <h4 className="text-md font-semibold text-green-700 dark:text-green-400">Yukti Details Submitted</h4>
+                                            <div className="text-sm mt-2 space-y-1">
+                                                <p><strong>Yukti ID:</strong> {idea.yuktiId}</p>
+                                                <p><strong>Password:</strong> ••••••••</p>
+                                                {idea.yuktiScreenshotUrl && (
+                                                    <a href={idea.yuktiScreenshotUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium flex items-center gap-1">
+                                                        <Eye className="h-4 w-4"/> View Submitted Screenshot
+                                                    </a>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-muted-foreground mt-2">To update, please fill out the form again with new details.</p>
+                                        </div>
+                                    ) : null}
+
+                                    <form onSubmit={handleYuktiSubmit((data) => onYuktiSubmit(data, idea))} className="space-y-4 pt-4 border-t border-amber-500/30">
+                                          <div>
+                                            <Label htmlFor="yuktiId">Yukti Portal ID</Label>
+                                            <Controller name="yuktiId" control={yuktiControl} render={({ field }) => <Input id="yuktiId" placeholder="Your Yukti ID" {...field} />} />
+                                            {yuktiErrors.yuktiId && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiId.message}</p>}
+                                        </div>
+                                          <div>
+                                            <Label htmlFor="yuktiPassword">Yukti Portal Password</Label>
+                                            <Controller name="yuktiPassword" control={yuktiControl} render={({ field }) => <Input id="yuktiPassword" type="password" placeholder="••••••••" {...field} />} />
+                                            {yuktiErrors.yuktiPassword && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiPassword.message}</p>}
+                                        </div>
+                                        <div>
+                                            <Label htmlFor="yuktiScreenshot">Yukti Submission Screenshot</Label>
+                                            <Controller
+                                                name="yuktiScreenshot"
+                                                control={yuktiControl}
+                                                render={({ field: { onChange, value, ...rest } }) => (
+                                                    <Input id="yuktiScreenshot" type="file" accept="image/png, image/jpeg" onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)} {...rest} />
+                                                )}
+                                            />
+                                            {yuktiErrors.yuktiScreenshot && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiScreenshot.message}</p>}
+                                        </div>
+                                        <Button type="submit" disabled={isSubmittingYukti}>
+                                            {isSubmittingYukti && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Submit Yukti Details
+                                        </Button>
+                                    </form>
+                                </CardContent>
+                              </Card>
+                            )}
                         </div>
                     );
                   })}
