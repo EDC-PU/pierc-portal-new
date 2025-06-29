@@ -4,64 +4,69 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function isAuthed() {
+    // --- Helper Functions ---
+    function isSignedIn() {
       return request.auth != null;
     }
 
-    function isAdmin(userId) {
-      return isAuthed() && exists(/databases/(default)/documents/users/$(userId)) &&
-             get(/databases/(default)/documents/users/$(userId)).data.role == 'ADMIN_FACULTY';
-    }
-
-    function isIdeaOwner(ideaId, userId) {
-      return isAuthed() && exists(/databases/(default)/documents/ideas/$(ideaId)) &&
-             get(/databases/(default)/documents/ideas/$(ideaId)).data.userId == userId;
-    }
-
-    function isTeamMember(ideaId, userId) {
-      let ideaData = get(/databases/(default)/documents/ideas/$(ideaId)).data;
-      // Check if the user's UID is in the teamMemberUids list.
-      return isAuthed() &&
-             exists(/databases/(default)/documents/ideas/$(ideaId)) &&
-             'teamMemberUids' in ideaData &&
-             userId in ideaData.teamMemberUids;
-    }
-
-    // Helper function to grant write access to idea owner, team members, and admins.
-    function canWriteToIdeaPath(ideaId) {
-      return isIdeaOwner(ideaId, request.auth.uid) || 
-             isTeamMember(ideaId, request.auth.uid) ||
-             isAdmin(request.auth.uid);
-    }
-
-    // Presentations can be uploaded by the idea owner, team members, or admins.
-    match /presentations/{ideaId}/{allPaths=**} {
-      allow read; // Publicly readable
-      allow write: if canWriteToIdeaPath(ideaId);
-    }
-
-    // Yukti screenshots can be uploaded by the idea owner, team members, or admins.
-    match /yukti_screenshots/{ideaId}/{allPaths=**} {
-        allow read; // Publicly readable
-        allow write: if canWriteToIdeaPath(ideaId);
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
     
-    // Incubation documents can be uploaded by the idea owner, team members, or admins.
-    match /incubation_documents/{ideaId}/{allPaths=**} {
-      allow read; // Publicly readable
-      allow write: if canWriteToIdeaPath(ideaId);
+    function getUserRole(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role;
     }
 
-    // Event flyers can be uploaded only by admins.
-    match /event_flyers/{allPaths=**} {
-      allow read; // Publicly readable
-      allow write: if isAdmin(request.auth.uid);
+    function isAdmin() {
+      return isSignedIn() && getUserRole(request.auth.uid) == 'ADMIN_FACULTY';
     }
 
-    // Announcement attachments can be uploaded only by admins.
-    match /announcement_attachments/{allPaths=**} {
-      allow read; // Publicly readable
-      allow write: if isAdmin(request.auth.uid);
+    function getIdea(ideaId) {
+      return get(/databases/$(database)/documents/ideas/$(ideaId)).data;
+    }
+    
+    function isIdeaOwner(ideaId) {
+      return isUser(getIdea(ideaId).userId);
+    }
+    
+    function isTeamMember(ideaId) {
+      // teamMemberUids contains an array of UIDs for the team members.
+      return isSignedIn() && request.auth.uid in getIdea(ideaId).teamMemberUids;
+    }
+
+    // --- File Access Rules ---
+
+    // Publicly readable files like event flyers and announcement attachments.
+    // Write access is restricted to admins.
+    match /event_flyers/{fileName} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /announcement_attachments/{fileName} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // User-specific idea documents.
+    // These files are publicly readable via their URL once uploaded, which is necessary
+    // for the current application design. For stricter privacy, this read rule could be
+    // changed to `if isIdeaOwner(ideaId) || isTeamMember(ideaId) || isAdmin()`, but that
+    // would require changing the application to use temporary download URLs instead of public URLs.
+    match /incubation_documents/{ideaId}/{fileName} {
+      allow read: if true;
+      allow write: if isIdeaOwner(ideaId) || isTeamMember(ideaId) || isAdmin();
+    }
+
+    match /presentations/{ideaId}/{fileName} {
+      allow read: if true;
+      // Only the idea owner (leader) or an admin can upload the main presentation.
+      allow write: if isIdeaOwner(ideaId) || isAdmin();
+    }
+
+    match /yukti_screenshots/{ideaId}/{fileName} {
+      allow read: if true;
+      // Only the idea owner (leader) or an admin can upload the Yukti screenshot.
+      allow write: if isIdeaOwner(ideaId) || isAdmin();
     }
   }
 }
