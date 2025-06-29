@@ -206,22 +206,24 @@ service cloud.firestore {
              data.programPhase == null;
     }
 
-    function isOwnerMakingAllowedChanges(request, resource) {
-      let newData = request.resource.data;
-      let existingData = resource.data;
-      // Fields an owner can update after initial submission
-      let ownerUpdatableFields = [
-        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
-        'structuredTeamMembers', 'teamMemberEmails',
-        'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
-        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext'
-      ];
-      let immutableFields = ['userId', 'createdAt', 'submittedAt'];
+      function isOwnerMakingAllowedChanges(request, resource) {
+        let newData = request.resource.data;
+        let existingData = resource.data;
+        // Fields an owner can update after initial submission
+        let ownerUpdatableFields = [
+          'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
+          'structuredTeamMembers', 'teamMemberEmails',
+          'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
+          'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
+          'incubationDocuments',
+          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
+        ];
+        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
-      return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
+        return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
              newData.diff(existingData).affectedKeys().hasOnly(ownerUpdatableFields) &&
              isIdeaDataInternallyConsistent(newData);
-    }
+      }
 
     function isAdminUpdatingIdea(request, resource) {
       let allowedAdminFieldsToChange = [

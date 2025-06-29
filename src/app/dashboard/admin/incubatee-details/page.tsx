@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -15,7 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
-import { Briefcase, Eye, Download, Info, Users, DollarSign, List, CheckCircle, XCircle } from 'lucide-react';
+import { Briefcase, Eye, Download, Info, Users, DollarSign, List, CheckCircle, XCircle, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { format } from 'date-fns';
 import type { Timestamp } from 'firebase/firestore';
 
@@ -28,6 +27,83 @@ export default function IncubateeDetailsPage() {
   const [loadingIdeas, setLoadingIdeas] = useState(true);
   const [selectedIdea, setSelectedIdea] = useState<IdeaSubmission | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [viewingDoc, setViewingDoc] = useState<{
+    url: string;
+    fileName: string;
+    type: IncubationDocumentType;
+  } | null>(null);
+  const [isDocViewerOpen, setIsDocViewerOpen] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(0.7);
+
+  // Helper function to format download filename
+  const formatDownloadFilename = (originalFilename: string, applicantName: string | null | undefined) => {
+    // Sanitize applicant name - remove spaces and special characters
+    const sanitizedName = (applicantName || 'user')
+      .toLowerCase()
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .trim();
+
+    // Get file extension from original filename
+    const lastDotIndex = originalFilename.lastIndexOf('.');
+    const extension = lastDotIndex !== -1 ? originalFilename.slice(lastDotIndex) : '';
+    const nameWithoutExt = lastDotIndex !== -1 ? originalFilename.slice(0, lastDotIndex) : originalFilename;
+
+    // Create new filename
+    return `${sanitizedName}-${nameWithoutExt}${extension}`;
+  };
+
+  // Helper function to handle file downloads
+  const handleFileDownload = (url: string, originalFilename: string, applicantName: string | null | undefined) => {
+    const formattedFilename = formatDownloadFilename(originalFilename, applicantName);
+    console.log('Download filename:', formattedFilename); // Debug log
+    
+    try {
+      // Create a temporary anchor element for download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = formattedFilename;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      
+      // Add to DOM temporarily and click
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      toast({ 
+        title: "Download Initiated", 
+        description: `File: ${formattedFilename}. The file should download automatically. If not, please try right-clicking the View button and selecting 'Save link as'.`,
+        duration: 5000
+      });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast({ 
+        title: "Download Failed", 
+        description: "Could not initiate download. Please try right-clicking the View button and selecting 'Save link as'.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  // Zoom control functions
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.1, 2.0));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.1, 0.3));
+  };
+
+  const handleZoomReset = () => {
+    setZoomLevel(0.7);
+  };
+
+  // Reset zoom when opening a new document
+  const openDocumentViewer = (doc: { url: string; fileName: string; type: IncubationDocumentType }) => {
+    setViewingDoc(doc);
+    setZoomLevel(0.7);
+    setIsDocViewerOpen(true);
+  };
 
   useEffect(() => {
     if (initialLoadComplete && !authLoading) {
@@ -164,11 +240,34 @@ export default function IncubateeDetailsPage() {
                               </div>
                             </div>
                             {uploadedDoc ? (
-                              <Button variant="outline" size="sm" asChild>
-                                <a href={uploadedDoc.url} target="_blank" rel="noopener noreferrer">
-                                  <Download className="mr-2 h-4 w-4" /> View
-                                </a>
-                              </Button>
+                              <div className="flex items-center gap-2">
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => {
+                                    setViewingDoc({
+                                      url: uploadedDoc.url,
+                                      fileName: uploadedDoc.fileName,
+                                      type: docType.type
+                                    });
+                                    setZoomLevel(0.7);
+                                    setIsDocViewerOpen(true);
+                                  }}
+                                >
+                                  <Eye className="mr-2 h-4 w-4" /> View
+                                </Button>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => handleFileDownload(
+                                    uploadedDoc.url, 
+                                    uploadedDoc.fileName,
+                                    selectedIdea.applicantDisplayName
+                                  )}
+                                >
+                                  <Download className="mr-2 h-4 w-4" /> Download
+                                </Button>
+                              </div>
                             ) : (
                               <Badge variant="secondary">Not Uploaded</Badge>
                             )}
@@ -217,6 +316,83 @@ export default function IncubateeDetailsPage() {
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsDetailModalOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Document Viewer Modal */}
+      {viewingDoc && (
+        <Dialog open={isDocViewerOpen} onOpenChange={setIsDocViewerOpen}>
+          <DialogContent className="sm:max-w-4xl max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle className="font-headline text-xl flex items-center">
+                <Eye className="h-6 w-6 mr-2 text-primary"/> {viewingDoc?.fileName || 'Document'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="flex-1">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleZoomOut}
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="text-sm font-mono">{Math.round(zoomLevel * 100)}%</span>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleZoomIn}
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={handleZoomReset}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="relative w-full h-[70vh] overflow-auto rounded-lg bg-muted/10">
+                <div className="absolute inset-0 flex items-center justify-center p-4">
+                  <div className="w-full h-full flex items-center justify-center">
+                    <iframe 
+                      src={viewingDoc?.url || ''} 
+                      className="max-w-full max-h-full object-contain"
+                      title={viewingDoc?.fileName || 'Document'}
+                      style={{ 
+                        border: 'none',
+                        transform: `scale(${zoomLevel})`,
+                        transformOrigin: 'center center',
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'contain'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter className="flex justify-between">
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setIsDocViewerOpen(false)}>Close</Button>
+              </div>
+              <Button 
+                variant="default"
+                onClick={() => {
+                  if (viewingDoc) {
+                    handleFileDownload(
+                      viewingDoc.url, 
+                      viewingDoc.fileName,
+                      selectedIdea?.applicantDisplayName
+                    );
+                  }
+                }}
+              >
+                <Download className="mr-2 h-4 w-4"/> Download
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
