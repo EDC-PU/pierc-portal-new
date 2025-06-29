@@ -2,95 +2,82 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
+    
     // --- Helper Functions ---
-    function isAuth() {
-      return request.auth != null;
-    }
-
-    function isOwner(userId) {
-      return isAuth() && request.auth.uid == userId;
-    }
-
     function isAdmin() {
-      // Check if the requesting user's profile has the ADMIN_FACULTY role
-      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
     }
 
-    // --- Collection: users ---
+    function isIdeaOwner(ideaId) {
+      return request.auth.uid == get(/databases/$(database)/documents/ideas/$(ideaId)).data.userId;
+    }
+    
+    function isTeamMember(ideaId) {
+      let idea = get(/databases/$(database)/documents/ideas/$(ideaId)).data;
+      return request.auth.uid in idea.teamMemberUids;
+    }
+
+    // --- Users Collection ---
     match /users/{userId} {
-      // User can read/update their own profile. Admin can read/update any profile.
-      allow read, update: if isOwner(userId) || isAdmin();
-      // Any authenticated user can create their own profile document.
-      allow create: if isOwner(userId);
-      // Only admins can delete user profiles (though this is done via a function).
-      allow delete: if isAdmin();
+      allow read: if request.auth != null;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId || isAdmin();
     }
-
-    // --- Collection: ideas ---
+    
+    // --- Ideas Collection ---
     match /ideas/{ideaId} {
-      allow read: if isAuth();
-
-      // Idea creation is handled by the backend logic in setRoleAndCompleteProfile,
-      // but this rule ensures only the owner can create it.
-      allow create: if isOwner(request.resource.data.userId);
-
-      // Check if the user is the owner or a team member.
-      function isCollaborator() {
-        return request.auth.uid == resource.data.userId || 
-               (resource.data.teamMemberUids != null && request.auth.uid in resource.data.teamMemberUids);
-      }
-      
-      // Allow updates by admins or collaborators. This is broad but necessary for the
-      // various updates a user needs to make (comments, documents, bank details, etc.).
-      // Field-level validation is too complex and brittle here.
-      allow update: if isAdmin() || isCollaborator();
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      allow update: if request.auth != null && (isIdeaOwner(ideaId) || isTeamMember(ideaId) || isAdmin());
     }
     
-    // --- Collection: activityLogs ---
-    match /activityLogs/{logId} {
-        // A user can create a log entry for themselves.
-        allow create: if isAuth() && request.resource.data.actorUid == request.auth.uid;
-        // Only admins can read/manage logs.
-        allow read, update, delete: if isAdmin();
-    }
-    
-    // --- Collection: notifications ---
-    match /notifications/{notificationId} {
-        // Notifications are created by backend logic or client actions like commenting.
-        allow create: if isAuth(); 
-        // User can only read/update their own notifications (e.g., mark as read).
-        allow read, update: if isOwner(resource.data.userId);
-        // Disallow deletion by clients.
-        allow delete: if false;
-    }
-
-    // --- Collection: events ---
-    match /events/{eventId} {
-      allow read: if isAuth();
-      // Allow create/delete/full update by admin only
-      allow create, delete: if isAdmin();
-      
-      // Update has two parts: admin can update anything.
-      // A regular user can only update the 'rsvps' and 'rsvpCount' fields.
-      allow update: if isAdmin() || 
-                      (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount', 'updatedAt']));
-    }
-
-    // --- Read-only or Admin-only Collections ---
-    match /systemSettings/{docId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
-    }
-
-    match /cohorts/{cohortId} {
-      allow read: if isAuth();
-      allow write: if isAdmin();
-    }
-    
+    // --- Announcements Collection ---
     match /announcements/{announcementId} {
-      allow read: if isAuth();
+      allow read: if request.auth != null;
       allow write: if isAdmin();
+    }
+    
+    // --- Events Collection ---
+    match /events/{eventId} {
+      allow read: if request.auth != null;
+      allow update: if request.auth != null && (
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount', 'updatedAt'])) ||
+                      isAdmin()
+                    );
+      allow create, delete: if isAdmin();
+    }
+    
+    // --- Cohorts Collection ---
+    match /cohorts/{cohortId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    
+    // --- System Settings Collection ---
+    match /systemSettings/{settingsId} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    // --- Notifications Collection ---
+    match /notifications/{notificationId} {
+      // Users can manage their own notifications
+      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
+      // Any authenticated user can create notifications (for cross-user notifications like comments)
+      allow create: if request.auth != null;
+    }
+    
+    // --- Activity Logs Collection ---
+    match /activityLogs/{logId} {
+        // Only Admins can read logs
+        allow read: if isAdmin();
+        
+        // Any authenticated user can create a log entry for their own actions.
+        allow create: if request.auth != null && request.resource.data.actorUid == request.auth.uid;
+        
+        // Logs are immutable
+        allow update, delete: if false;
     }
   }
 }
