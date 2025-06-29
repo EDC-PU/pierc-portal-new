@@ -1,4 +1,3 @@
-
 rules_version = '2';
 
 service cloud.firestore {
@@ -14,12 +13,7 @@ service cloud.firestore {
     }
 
     function isRequestingUserAdmin() {
-      // This is a fast check using custom claims. It's not currently implemented in the app,
-      // but is good practice for performance. It will be ignored for now.
-      // return isRequestingUserAuthenticated() && request.auth.token.role == 'ADMIN_FACULTY';
-      
-      // Fallback to a database read.
-      return isAdmin();
+      return isRequestingUserAuthenticated() && request.auth.token.role == 'ADMIN_FACULTY';
     }
 
     function isAdmin() {
@@ -29,23 +23,16 @@ service cloud.firestore {
 
     function isSuperAdminUser() {
       return isRequestingUserAuthenticated() &&
-             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true ||
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'pranavrathi07@gmail.com');
+             (request.auth.token.email == 'pranavrathi07@gmail.com' || request.auth.token.isSuperAdmin == true);
     }
 
     function isOwner(userId) {
       return isRequestingUserAuthenticated() && request.auth.uid == userId;
     }
 
-    function isTeamMember(ideaId) {
-      return isRequestingUserAuthenticated() &&
-             request.auth.uid in get(/databases/$(database)/documents/ideas/$(ideaId)).data.teamMemberUids;
-    }
-
     // --- Collection: users ---
     match /users/{userId} {
-      // A user can read their own profile. An admin can read any profile.
-      allow read: if isOwner(userId) || isRequestingUserAdmin();
+      allow read: if isRequestingUserAuthenticated() || request.auth.uid == userId;
       allow create: if isOwner(userId); // Profile creation is tied to auth UID
       
       // UPDATE rule for user profiles
@@ -54,22 +41,68 @@ service cloud.firestore {
                       (isRequestingUserAdmin() && isAdminUpdatingAllowedFields(request, resource));
 
       // DELETE rule for user profiles
+      // Deletion is handled by Cloud Functions for atomicity, so rules can be restrictive.
+      // Admins and owners can trigger the function.
       allow delete: if isSuperAdminUser() || isRequestingUserAdmin() || isOwner(userId);
     }
 
     // --- Collection: ideas ---
-    match /ideas/{ideaId} {
-      // Allow read only by owner, team members, and admins.
-      allow read: if isRequestingUserAdmin() || isOwner(resource.data.userId) || isTeamMember(ideaId);
+      match /ideas/{ideaId} {
+      allow read: if isRequestingUserAuthenticated() || request.auth.uid == resource.data.userId;
       
       // CREATE rule for ideas
       allow create: if isSuperAdminUser() || isOwnerCreatingIdea(request, resource);
       
-      // UPDATE rule for ideas
+      // UPDATE rule for ideas - combining both approaches
       allow update: if isSuperAdminUser() ||
-                      (isRequestingUserAdmin() && isAdminUpdatingIdea(request, resource)) ||
                       (isOwner(resource.data.userId) && isOwnerMakingAllowedChanges(request, resource)) ||
-                      (isTeamMember(ideaId) && isTeamMemberMakingAllowedChanges(request, resource));
+                      (isRequestingUserAdmin() && isAdminUpdatingIdea(request, resource)) ||
+                      // Allow any authenticated user to update ONLY comments and updatedAt fields
+                      (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
+
+      // Extend allowed fields for owner to include incubationDocuments and Yukti fields
+      function isOwnerMakingAllowedChanges(request, resource) {
+        let newData = request.resource.data;
+        let existingData = resource.data;
+        // Fields an owner can update after initial submission
+        let ownerUpdatableFields = [
+          'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
+          'structuredTeamMembers', 'teamMemberEmails',
+          'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
+          'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
+          'incubationDocuments',
+          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
+        ];
+        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
+
+        return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
+               newData.diff(existingData).affectedKeys().hasOnly(ownerUpdatableFields) &&
+               isIdeaDataInternallyConsistent(newData);
+      }
+
+      // Extend allowed fields for admin to include incubationDocuments and Yukti fields
+      function isAdminUpdatingIdea(request, resource) {
+        let allowedAdminFieldsToChange = [
+          'status', 'programPhase', 'phase2Marks', 'mentor', 'cohortId', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
+          'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines', 'updatedAt',
+          'isOutlineAIGenerated', 'fundingSource', 'totalFundingAllocated', 'sanction1Amount', 'sanction2Amount',
+          'sanction1DisbursedAt', 'sanction2DisbursedAt', 'sanction1UtilizationStatus', 'sanction1UtilizationRemarks',
+          'sanction1UtilizationReviewedBy', 'sanction1UtilizationReviewedAt', 'sanction2UtilizationStatus',
+          'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt',
+          // Allow admin to reset these if needed during archival etc.
+          'sanction1Expenses', 'sanction2Expenses', 'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName',
+          'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext',
+          'incubationDocuments',
+          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
+        ];
+        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
+
+        return isRequestingUserAdmin() &&
+               !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
+               request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedAdminFieldsToChange) &&
+               isValidIdeaData(request.resource.data) &&
+               isIdeaDataInternallyConsistent(request.resource.data);
+      }
 
       // DELETE rule is intentionally restrictive to prevent accidental data loss
       allow delete: if isSuperAdminUser();
@@ -90,9 +123,14 @@ service cloud.firestore {
       // Admins can create notifications for any user.
       allow create: if isRequestingUserAdmin();
       
-      // Users can mark their own notification as read
-      allow update: if isOwner(resource.data.userId) && 
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      // Users can mark their own notification as read, or update other allowed fields
+      allow update: if isOwner(resource.data.userId) && (
+                      // Mark as read
+                      (request.resource.data.isRead == true && 
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead'])) ||
+                      // Other general updates for own notifications
+                      true
+                    );
       
       // User can delete their own notifications
       allow delete: if isOwner(resource.data.userId);
@@ -102,12 +140,19 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if true; // Events can be read by anyone
       
+      // Super admin can do anything. Regular admin can create valid events.
       allow create: if isSuperAdminUser() || (isRequestingUserAdmin() && isValidEventData(request.resource.data, true));
       
+      // Super admin can do anything. Others have specific permissions.
       allow update: if isSuperAdminUser() ||
+                      // Admin who created it can edit it
                       (isRequestingUserAdmin() && resource.data.createdByUid == request.auth.uid && hasOnlyAllowedEventFieldsChanged(request.resource.data, resource.data)) ||
-                      (isRequestingUserAuthenticated() && isUserRsvping(request.resource.data, resource.data));
+                      // Any auth user can RSVP
+                      (isRequestingUserAuthenticated() && isUserRsvping(request.resource.data, resource.data)) ||
+                      // Fallback for general authenticated users to update rsvps and rsvpCount
+                      (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount', 'updatedAt']));
 
+      // Super admin or creator admin can delete.
       allow delete: if isSuperAdminUser() || (isRequestingUserAdmin() && resource.data.createdByUid == request.auth.uid);
     }
 
@@ -136,25 +181,27 @@ service cloud.firestore {
       let existingData = resource.data;
       let newData = request.resource.data;
       let immutableFields = ['uid', 'email', 'role', 'isSuperAdmin', 'createdAt', 'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid'];
-      let allowedPersonalFields = ['fullName', 'contactNumber', 'displayName', 'photoURL', 'enrollmentNumber', 'college', 'instituteName', 'updatedAt'];
-      let allowedIdeaFields = ['startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'applicantCategory', 'currentStage', 'teamMembers', 'updatedAt'];
+      let allowedPersonalFields = ['fullName', 'contactNumber', 'displayName', 'photoURL', 'enrollmentNumber', 'college', 'instituteName'];
+      let allowedIdeaFields = ['startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'applicantCategory', 'currentStage', 'teamMembers'];
       let coreFieldsUnchanged = !newData.diff(existingData).affectedKeys().hasAny(immutableFields);
 
       return existingData.isTeamMemberOnly == true
-        ? coreFieldsUnchanged && newData.diff(existingData).affectedKeys().subsetOf(allowedPersonalFields)
-        : coreFieldsUnchanged && newData.diff(existingData).affectedKeys().subsetOf(allowedPersonalFields.concat(allowedIdeaFields));
+        ? coreFieldsUnchanged &&
+          newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields)
+        : coreFieldsUnchanged &&
+          newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields + allowedIdeaFields);
     }
 
     function isAdminUpdatingAllowedFields(request, resource) {
-      let allowedFields = ['fullName', 'contactNumber', 'enrollmentNumber', 'college', 'instituteName', 'applicantCategory', 'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'currentStage', 'teamMembers', 'updatedAt'];
-      return request.resource.data.diff(resource.data).affectedKeys().subsetOf(allowedFields);
+      let allowedFields = ['fullName', 'contactNumber', 'enrollmentNumber', 'college', 'instituteName', 'applicantCategory', 'startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'currentStage', 'teamMembers'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
     }
 
     // IDEA VALIDATION
     function isOwnerCreatingIdea(request, resource) {
       let data = request.resource.data;
       return isOwner(data.userId) &&
-             isValidIdeaData(data, true) &&
+             isValidIdeaData(data) &&
              data.status == 'SUBMITTED' &&
              data.programPhase == null;
     }
@@ -162,42 +209,19 @@ service cloud.firestore {
     function isOwnerMakingAllowedChanges(request, resource) {
       let newData = request.resource.data;
       let existingData = resource.data;
+      // Fields an owner can update after initial submission
       let ownerUpdatableFields = [
-        'updatedAt', 'comments',
-        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName',
-        'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids',
+        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
+        'structuredTeamMembers', 'teamMemberEmails',
         'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
-        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
-        'incubationDocuments'
+        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext'
       ];
       let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
       return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
-             newData.diff(existingData).affectedKeys().subsetOf(ownerUpdatableFields);
+             newData.diff(existingData).affectedKeys().hasOnly(ownerUpdatableFields) &&
+             isIdeaDataInternallyConsistent(newData);
     }
-
-    function isTeamMemberMakingAllowedChanges(request, resource) {
-        let newData = request.resource.data;
-        let existingData = resource.data;
-        let teamMemberUpdatableFields = [
-          'updatedAt', 'comments',
-          'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
-          'incubationDocuments',
-          'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
-          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
-        ];
-        let immutableForTeamMember = [
-            'userId', 'createdAt', 'submittedAt', 'status', 'programPhase', 'cohortId', 'mentor', 
-            'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids',
-            'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 
-            'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
-            'totalFundingAllocated', 'sanction1Amount', 'sanction2Amount'
-        ];
-
-        return !newData.diff(existingData).affectedKeys().hasAny(immutableForTeamMember) &&
-               newData.diff(existingData).affectedKeys().subsetOf(teamMemberUpdatableFields);
-    }
-
 
     function isAdminUpdatingIdea(request, resource) {
       let allowedAdminFieldsToChange = [
@@ -207,37 +231,38 @@ service cloud.firestore {
         'sanction1DisbursedAt', 'sanction2DisbursedAt', 'sanction1UtilizationStatus', 'sanction1UtilizationRemarks',
         'sanction1UtilizationReviewedBy', 'sanction1UtilizationReviewedAt', 'sanction2UtilizationStatus',
         'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt',
+        // Allow admin to reset these if needed during archival etc.
         'sanction1Expenses', 'sanction2Expenses', 'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName',
-        'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext',
-        'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName', 'incubationDocuments'
+        'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext'
       ];
       let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
       return isRequestingUserAdmin() &&
              !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
-             request.resource.data.diff(resource.data).affectedKeys().subsetOf(allowedAdminFieldsToChange) &&
-             isValidIdeaData(request.resource.data, false) && // isCreate is false for update
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedAdminFieldsToChange) &&
+             isValidIdeaData(request.resource.data) &&
              isIdeaDataInternallyConsistent(request.resource.data);
     }
 
-    function isValidIdeaData(data, isCreate) {
-      // On create, userId must match requesting user. On update, this is handled by immutable check.
-      let userIdLogic = isCreate ? data.userId == request.auth.uid : true;
+    function isValidIdeaData(data) {
       return data.title is string && data.title.size() > 0 &&
              data.problem is string && data.problem.size() > 0 &&
              data.solution is string && data.solution.size() > 0 &&
              data.uniqueness is string && data.uniqueness.size() > 0 &&
-             userIdLogic;
+             data.userId == request.auth.uid;
     }
 
     function isIdeaDataInternallyConsistent(data) {
+      // If in a cohort, must have a cohortId.
       let cohortLogic = (data.programPhase == 'COHORT') ? (data.cohortId is string) : true;
+      // If marked, must be in phase 2.
       let marksLogic = (data.phase2Marks != null && data.phase2Marks.keys().size() > 0) ? (data.programPhase == 'PHASE_2') : true;
       return cohortLogic && marksLogic;
     }
 
     // EVENT VALIDATION
     function isValidEventData(data, isCreate) {
+      // On create, serverTimestamp() is not yet a timestamp, so we skip the type check.
       let timestampsAreValid = isCreate || (data.startDateTime is timestamp && data.endDateTime is timestamp && data.endDateTime > data.startDateTime);
       return data.title is string && data.title.size() > 0 &&
              data.description is string &&
@@ -249,14 +274,15 @@ service cloud.firestore {
     }
 
     function hasOnlyAllowedEventFieldsChanged(newData, oldData) {
-      let allowedFields = ['title', 'description', 'startDateTime', 'endDateTime', 'location', 'category', 'updatedAt', 'flyerUrl', 'flyerFileName', 'targetAudience', 'cohortId'];
-      return newData.diff(oldData).affectedKeys().subsetOf(allowedFields) &&
+      let allowedFields = ['title', 'description', 'startDateTime', 'endDateTime', 'location', 'category', 'updatedAt'];
+      return newData.diff(oldData).affectedKeys().hasOnly(allowedFields) &&
              newData.startDateTime is timestamp && newData.endDateTime is timestamp &&
              newData.endDateTime > newData.startDateTime;
     }
+
     function isUserRsvping(newData, oldData) {
-      let allowedFields = ['rsvps', 'rsvpCount', 'updatedAt'];
-      let otherFieldsUnchanged = newData.diff(oldData).affectedKeys().subsetOf(allowedFields);
+      let allowedFields = ['rsvps', 'rsvpCount'];
+      let otherFieldsUnchanged = newData.diff(oldData).affectedKeys().hasOnly(allowedFields);
       
       let addingSelf = newData.rsvps == oldData.rsvps.concat([request.auth.uid]);
       let removingSelf = oldData.rsvps == newData.rsvps.concat([request.auth.uid]);
@@ -265,5 +291,3 @@ service cloud.firestore {
     }
   }
 }
-
-    
