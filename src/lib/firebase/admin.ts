@@ -1,5 +1,4 @@
-
-import * as admin from 'firebase-admin';
+import admin from "firebase-admin";
 
 // This new structure ensures Firebase Admin is initialized only when one of its services is first accessed.
 // This is safer for Next.js and provides better error handling.
@@ -17,10 +16,13 @@ function ensureAdminInitialized() {
     console.log("Firebase Admin SDK re-used existing instance.");
     return;
   }
-  
+
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey = process.env.FIREBASE_PRIVATE_KEY;
+  let privateKey =
+    "-----BEGIN PRIVATE KEY-----\n" +
+    (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n") +
+    "\n-----END PRIVATE KEY-----\n";
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
   // Check if all required environment variables are present.
@@ -28,16 +30,16 @@ function ensureAdminInitialized() {
     // Log a clear error to the server console instead of throwing.
     // This prevents the entire server from crashing on startup if env vars are missing.
     console.error(
-      'Firebase Admin SDK initialization skipped. This is expected during client-side rendering, but if you see this error on your server during a server-side action, it means required environment variables are missing. \n' +
-      'Please ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set. \n' +
-      'For local development, use a .env.local file. For production, set these in your hosting provider\'s environment variable settings.'
+      "Firebase Admin SDK initialization skipped. This is expected during client-side rendering, but if you see this error on your server during a server-side action, it means required environment variables are missing. \n" +
+        "Please ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set. \n" +
+        "For local development, use a .env.local file. For production, set these in your hosting provider's environment variable settings."
     );
     return; // Exit without initializing, app remains null
   }
-  
+
   try {
     // The replace call is crucial for production environments where the key is stored as a single line.
-    const formattedPrivateKey = privateKey.replace(/\\n/g, '\n');
+    const formattedPrivateKey = privateKey.replace(/\\n/g, "\n");
 
     app = admin.initializeApp({
       credential: admin.credential.cert({
@@ -47,22 +49,24 @@ function ensureAdminInitialized() {
       }),
       storageBucket,
     });
-    console.log("Firebase Admin SDK initialized successfully.");
   } catch (error: any) {
-     console.error('Firebase Admin SDK initialization error. Check service account credentials.', error.message);
-     // Don't re-throw, app will remain null
+    console.error(
+      "Firebase Admin SDK initialization error. Check service account credentials.",
+      error.message
+    );
+    // Don't re-throw, app will remain null
   }
 }
 
 // A helper function to safely get a service, throwing an error only when the service is accessed.
 function getService<T>(serviceGetter: () => T): T {
-    ensureAdminInitialized();
-    if (!app) {
-        throw new Error(
-          'Firebase Admin SDK is not initialized. Check server logs for configuration errors. This usually means the required server-side environment variables (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing from your hosting environment. If running locally, ensure they are in a .env.local file and that you have restarted the development server.'
-        );
-    }
-    return serviceGetter();
+  ensureAdminInitialized();
+  if (!app) {
+    throw new Error(
+      "Firebase Admin SDK is not initialized. Check server logs for configuration errors. This usually means the required server-side environment variables (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing from your hosting environment. If running locally, ensure they are in a .env.local file and that you have restarted the development server."
+    );
+  }
+  return serviceGetter();
 }
 
 // We use a Proxy to create lazy-loaded exports.
