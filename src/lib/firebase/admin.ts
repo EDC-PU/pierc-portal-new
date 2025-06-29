@@ -4,6 +4,7 @@ import admin from "firebase-admin";
 // This is safer for Next.js and provides better error handling.
 
 let app: admin.app.App | null = null;
+let initializationError: Error | null = null;
 let initAttempted = false;
 
 function ensureAdminInitialized() {
@@ -19,52 +20,45 @@ function ensureAdminInitialized() {
 
   const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  let privateKey =
-    "-----BEGIN PRIVATE KEY-----\n" +
-    (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n") +
-    "\n-----END PRIVATE KEY-----\n";
+  const privateKey = (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n");
   const storageBucket = process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET;
 
   // Check if all required environment variables are present.
-  if (!projectId || !clientEmail || !privateKey || !storageBucket) {
-    // Log a clear error to the server console instead of throwing.
-    // This prevents the entire server from crashing on startup if env vars are missing.
+  if (!projectId || !clientEmail || !process.env.FIREBASE_PRIVATE_KEY || !storageBucket) {
+    initializationError = new Error("Missing Firebase Admin SDK service account credentials in environment variables.");
     console.error(
-      "Firebase Admin SDK initialization skipped. This is expected during client-side rendering, but if you see this error on your server during a server-side action, it means required environment variables are missing. \n" +
-        "Please ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set. \n" +
-        "For local development, use a .env.local file. For production, set these in your hosting provider's environment variable settings."
+      "Firebase Admin SDK initialization skipped. " +
+      "Required environment variables are missing. Please ensure NEXT_PUBLIC_FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY, and NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET are set."
     );
-    return; // Exit without initializing, app remains null
+    return;
   }
 
   try {
-    // The replace call is crucial for production environments where the key is stored as a single line.
-    const formattedPrivateKey = privateKey.replace(/\\n/g, "\n");
-
     app = admin.initializeApp({
       credential: admin.credential.cert({
         projectId: projectId,
         clientEmail: clientEmail,
-        privateKey: formattedPrivateKey,
+        privateKey: privateKey,
       }),
       storageBucket,
     });
   } catch (error: any) {
+    initializationError = error;
     console.error(
       "Firebase Admin SDK initialization error. Check service account credentials.",
       error.message
     );
-    // Don't re-throw, app will remain null
   }
 }
 
 // A helper function to safely get a service, throwing an error only when the service is accessed.
 function getService<T>(serviceGetter: () => T): T {
   ensureAdminInitialized();
+  if (initializationError) {
+    throw new Error(`Firebase Admin SDK failed to initialize. Cannot get service. Reason: ${initializationError.message}`);
+  }
   if (!app) {
-    throw new Error(
-      "Firebase Admin SDK is not initialized. Check server logs for configuration errors. This usually means the required server-side environment variables (FIREBASE_CLIENT_EMAIL, FIREBASE_PRIVATE_KEY) are missing from your hosting environment. If running locally, ensure they are in a .env.local file and that you have restarted the development server."
-    );
+    throw new Error("Firebase Admin SDK is not initialized. Check server logs for configuration errors.");
   }
   return serviceGetter();
 }
@@ -92,3 +86,12 @@ export const adminStorage = new Proxy({} as admin.storage.Storage, {
     return Reflect.get(service, prop);
   },
 });
+
+// New function for the health check page
+export function getAdminSdkStatus() {
+  ensureAdminInitialized(); // Ensure an initialization attempt has been made
+  return {
+    isInitialized: app !== null,
+    error: initializationError ? initializationError.message : null,
+  };
+}

@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
@@ -77,6 +76,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     { label: 'Activity Logs', href: '/dashboard/admin/activity-logs', icon: History, roles: ['ADMIN_FACULTY'] },
     { label: 'System Settings', href: '/dashboard/admin/system-settings', icon: Settings, roles: ['ADMIN_FACULTY'] },
     { label: 'Platform Analytics', href: '/dashboard/admin/platform-analytics', icon: BarChartBig, roles: ['ADMIN_FACULTY'] },
+    { label: 'System Health', href: '/dashboard/admin/system-health', icon: ShieldCheck, roles: ['ADMIN_FACULTY'] },
     { label: 'Manage Users', href: '/dashboard/admin/manage-users', icon: UserCog, roles: ['ADMIN_FACULTY'], superAdminOnly: true },
   ];
 
