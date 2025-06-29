@@ -388,29 +388,41 @@ export const createAnnouncement = async (announcementData: Omit<Announcement, 'i
     { title: createdAnn.title, isUrgent: createdAnn.isUrgent, targetAudience: createdAnn.targetAudience, cohortId: createdAnn.cohortId }
   );
   
-  // --- Create Notifications for Cohort ---
-  if (createdAnn.targetAudience === 'SPECIFIC_COHORT' && createdAnn.cohortId) {
-      try {
-          const userIds = await getUidsForCohort(createdAnn.cohortId);
-          if (userIds.length > 0) {
-              const batch = writeBatch(db);
-              userIds.forEach(uid => {
-                  const notifRef = doc(collection(db, 'notifications'));
-                  batch.set(notifRef, {
-                      userId: uid,
-                      title: `New Announcement: ${createdAnn.title}`,
-                      message: createdAnn.content.substring(0, 100) + (createdAnn.content.length > 100 ? '...' : ''),
-                      link: '/dashboard/announcements',
-                      isRead: false,
-                      createdAt: serverTimestamp()
-                  });
-              });
-              await batch.commit();
-              await logUserActivity(adminProfile.uid, adminProfile.displayName, 'ADMIN_NOTIFICATION_SENT_COHORT', { type: 'ANNOUNCEMENT', id: createdAnn.id!, displayName: createdAnn.title }, { userCount: userIds.length, cohortId: createdAnn.cohortId });
-          }
-      } catch (e) {
-          console.error(`Failed to send notifications for cohort announcement ${createdAnn.id}`, e);
+  // --- Create Notifications ---
+  try {
+      let userIds: string[] = [];
+      let logDetails: any = {};
+
+      if (createdAnn.targetAudience === 'SPECIFIC_COHORT' && createdAnn.cohortId) {
+          // Send notifications to specific cohort users
+          userIds = await getUidsForCohort(createdAnn.cohortId);
+          logDetails = { userCount: userIds.length, cohortId: createdAnn.cohortId };
+      } else if (createdAnn.targetAudience === 'ALL') {
+          // Send notifications to all active users
+          userIds = await getAllActiveUserIds();
+          logDetails = { userCount: userIds.length, targetAudience: 'ALL' };
       }
+
+      if (userIds.length > 0) {
+          const batch = writeBatch(db);
+          userIds.forEach(uid => {
+              const notifRef = doc(collection(db, 'notifications'));
+              batch.set(notifRef, {
+                  userId: uid,
+                  title: `New Announcement: ${createdAnn.title}`,
+                  message: createdAnn.content.substring(0, 100) + (createdAnn.content.length > 100 ? '...' : ''),
+                  link: '/dashboard/announcements',
+                  isRead: false,
+                  createdAt: serverTimestamp()
+              });
+          });
+          await batch.commit();
+          
+          const logAction = createdAnn.targetAudience === 'SPECIFIC_COHORT' ? 'ADMIN_NOTIFICATION_SENT_COHORT' : 'ADMIN_NOTIFICATION_SENT_ALL';
+          await logUserActivity(adminProfile.uid, adminProfile.displayName, logAction, { type: 'ANNOUNCEMENT', id: createdAnn.id!, displayName: createdAnn.title }, logDetails);
+      }
+  } catch (e) {
+      console.error(`Failed to send notifications for announcement ${createdAnn.id}`, e);
   }
 
   return createdAnn;

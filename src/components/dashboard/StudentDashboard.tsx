@@ -213,14 +213,31 @@ export default function StudentDashboard() {
   useEffect(() => {
     if (user?.uid) {
       setLoadingDashboardWidgets(true);
+      let announcementsLoaded = false;
+      let eventsLoaded = false;
+      
+      const checkAndSetLoaded = () => {
+        if (announcementsLoaded && eventsLoaded) {
+          setLoadingDashboardWidgets(false);
+        }
+      };
+
       const unsubAnnouncements = getDashboardAnnouncementsStream(userCohortId, (announcements) => {
+        console.log('Dashboard announcements received:', announcements.length);
         setRecentAnnouncements(announcements);
-        if (loadingDashboardWidgets) setLoadingDashboardWidgets(false);
+        if (!announcementsLoaded) {
+          announcementsLoaded = true;
+          checkAndSetLoaded();
+        }
       }, 3);
 
       const unsubEvents = getDashboardEventsStream(userCohortId, (events) => {
+        console.log('Dashboard events received:', events.length);
         setUpcomingEvents(events);
-        if (loadingDashboardWidgets) setLoadingDashboardWidgets(false);
+        if (!eventsLoaded) {
+          eventsLoaded = true;
+          checkAndSetLoaded();
+        }
       }, 3);
       
       return () => {
