@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger as AlertDialogButtonTrigger,
 } from "@/components/ui/alert-dialog";
-import type { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase/firestore';
 import Link from 'next/link';
 
 export default function ManageEventsPage() {
