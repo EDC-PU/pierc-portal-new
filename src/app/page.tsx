@@ -28,7 +28,7 @@ export default function HomePage() {
               Welcome to <span className="text-primary">Parul Innovation & Entrepreneurship Research Centre</span>
             </h1>
             <p className="text-lg sm:text-xl text-muted-foreground mb-8 max-w-xl mx-auto md:mx-0">
-              Your central hub for incubation, research, announcements, and innovation at PIERC.
+            Ideate - Innovate - Incubate
             </p>
             {!loading && initialLoadComplete && (
               <div className="space-y-4 sm:space-y-0 sm:space-x-4 flex flex-col sm:flex-row items-center justify-center md:justify-start">

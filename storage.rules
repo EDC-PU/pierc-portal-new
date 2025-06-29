@@ -1,12 +1,51 @@
 rules_version = '2';
+
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow public read access to all files. This is simple and suitable for this app,
-    // where uploaded content like flyers and pitch decks are meant to be viewed.
-    // Allow any authenticated user to upload files.
-    match /{allPaths=**} {
+
+    // --- Helper Functions ---
+    function isOwner(userId, ideaId) {
+      return exists(/databases/$(database)/documents/ideas/$(ideaId)) &&
+             get(/databases/$(database)/documents/ideas/$(ideaId)).data.userId == userId;
+    }
+
+    function isAdmin() {
+      // Check if the user's document exists and their role is ADMIN_FACULTY.
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+    }
+
+    // --- Idea-specific files ---
+    // Allow public reads as files are accessed via public URLs.
+    // Allow writes only by the authenticated owner of the idea.
+    // Note: Team member uploads would require a data structure change for secure validation.
+    match /presentations/{ideaId}/{allPaths=**} {
       allow read;
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && isOwner(request.auth.uid, ideaId);
+    }
+
+    match /incubation_documents/{ideaId}/{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null && isOwner(request.auth.uid, ideaId);
+    }
+    
+    match /yukti_screenshots/{ideaId}/{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null && isOwner(request.auth.uid, ideaId);
+    }
+    
+    // --- Admin-only files ---
+    // Allow public reads.
+    // Allow writes only by authenticated admins.
+    match /event_flyers/{allPaths=**} {
+       allow read;
+       allow write: if request.auth != null && isAdmin();
+    }
+
+    match /announcement_attachments/{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null && isAdmin();
     }
   }
 }
