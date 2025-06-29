@@ -1024,6 +1024,11 @@ export default function StudentDashboard() {
                 {showNewIncubationBadge && <span className="ml-2 h-2.5 w-2.5 rounded-full bg-primary animate-pulse" title="New" />}
             </TabsTrigger>
         )}
+        {userIdeas.some(idea => idea.programPhase === 'PHASE_2') && (
+            <TabsTrigger value="yuktiSubmission">
+                Yukti Submission
+            </TabsTrigger>
+        )}
       </TabsList>
 
       <TabsContent value="overview" className="space-y-6">
@@ -1116,70 +1121,6 @@ export default function StudentDashboard() {
                     return (
                         <div key={idea.id} className="space-y-6">
                            {renderIdeaDetails(idea, assignedCohort)}
-                           {idea.programPhase === 'PHASE_2' && (
-                              <Card className="border-amber-500/50 bg-amber-500/5 shadow-md">
-                                <CardHeader>
-                                    <CardTitle className="text-lg font-semibold text-amber-700 dark:text-amber-400 flex items-center">
-                                        <Sparkles className="h-5 w-5 mr-2"/> Action Required: Yukti Portal Registration
-                                    </CardTitle>
-                                    <CardDescription>
-                                        Please register on the Yukti Portal before your Phase 2 presentation and submit the details below.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent className="space-y-4">
-                                    <ol className="list-decimal list-inside text-sm space-y-1 text-amber-900 dark:text-amber-200">
-                                        <li>Visit <a href="https://yukti.mic.gov.in/" target="_blank" rel="noopener noreferrer" className="underline font-semibold">https://yukti.mic.gov.in/</a></li>
-                                        <li>Click "Register" and create your account. Select "Gujarat" as State and "Parul University" as institute.</li>
-                                        <li>Log in and add the details of your Startup/Idea/Innovation on the Yukti portal.</li>
-                                        <li>Take a screenshot of your submitted idea on Yukti.</li>
-                                        <li>Save your Yukti ID, Password, and the screenshot below.</li>
-                                    </ol>
-                                    
-                                    {idea.yuktiId ? (
-                                        <div className="pt-4 border-t border-amber-500/30">
-                                            <h4 className="text-md font-semibold text-green-700 dark:text-green-400">Yukti Details Submitted</h4>
-                                            <div className="text-sm mt-2 space-y-1">
-                                                <p><strong>Yukti ID:</strong> {idea.yuktiId}</p>
-                                                <p><strong>Password:</strong> ••••••••</p>
-                                                {idea.yuktiScreenshotUrl && (
-                                                    <a href={idea.yuktiScreenshotUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium flex items-center gap-1">
-                                                        <Eye className="h-4 w-4"/> View Submitted Screenshot
-                                                    </a>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-muted-foreground mt-2">To update, please fill out the form again with new details.</p>
-                                        </div>
-                                    ) : null}
-
-                                    <form onSubmit={handleYuktiSubmit((data) => onYuktiSubmit(data, idea))} className="space-y-4 pt-4 border-t border-amber-500/30">
-                                          <div>
-                                            <Label htmlFor="yuktiId">Yukti Portal ID</Label>
-                                            <Controller name="yuktiId" control={yuktiControl} render={({ field }) => <Input id="yuktiId" placeholder="Your Yukti ID" {...field} />} />
-                                            {yuktiErrors.yuktiId && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiId.message}</p>}
-                                        </div>
-                                          <div>
-                                            <Label htmlFor="yuktiPassword">Yukti Portal Password</Label>
-                                            <Controller name="yuktiPassword" control={yuktiControl} render={({ field }) => <Input id="yuktiPassword" type="password" placeholder="••••••••" {...field} />} />
-                                            {yuktiErrors.yuktiPassword && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiPassword.message}</p>}
-                                        </div>
-                                        <div>
-                                            <Label htmlFor="yuktiScreenshot">Yukti Submission Screenshot</Label>
-                                            <Controller
-                                                name="yuktiScreenshot"
-                                                control={yuktiControl}
-                                                render={({ field: { onChange, value, ...rest } }) => (
-                                                    <Input id="yuktiScreenshot" type="file" accept="image/png, image/jpeg" onChange={(e) => onChange(e.target.files ? e.target.files[0] : null)} {...rest} />
-                                                )}
-                                            />
-                                            {yuktiErrors.yuktiScreenshot && <p className="text-sm text-destructive mt-1">{yuktiErrors.yuktiScreenshot.message}</p>}
-                                        </div>
-                                        <Button type="submit" disabled={isSubmittingYukti}>
-                                            {isSubmittingYukti && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>} Submit Yukti Details
-                                        </Button>
-                                    </form>
-                                </CardContent>
-                              </Card>
-                            )}
                         </div>
                     );
                   })}

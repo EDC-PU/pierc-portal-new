@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
@@ -20,12 +20,37 @@ import {
 import { Button } from '@/components/ui/button';
 import { Home, LayoutDashboard, User, FileText, Rss, Settings, Megaphone, Users as UsersIconLucide, BarChartBig, BarChart3, LogOut, ShieldCheck, UserCog, Menu as MenuIcon, Users2 as CohortIcon, History, Banknote, Calendar, Bell, CalendarCheck, Briefcase, ChevronLeft, Sparkles } from 'lucide-react';
 import { useSidebar } from '@/hooks/use-sidebar';
+import { getUserIdeaSubmissionsWithStatus } from '@/lib/firebase/firestore';
+import type { IdeaSubmission } from '@/types';
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const { user, userProfile, loading, initialLoadComplete, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const { toggleSidebar } = useSidebar();
+
+  const [userIdeas, setUserIdeas] = useState<IdeaSubmission[]>([]);
+  const [loadingIdeas, setLoadingIdeas] = useState(true);
+
+  useEffect(() => {
+    if (user?.uid) {
+      setLoadingIdeas(true);
+      getUserIdeaSubmissionsWithStatus(user.uid)
+        .then((ideas) => {
+          setUserIdeas(ideas);
+        })
+        .catch((error) => {
+          console.error("Error fetching user ideas:", error);
+          setUserIdeas([]);
+        })
+        .finally(() => {
+          setLoadingIdeas(false);
+        });
+    } else {
+      setUserIdeas([]);
+      setLoadingIdeas(false);
+    }
+  }, [user?.uid]);
 
   useEffect(() => {
     if (initialLoadComplete) {
@@ -39,7 +64,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     }
   }, [user, userProfile, initialLoadComplete, router, pathname]);
 
-  if (loading || !initialLoadComplete) {
+  if (loading || !initialLoadComplete || loadingIdeas) {
     return (
       <div className="flex items-center justify-center h-full"> 
         <LoadingSpinner size={48} />
@@ -132,6 +157,34 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}
+                  </SidebarMenu>
+                </SidebarGroup>
+              </>
+            )}
+            {userProfile.role === 'STUDENT' && userIdeas.some(idea => idea.programPhase === 'PHASE_2') && (
+              <>
+                <SidebarSeparator />
+                <SidebarGroup>
+                  <SidebarGroupLabel className="flex items-center"><Sparkles className="mr-2" />Student Tools</SidebarGroupLabel>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        onClick={() => {
+                          router.push('/dashboard/yukti-submission');
+                          localStorage.setItem('hasSeenYuktiSubmission', 'true');
+                        }}
+                        isActive={pathname === '/dashboard/yukti-submission'}
+                        tooltip="Yukti Submission"
+                      >
+                        <Sparkles />
+                        <span>Yukti Submission</span>
+                        {!localStorage.getItem('hasSeenYuktiSubmission') && (
+                          <span className="absolute right-1 flex h-5 min-w-5 items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums text-sidebar-foreground select-none pointer-events-none animate-pulse bg-primary">
+                            New
+                          </span>
+                        )}
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
                   </SidebarMenu>
                 </SidebarGroup>
               </>

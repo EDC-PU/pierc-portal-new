@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -177,6 +176,13 @@ export default function StudentDashboard() {
   const [recentAnnouncements, setRecentAnnouncements] = useState<AnnouncementType[]>([]);
   const [upcomingEvents, setUpcomingEvents] = useState<PortalEvent[]>([]);
   const [loadingDashboardWidgets, setLoadingDashboardWidgets] = useState(true);
+
+  // State for document viewing modal
+  const [viewingDoc, setViewingDoc] = useState<{
+    url: string;
+    fileName: string;
+    type: IncubationDocumentType;
+  } | null>(null);
 
 
   const { control, handleSubmit, reset: resetTeamManagementFormInternal, formState: { errors: teamManagementErrors, isSubmitting: isSubmittingTeamTable }, getValues } = useForm<TeamManagementFormData>({
@@ -530,6 +536,22 @@ export default function StudentDashboard() {
     }
   };
 
+  // Helper function to format download filename
+  const formatDownloadFilename = (originalFilename: string, userFullName: string | null | undefined) => {
+    const sanitizedName = (userFullName || 'user').replace(/[^a-zA-Z0-9]/g, '');
+    return `${sanitizedName}-${originalFilename}`;
+  };
+
+  // Helper function to handle file downloads
+  const handleFileDownload = (url: string, originalFilename: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = formatDownloadFilename(originalFilename, userProfile?.fullName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleDownloadOutline = (outline: GeneratePitchDeckOutlineOutput | null, ideaTitle: string) => {
     if (!outline) {
       toast({ title: "No Outline", description: "No outline data to download.", variant: "default"});
@@ -550,7 +572,7 @@ export default function StudentDashboard() {
     const element = document.createElement("a");
     const file = new Blob([textContent], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
-    element.download = `${ideaTitle.replace(/\s+/g, '_')}_pitch_outline.txt`;
+    element.download = formatDownloadFilename(`${ideaTitle.replace(/\s+/g, '_')}_pitch_outline.txt`, userProfile?.fullName);
     document.body.appendChild(element); 
     element.click();
     document.body.removeChild(element);
@@ -813,9 +835,28 @@ export default function StudentDashboard() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="text-sm px-4 pb-3">
-                        <a href={idea.phase2PptUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">
-                            {idea.phase2PptFileName || 'View Presentation'}
-                        </a>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setViewingDoc({
+                          url: idea.phase2PptUrl!,
+                          fileName: idea.phase2PptFileName || 'Presentation',
+                          type: 'pitchDeck'
+                        })}
+                        className="p-0 h-auto hover:text-primary font-medium"
+                      >
+                        <Eye className="h-4 w-4 mr-1.5"/> {idea.phase2PptFileName || 'View Presentation'}
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => handleFileDownload(idea.phase2PptUrl!, idea.phase2PptFileName || 'presentation.pptx')}
+                        className="p-0 h-auto hover:text-primary"
+                      >
+                        <Download className="h-4 w-4"/>
+                      </Button>
+                    </div>
                         {idea.phase2PptUploadedAt && <p className="text-xs text-muted-foreground mt-0.5">Uploaded on {formatDate(idea.phase2PptUploadedAt)}</p>}
                     </CardContent>
                 </Card>
@@ -1408,10 +1449,21 @@ export default function StudentDashboard() {
                                     {uploadedDoc ? (
                                         <div className="flex items-center gap-2">
                                             <Badge variant="default" className="bg-green-600 hover:bg-green-700">Uploaded</Badge>
-                                            <Button variant="outline" size="sm" asChild>
-                                                <a href={uploadedDoc.url} target="_blank" rel="noopener noreferrer">
-                                                    <Eye className="mr-2 h-4 w-4"/> View
-                                                </a>
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm"
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    e.stopPropagation();
+                                                    setViewingDoc({
+                                                        url: uploadedDoc.url,
+                                                        fileName: uploadedDoc.fileName,
+                                                        type: docInfo.type
+                                                    });
+                                                }}
+                                                type="button"
+                                            >
+                                                <Eye className="mr-2 h-4 w-4"/> View
                                             </Button>
                                         </div>
                                     ) : (
@@ -1559,6 +1611,42 @@ export default function StudentDashboard() {
                 <ModalFooter><Button type="button" variant="outline" onClick={() => setIsExpenseModalOpen(false)} disabled={isSubmittingExpense}>Cancel</Button><Button type="submit" disabled={isSubmittingExpense}>{isSubmittingExpense && <Loader2 className="mr-2 h-4 w-4 animate-spin"/>}Submit Expense</Button></ModalFooter>
                 </form>
             </ModalContent>
+        </Dialog>
+      )}
+
+      {/* Document Viewing Modal */}
+      {viewingDoc && (
+        <Dialog open={!!viewingDoc} onOpenChange={(isOpen) => !isOpen && setViewingDoc(null)}>
+          <ModalContent className="sm:max-w-4xl max-h-[90vh]">
+            <ModalHeader>
+              <ModalTitle className="font-headline text-xl flex items-center">
+                <Eye className="h-6 w-6 mr-2 text-primary"/> {viewingDoc.fileName}
+              </ModalTitle>
+            </ModalHeader>
+            <div className="flex-1 p-4">
+              <iframe 
+                src={viewingDoc.url} 
+                className="w-full h-[60vh] rounded-lg border"
+                title={viewingDoc.fileName}
+              />
+            </div>
+            <ModalFooter>
+              <Button variant="outline" onClick={() => setViewingDoc(null)}>Close</Button>
+              <Button 
+                variant="default"
+                onClick={() => {
+                  const link = document.createElement('a');
+                  link.href = viewingDoc.url;
+                  link.download = viewingDoc.fileName;
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+              >
+                <Download className="mr-2 h-4 w-4"/> Download
+              </Button>
+            </ModalFooter>
+          </ModalContent>
         </Dialog>
       )}
 

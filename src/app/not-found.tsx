@@ -26,7 +26,7 @@ export default function NotFound() {
           </Link>
         </Button>
         <Button asChild variant="outline" size="lg">
-          <a href="mailto:portal.pierc@paruluniversity.ac.in">
+          <a href="mailto:portal@pierc.org">
             <Mail className="mr-2 h-5 w-5" />
             Contact Support
           </a>
