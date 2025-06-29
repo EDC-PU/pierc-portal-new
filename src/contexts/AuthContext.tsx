@@ -58,6 +58,7 @@ interface AuthContextType {
   setRoleAndCompleteProfile: (role: Role, additionalData: Omit<UserProfile, 'uid' | 'email' | 'displayName' | 'photoURL' | 'role' | 'isSuperAdmin' | 'createdAt' | 'updatedAt' | 'isTeamMemberOnly' | 'associatedIdeaId' | 'associatedTeamLeaderUid'>) => Promise<void>;
   deleteCurrentUserAccount: () => Promise<void>;
   sendPasswordReset: () => Promise<void>;
+  sendPasswordResetForEmail: (email: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -536,6 +537,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const sendPasswordResetForEmail = async (email: string) => {
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      toast({ title: "Password Reset Email Sent", description: `If an account exists for ${email}, a password reset link has been sent to that address.` });
+    } catch (error: any) {
+      handleAuthError(error, "sending password reset email");
+    } finally {
+      setLoading(false);
+    }
+  };
+
 
   if (!isMounted) {
     return (
@@ -562,7 +575,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       signOut,
       setRoleAndCompleteProfile,
       deleteCurrentUserAccount,
-      sendPasswordReset
+      sendPasswordReset,
+      sendPasswordResetForEmail
     }}>
       {children}
     </AuthContext.Provider>
@@ -576,4 +590,3 @@ export const useAuth = (): AuthContextType => {
   }
   return context;
 };
-

@@ -14,6 +14,15 @@ import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { useToast } from '@/hooks/use-toast';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const loginSchema = z.object({
   email: z.string().email({ message: 'Invalid email address' }),
@@ -29,19 +38,30 @@ const signUpSchema = z.object({
   path: ['confirmPassword'], 
 });
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email({ message: 'Please enter a valid email address.' }),
+});
+
 
 type LoginFormInputs = z.infer<typeof loginSchema>;
 type SignUpFormInputs = z.infer<typeof signUpSchema>;
+type ForgotPasswordFormInputs = z.infer<typeof forgotPasswordSchema>;
+
 
 export default function LoginPage() {
-  const { user, userProfile, signInWithGoogle, signUpWithEmailPassword, signInWithEmailPassword, loading, initialLoadComplete } = useAuth();
+  const { user, userProfile, signInWithGoogle, signUpWithEmailPassword, signInWithEmailPassword, sendPasswordResetForEmail, loading, initialLoadComplete } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
   const [isSignUpMode, setIsSignUpMode] = useState(false);
+  const [isForgotPasswordOpen, setIsForgotPasswordOpen] = useState(false);
 
   const currentSchema = isSignUpMode ? signUpSchema : loginSchema;
   const { register, handleSubmit, formState: { errors }, reset } = useForm<LoginFormInputs | SignUpFormInputs>({
     resolver: zodResolver(currentSchema),
+  });
+  
+  const { register: registerReset, handleSubmit: handleSubmitReset, formState: { errors: errorsReset }, reset: resetResetForm } = useForm<ForgotPasswordFormInputs>({
+    resolver: zodResolver(forgotPasswordSchema),
   });
 
 
@@ -64,6 +84,12 @@ export default function LoginPage() {
     } catch (error: any) {
       // Errors are handled by toast in AuthContext methods
     }
+  };
+  
+  const onForgotPasswordSubmit: SubmitHandler<ForgotPasswordFormInputs> = async (data) => {
+    await sendPasswordResetForEmail(data.email);
+    setIsForgotPasswordOpen(false); // Close dialog on submit
+    resetResetForm();
   };
 
   const toggleMode = () => {
@@ -167,10 +193,38 @@ export default function LoginPage() {
           </Button>
         </CardContent>
         <CardFooter className="flex flex-col items-center justify-center text-sm py-4">
-           <Button variant="link" onClick={toggleMode} className="text-muted-foreground hover:text-primary">
-            {isSignUpMode ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-          </Button>
-          <p className="text-center text-xs text-muted-foreground px-4 mt-2">
+          <div className="flex justify-between items-center w-full px-1">
+            <Button variant="link" onClick={toggleMode} className="text-muted-foreground hover:text-primary p-0 h-auto">
+              {isSignUpMode ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+            </Button>
+             {!isSignUpMode && (
+              <Dialog open={isForgotPasswordOpen} onOpenChange={setIsForgotPasswordOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="link" className="text-muted-foreground hover:text-primary p-0 h-auto">Forgot Password?</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Reset Password</DialogTitle>
+                    <DialogDescription>Enter your email address and we'll send you a link to reset your password.</DialogDescription>
+                  </DialogHeader>
+                  <form onSubmit={handleSubmitReset(onForgotPasswordSubmit)}>
+                    <div className="space-y-2 py-4">
+                      <Label htmlFor="reset-email">Email Address</Label>
+                      <Input id="reset-email" type="email" placeholder="you@example.com" {...registerReset('email')} />
+                      {errorsReset.email && <p className="text-sm text-destructive mt-1">{errorsReset.email.message}</p>}
+                    </div>
+                    <DialogFooter>
+                      <Button type="submit" disabled={loading}>
+                        {loading ? <LoadingSpinner size={20} className="mr-2" /> : null}
+                        Send Reset Link
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+          <p className="text-center text-xs text-muted-foreground px-4 mt-4">
             By signing in, you agree to our Terms of Service and Privacy Policy.
           </p>
         </CardFooter>
