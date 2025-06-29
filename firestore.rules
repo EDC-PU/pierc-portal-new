@@ -3,63 +3,118 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // --- Helper Functions ---
+  
+    // Helper functions to check user roles and ownership.
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
     function isAdmin() {
-      // Check if the requesting user has the 'ADMIN_FACULTY' role in their user profile.
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
-    }
-
-    function isSuperAdmin() {
-      // Check if the requesting user is a Super Admin.
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
-    }
-
-    function isOwner(userId) {
-      // Check if the requesting user is the owner of the document.
-      return request.auth.uid == userId;
-    }
-
-    // --- Users Collection Rules ---
-    match /users/{userId} {
-      // READ: Any user can read their own profile. Admins can read any profile.
-      allow read: if isOwner(userId) || isAdmin();
-
-      // CREATE: A user can create their own profile, as long as they are not trying to grant themselves admin privileges.
-      allow create: if isOwner(userId) 
-                    && request.resource.data.isSuperAdmin == false
-                    && request.resource.data.role != 'ADMIN_FACULTY';
-
-      // UPDATE: An admin can update any profile. A user can update their own profile, but cannot change their role or admin status.
-      allow update: if isAdmin() || (isOwner(userId) 
-                    && request.resource.data.role == resource.data.role 
-                    && request.resource.data.isSuperAdmin == resource.data.isSuperAdmin);
-                    
-      // DELETE: Only a super admin can delete user profiles (action is performed via a callable function).
-      allow delete: if isSuperAdmin();
-    }
-
-    // --- Ideas Collection Rules ---
-    match /ideas/{ideaId} {
-      // READ: Any authenticated user can read ideas.
-      allow read: if request.auth != null;
-
-      // CREATE: The idea can only be created by the user specified in the document's `userId` field.
-      allow create: if request.auth.uid == request.resource.data.userId;
-
-      // UPDATE & DELETE: Only the idea owner or an admin can update/delete idea fields.
-      // Any authenticated user can add a comment.
-      allow update: if (isOwner(resource.data.userId) || isAdmin());
-      
-      allow delete: if isOwner(resource.data.userId) || isAdmin();
+      return isSignedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
     }
     
-    // --- Other Collections ---
-    match /{collection}/{docId} {
-        // DEFAULT RULES for other collections (announcements, cohorts, systemSettings, etc.)
-        // These are primarily managed by admins.
-        allow read: if request.auth != null; // Allow any authenticated user to read
-        allow write: if isAdmin(); // Only admins can create, update, delete
+    function isIdeaOwner(ideaId) {
+      return isSignedIn() && request.auth.uid == get(/databases/$(database)/documents/ideas/$(ideaId)).data.userId;
+    }
+
+    function isTeamMember(ideaId) {
+        let idea = get(/databases/$(database)/documents/ideas/$(ideaId)).data;
+        // Check if the user's UID is in the teamMemberUids array
+        return isSignedIn() && request.auth.uid in idea.teamMemberUids;
+    }
+    
+    function isOwnerOrTeamMember(ideaId) {
+      return isIdeaOwner(ideaId) || isTeamMember(ideaId);
+    }
+
+    // User Profiles: Users can manage their own profile. Admins can manage any profile.
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+    
+    // Idea Submissions:
+    match /ideas/{ideaId} {
+      // Any authenticated user can create an idea for themselves.
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      
+      // Admins, the idea owner, and team members can read their idea.
+      allow read: if isAdmin() || isOwnerOrTeamMember(ideaId);
+      
+      // Update rules:
+      // Admins can update any field.
+      // Owners/Team Members can only update a specific list of non-sensitive fields.
+      allow update: if isAdmin() || (
+                      isOwnerOrTeamMember(ideaId) &&
+                      request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                          'updatedAt',
+                          'incubationDocuments',
+                          'phase2PptUrl',
+                          'phase2PptFileName',
+                          'phase2PptUploadedAt',
+                          'yuktiId',
+                          'yuktiPassword',
+                          'yuktiScreenshotUrl',
+                          'yuktiScreenshotFileName',
+                          'isOutlineAIGenerated',
+                          'beneficiaryName',
+                          'beneficiaryAccountNo',
+                          'beneficiaryBankName',
+                          'beneficiaryIfscCode',
+                          'beneficiaryAccountType',
+                          'beneficiaryCity',
+                          'beneficiaryBranchName',
+                          'sanction1Expenses',
+                          'sanction2Expenses',
+                          'sanction1AppliedForNext',
+                          'structuredTeamMembers',
+                          'teamMemberEmails',
+                          'teamMemberUids',
+                          'comments'
+                      ])
+                    );
+
+      // Only Admins can delete ideas.
+      allow delete: if isAdmin();
+    }
+    
+    // Announcements: All authenticated users can read. Only admins can write.
+    match /announcements/{announcementId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    
+    // Events: All authenticated users can read. Only admins can create/delete.
+    // Users can update the RSVP list for themselves.
+    match /events/{eventId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || 
+                      (isSignedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount']));
+    }
+
+    // Notifications: Users can only access their own.
+    match /notifications/{notificationId} {
+        allow read, write: if isSignedIn() && request.auth.uid == resource.data.userId;
+        allow create: if isSignedIn();
+    }
+    
+    // Activity Logs: Write-only for server actions (via any auth'd user), read-only for admins.
+    match /activityLogs/{logId} {
+        allow read: if isAdmin();
+        allow create: if isSignedIn();
+        allow update, delete: if false;
+    }
+    
+    // Cohorts: Read for authenticated, write for admins.
+    match /cohorts/{cohortId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+    }
+    
+    // System Settings: Read for authenticated, write for admins.
+    match /systemSettings/{settingsId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
     }
   }
 }
