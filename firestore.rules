@@ -1,83 +1,134 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // --- Helper Functions ---
-    function isAdmin() {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+    function isAuth() {
+      return request.auth != null;
     }
 
-    function isIdeaOwner(ideaId) {
-      return request.auth.uid == get(/databases/$(database)/documents/ideas/$(ideaId)).data.userId;
+    function isRequestingUserAuthenticated() {
+      return isAuth() && request.auth.uid != null;
+    }
+
+    function isRequestingUserAdmin() {
+      // Check if the requesting user's profile has the ADMIN_FACULTY role
+      return isRequestingUserAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
+    }
+
+    function isSuperAdminUser() {
+      return isRequestingUserAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
+    }
+
+    function isOwner(userId) {
+      return isRequestingUserAuthenticated() && request.auth.uid == userId;
     }
     
     function isTeamMember(ideaId) {
-      let idea = get(/databases/$(database)/documents/ideas/$(ideaId)).data;
-      return request.auth.uid in idea.teamMemberUids;
+      // Check if the requesting user's UID is in the idea's team member UID list.
+      return isRequestingUserAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/ideas/$(ideaId)).data.teamMemberUids;
     }
 
-    // --- Users Collection ---
+    // --- Collection: users ---
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId || isAdmin();
-    }
-    
-    // --- Ideas Collection ---
-    match /ideas/{ideaId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-      allow update: if request.auth != null && (isIdeaOwner(ideaId) || isTeamMember(ideaId) || isAdmin());
-    }
-    
-    // --- Announcements Collection ---
-    match /announcements/{announcementId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-    
-    // --- Events Collection ---
-    match /events/{eventId} {
-      allow read: if request.auth != null;
-      allow update: if request.auth != null && (
-                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount', 'updatedAt'])) ||
-                      isAdmin()
-                    );
-      allow create, delete: if isAdmin();
-    }
-    
-    // --- Cohorts Collection ---
-    match /cohorts/{cohortId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
-    }
-    
-    // --- System Settings Collection ---
-    match /systemSettings/{settingsId} {
-      allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow read: if isRequestingUserAuthenticated();
+      allow create: if isOwner(userId); // Profile creation is tied to auth UID
+      allow update: if isSuperAdminUser() || isOwner(userId);
+      allow delete: if isSuperAdminUser() || isOwner(userId);
     }
 
-    // --- Notifications Collection ---
+    // --- Collection: ideas ---
+    match /ideas/{ideaId} {
+      allow read: if isRequestingUserAuthenticated();
+      allow create: if isOwner(request.resource.data.userId);
+
+      // UPDATE rule for ideas
+      allow update: if isSuperAdminUser() ||
+                      isRequestingUserAdmin() ||
+                      (isOwner(resource.data.userId) && isOwnerMakingAllowedChanges(request, resource)) ||
+                      (isTeamMember(ideaId) && isTeamMemberMakingAllowedChanges(request, resource));
+
+      allow delete: if isSuperAdminUser();
+    }
+
+    // --- Collection: activityLogs ---
+    match /activityLogs/{logId} {
+      // A user can create a log entry for themselves.
+      allow create: if isRequestingUserAuthenticated() && request.resource.data.actorUid == request.auth.uid;
+      // Only admins can read/manage logs.
+      allow read, update, delete: if isRequestingUserAdmin();
+    }
+
+    // --- Collection: notifications ---
     match /notifications/{notificationId} {
-      // Users can manage their own notifications
-      allow read, update, delete: if request.auth != null && request.auth.uid == resource.data.userId;
-      // Any authenticated user can create notifications (for cross-user notifications like comments)
-      allow create: if request.auth != null;
+      allow read: if isOwner(resource.data.userId); // Only the target user can read their notifications
+      allow create: if isRequestingUserAdmin();
+      allow update: if isOwner(resource.data.userId) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'updatedAt']);
+      allow delete: if isOwner(resource.data.userId);
+    }
+
+    // --- Collection: events ---
+    match /events/{eventId} {
+      allow read: if true; // Events can be read by anyone
+      allow create, delete: if isRequestingUserAdmin();
+      allow update: if isRequestingUserAdmin() || (isRequestingUserAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount', 'updatedAt']));
+    }
+
+    // --- Collection: announcements ---
+    match /announcements/{announcementId} {
+      allow read: if true; // Announcements are public
+      allow create, update, delete: if isRequestingUserAdmin();
+    }
+
+    // --- Collection: cohorts ---
+    match /cohorts/{cohortId} {
+      allow read: if true; // Cohort info can be public
+      allow create, update, delete: if isRequestingUserAdmin();
+    }
+
+    // --- Collection: systemSettings ---
+    match /systemSettings/{docId} {
+      allow read: if true; // Settings can be read by anyone
+      allow write: if isRequestingUserAdmin();
+    }
+
+    // --- Detailed Validation Functions ---
+
+    // Fields a team member (non-owner) can update.
+    function teamMemberUpdatableFields() {
+      return [
+        'updatedAt', 'comments',
+        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
+        'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName',
+        'incubationDocuments',
+        'sanction1Expenses', 'sanction2Expenses',
+        'sanction1AppliedForNext',
+        'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName'
+      ];
     }
     
-    // --- Activity Logs Collection ---
-    match /activityLogs/{logId} {
-        // Only Admins can read logs
-        allow read: if isAdmin();
-        
-        // Any authenticated user can create a log entry for their own actions.
-        allow create: if request.auth != null && request.resource.data.actorUid == request.auth.uid;
-        
-        // Logs are immutable
-        allow update, delete: if false;
+    // Fields only an idea owner can update (in addition to team member fields).
+    function ownerOnlyUpdatableFields() {
+      return [
+        'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids'
+      ];
+    }
+
+    // Checks if a team member is making only allowed changes.
+    function isTeamMemberMakingAllowedChanges(request, resource) {
+      let immutableFieldsByMember = ['userId', 'createdAt', 'submittedAt', 'status', 'programPhase', 'mentor', 'cohortId', 'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids'];
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(teamMemberUpdatableFields()) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFieldsByMember);
+    }
+    
+    // Checks if the owner is making only allowed changes.
+    function isOwnerMakingAllowedChanges(request, resource) {
+      let immutableFieldsByOwner = ['userId', 'createdAt', 'submittedAt', 'status', 'programPhase', 'mentor', 'cohortId'];
+      let allowedFields = teamMemberUpdatableFields().concat(ownerOnlyUpdatableFields());
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields) &&
+             !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFieldsByOwner);
     }
   }
 }
