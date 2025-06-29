@@ -641,6 +641,7 @@ export const createIdeaFromProfile = async (
             teamMembers: data.teamMembers || '',
             structuredTeamMembers: data.structuredTeamMembers || [],
             teamMemberEmails: data.teamMemberEmails || [],
+            teamMemberUids: data.teamMemberUids || [],
             comments: data.comments || [],
             fileURL: data.fileURL ?? null,
             fileName: data.fileName ?? null,
@@ -744,6 +745,7 @@ export const createIdeaFromProfile = async (
         nextPhaseGuidelines: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? null : existingIdeaToUpdate.nextPhaseGuidelines,
         structuredTeamMembers: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.structuredTeamMembers || []),
         teamMemberEmails: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberEmails || []),
+        teamMemberUids: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.teamMemberUids || []),
         comments: existingIdeaToUpdate.status === 'ARCHIVED_BY_ADMIN' ? [] : (existingIdeaToUpdate.comments || []),
         fileURL: existingIdeaToUpdate.fileURL || null,
         fileName: existingIdeaToUpdate.fileName || null,
@@ -792,6 +794,7 @@ export const createIdeaFromProfile = async (
         submittedAt: serverTimestamp() as Timestamp,
         structuredTeamMembers: [],
         teamMemberEmails: [],
+        teamMemberUids: [],
         comments: [],
         status: 'SUBMITTED',
         programPhase: null,
@@ -971,6 +974,7 @@ export const getAllIdeaSubmissionsWithDetails = async (): Promise<IdeaSubmission
       teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
+      teamMemberUids: ideaData.teamMemberUids || [],
       comments: ideaData.comments || [],
       rejectionRemarks: ideaData.rejectionRemarks || null,
       rejectedByUid: ideaData.rejectedByUid || null,
@@ -1080,6 +1084,7 @@ export const getIdeasAssignedToMentor = async (mentorName: MentorName): Promise<
       teamMembers: ideaData.teamMembers || '',
       structuredTeamMembers: ideaData.structuredTeamMembers || [],
       teamMemberEmails: ideaData.teamMemberEmails || [],
+      teamMemberUids: ideaData.teamMemberUids || [],
       comments: ideaData.comments || [],
       rejectionRemarks: ideaData.rejectionRemarks || null,
       rejectedByUid: ideaData.rejectedByUid || null,
@@ -1423,6 +1428,7 @@ export const getUserIdeaSubmissionsWithStatus = async (userId: string): Promise<
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
+        teamMemberUids: data.teamMemberUids || [],
         comments: data.comments || [],
         submittedAt,
         updatedAt,
@@ -1722,8 +1728,9 @@ export const updateTeamMemberDetailsInIdeaAfterProfileSetup = async (
     return;
   }
 
-  const updatePayload: { structuredTeamMembers: TeamMember[], updatedAt: Timestamp } = {
+  const updatePayload: any = {
     structuredTeamMembers: updatedStructuredMembersArray,
+    teamMemberUids: arrayUnion(memberUser.uid),
     updatedAt: serverTimestamp() as Timestamp,
   };
 
@@ -1743,12 +1750,11 @@ export const removeTeamMemberFromIdea = async (ideaId: string, ideaTitle: string
   const ideaRef = doc(db, 'ideas', ideaId);
   const ideaDoc = await getDoc(ideaRef);
   if (ideaDoc.exists()) {
-    // const currentMembers = (ideaDoc.data()?.structuredTeamMembers as TeamMember[] || []);
-    // const memberToRemove = currentMembers.find(m => m.id === memberIdToRemove);
     if (memberToRemove) {
       await updateDoc(ideaRef, {
         structuredTeamMembers: arrayRemove(memberToRemove),
         teamMemberEmails: arrayRemove(memberToRemove.email.toLowerCase()),
+        teamMemberUids: arrayRemove(memberToRemove.id),
         updatedAt: serverTimestamp(),
       });
       await logUserActivity(
@@ -1790,6 +1796,7 @@ export const getIdeaWhereUserIsTeamMember = async (userEmail: string): Promise<I
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
+        teamMemberUids: data.teamMemberUids || [],
         comments: data.comments || [],
         submittedAt,
         updatedAt,
@@ -1996,7 +2003,7 @@ export const updateSystemSettings = async (settingsData: Partial<Omit<SystemSett
 
 export const createIdeaSubmission = async (
   actorProfile: UserProfile,
-  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments' | 'comments' | 'yuktiId' | 'yuktiPassword' | 'yuktiScreenshotUrl' | 'yuktiScreenshotFileName'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[] }
+  ideaData: Omit<IdeaSubmission, 'id' | 'userId' | 'submittedAt' | 'updatedAt' | 'status' | 'programPhase' | 'phase2Marks' | 'rejectionRemarks' | 'rejectedByUid' | 'rejectedAt' | 'phase2PptUrl' | 'phase2PptFileName' | 'phase2PptUploadedAt' | 'nextPhaseDate' | 'nextPhaseStartTime' | 'nextPhaseEndTime' | 'nextPhaseVenue' | 'nextPhaseGuidelines' | 'teamMembers' | 'structuredTeamMembers' | 'teamMemberEmails'| 'mentor' | 'applicantDisplayName' | 'applicantEmail' | 'category' | 'cohortId' | 'isOutlineAIGenerated' | 'fundingSource' | 'totalFundingAllocated' | 'sanction1Amount' | 'sanction2Amount' | 'sanction1DisbursedAt' | 'sanction2DisbursedAt' | 'sanction1Expenses' | 'sanction2Expenses' | 'beneficiaryName' | 'beneficiaryAccountNo' | 'beneficiaryBankName' | 'beneficiaryIfscCode' | 'beneficiaryAccountType' | 'beneficiaryCity' | 'beneficiaryBranchName' | 'sanction1AppliedForNext' | 'sanction1UtilizationStatus' | 'sanction1UtilizationRemarks' | 'sanction1UtilizationReviewedBy' | 'sanction1UtilizationReviewedAt' | 'sanction2UtilizationStatus' | 'sanction2UtilizationRemarks' | 'sanction2UtilizationReviewedBy' | 'sanction2UtilizationReviewedAt' | 'createdAt' | 'incubationDocuments' | 'comments' | 'yuktiId' | 'yuktiPassword' | 'yuktiScreenshotUrl' | 'yuktiScreenshotFileName' | 'teamMemberUids'> & { teamMembers?: string, structuredTeamMembers?: TeamMember[], teamMemberEmails?: string[], teamMemberUids?: string[] }
 ): Promise<IdeaSubmission> => {
   const ideaCol = collection(db, 'ideas');
   const newIdeaPayload: any = {
@@ -2012,6 +2019,7 @@ export const createIdeaSubmission = async (
     teamMembers: ideaData.teamMembers || '',
     structuredTeamMembers: ideaData.structuredTeamMembers || [],
     teamMemberEmails: ideaData.teamMemberEmails || [],
+    teamMemberUids: ideaData.teamMemberUids || [],
     comments: [],
     status: 'SUBMITTED',
     programPhase: null,
@@ -2066,6 +2074,7 @@ export const createIdeaSubmission = async (
     ...newDocSnap.data(),
     structuredTeamMembers: newDocSnap.data()?.structuredTeamMembers || [],
     teamMemberEmails: newDocSnap.data()?.teamMemberEmails || [],
+    teamMemberUids: newDocSnap.data()?.teamMemberUids || [],
     isOutlineAIGenerated: newDocSnap.data()?.isOutlineAIGenerated ?? false,
     incubationDocuments: newDocSnap.data()?.incubationDocuments || {},
   } as IdeaSubmission;
@@ -2168,6 +2177,7 @@ export const getIdeaById = async (ideaId: string): Promise<IdeaSubmission | null
         teamMembers: data.teamMembers || '',
         structuredTeamMembers: data.structuredTeamMembers || [],
         teamMemberEmails: data.teamMemberEmails || [],
+        teamMemberUids: data.teamMemberUids || [],
         comments: data.comments || [],
         submittedAt,
         updatedAt,

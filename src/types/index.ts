@@ -140,6 +140,7 @@ export interface IdeaSubmission {
   teamMembers?: string; // Legacy text field for team members
   structuredTeamMembers?: TeamMember[];
   teamMemberEmails?: string[];
+  teamMemberUids?: string[]; // New field for storing member UIDs
   comments?: Comment[];
 
   fileURL?: string;
