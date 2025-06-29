@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { adminDb, adminAuth, adminStorage, getAdminSdkStatus } from '@/lib/firebase/admin';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 
 export async function GET() {
   const initStatus = getAdminSdkStatus();
