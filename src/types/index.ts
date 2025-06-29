@@ -46,7 +46,7 @@ export type IncubationDocumentType =
 
 export const ALL_INCUBATION_DOCUMENT_TYPES: { type: IncubationDocumentType; label: string; description: string }[] = [
     { type: 'aadharCard', label: 'Aadhar Card', description: 'Copy of founder\'s Aadhar card.' },
-    { type: 'license', label: 'Relevant business or professional license, if any.' },
+    { type: 'license', label: 'Business License', description: 'Relevant business or professional license, if any.' },
     { type: 'panCard', label: 'PAN Card', description: 'Copy of founder\'s PAN card.' },
     { type: 'residentialProof', label: 'Residential Proof', description: 'Utility bill, rent agreement, etc.' },
     { type: 'pitchDeck', label: 'Pitch Deck', description: 'Your latest pitch deck presentation.' },
@@ -383,3 +383,5 @@ export interface ActivityLogEntry {
   target?: ActivityLogTarget;
   details?: Record<string, any>;
 }
+
+    

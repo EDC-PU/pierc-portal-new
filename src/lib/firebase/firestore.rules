@@ -13,18 +13,13 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isRequestingUserAdmin() {
-      return isRequestingUserAuthenticated() && request.auth.token.role == 'ADMIN_FACULTY';
-    }
-
     function isAdmin() {
       // Check if the requesting user's profile has the ADMIN_FACULTY role
       return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN_FACULTY';
     }
 
     function isSuperAdminUser() {
-      return isRequestingUserAuthenticated() &&
-             (request.auth.token.email == 'pranavrathi07@gmail.com' || request.auth.token.isSuperAdmin == true);
+      return isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuperAdmin == true;
     }
 
     function isOwner(userId) {
@@ -32,38 +27,40 @@ service cloud.firestore {
     }
 
     function isTeamMember(ideaId) {
-      return isRequestingUserAuthenticated() && request.auth.uid in get(/databases/$(database)/documents/ideas/$(ideaId)).data.teamMemberUids;
+      // Check if the user's UID is in the idea's teamMemberUids list.
+      return isAuth() && request.auth.uid in get(/databases/$(database)/documents/ideas/$(ideaId)).data.teamMemberUids;
     }
+
 
     // --- Collection: users ---
     match /users/{userId} {
+      // Any authenticated user can read any other user's profile.
       allow read: if isRequestingUserAuthenticated();
       allow create: if isOwner(userId); // Profile creation is tied to auth UID
       
       // UPDATE rule for user profiles
       allow update: if isSuperAdminUser() ||
                       (isOwner(userId) && isOwnProfileUpdateAllowed(request, resource)) ||
-                      (isRequestingUserAdmin() && isAdminUpdatingAllowedFields(request, resource));
+                      (isAdmin() && isAdminUpdatingAllowedFields(request, resource));
 
       // DELETE rule for user profiles
-      // Deletion is handled by Cloud Functions for atomicity, so rules can be restrictive.
-      // Admins and owners can trigger the function.
-      allow delete: if isSuperAdminUser() || isRequestingUserAdmin() || isOwner(userId);
+      allow delete: if isSuperAdminUser() || isOwner(userId);
     }
 
     // --- Collection: ideas ---
     match /ideas/{ideaId} {
-      allow read: if isRequestingUserAuthenticated();
+      // Only Admins, the idea owner, or a team member can read the idea document.
+      allow read: if isAdmin() || isOwner(resource.data.userId) || isTeamMember(ideaId);
       
       // CREATE rule for ideas
       allow create: if isSuperAdminUser() || isOwnerCreatingIdea(request, resource);
       
-      // UPDATE rule for ideas - combining all valid update scenarios
+      // UPDATE rule for ideas
       allow update: if isSuperAdminUser() ||
+                      (isAdmin() && isAdminUpdatingIdea(request, resource)) ||
                       (isOwner(resource.data.userId) && isOwnerMakingAllowedChanges(request, resource)) ||
                       (isTeamMember(ideaId) && isTeamMemberMakingAllowedChanges(request, resource)) ||
-                      (isRequestingUserAdmin() && isAdminUpdatingIdea(request, resource)) ||
-                      (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
+                      ((isOwner(resource.data.userId) || isTeamMember(ideaId) || isAdmin()) && isJustCommenting(request, resource));
 
       // DELETE rule is intentionally restrictive to prevent accidental data loss
       allow delete: if isSuperAdminUser();
@@ -71,68 +68,43 @@ service cloud.firestore {
 
     // --- Collection: activityLogs ---
     match /activityLogs/{logId} {
-      // A user can create a log entry for themselves.
       allow create: if isAuth() && request.resource.data.actorUid == request.auth.uid;
-      // Only admins can read/manage logs.
-      allow read, update, delete: if isRequestingUserAdmin();
+      allow read, update, delete: if isAdmin();
     }
 
     // --- Collection: notifications ---
     match /notifications/{notificationId} {
-      allow read: if isOwner(resource.data.userId); // Only the target user can read their notifications
-      
-      // Admins can create notifications for any user.
-      allow create: if isRequestingUserAdmin();
-      
-      // Users can mark their own notification as read, or update other allowed fields
-      allow update: if isOwner(resource.data.userId) && (
-                      // Mark as read
-                      (request.resource.data.isRead == true && 
-                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead', 'updatedAt'])) ||
-                      // Other general updates for own notifications
-                      true
-                    );
-      
-      // User can delete their own notifications
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isAdmin();
+      allow update: if isOwner(resource.data.userId);
       allow delete: if isOwner(resource.data.userId);
     }
 
     // --- Collection: events ---
     match /events/{eventId} {
-      allow read: if true; // Events can be read by anyone
-      
-      // Super admin can do anything. Regular admin can create valid events.
-      allow create: if isSuperAdminUser() || (isRequestingUserAdmin() && isValidEventData(request.resource.data, true));
-      
-      // Super admin can do anything. Others have specific permissions.
-      allow update: if isSuperAdminUser() ||
-                      // Admin who created it can edit it
-                      (isRequestingUserAdmin() && resource.data.createdByUid == request.auth.uid && hasOnlyAllowedEventFieldsChanged(request.resource.data, resource.data)) ||
-                      // Any auth user can RSVP
-                      (isRequestingUserAuthenticated() && isUserRsvping(request.resource.data, resource.data)) ||
-                      // Fallback for general authenticated users to update rsvps and rsvpCount
-                      (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rsvps', 'rsvpCount', 'updatedAt']));
-
-      // Super admin or creator admin can delete.
-      allow delete: if isSuperAdminUser() || (isRequestingUserAdmin() && resource.data.createdByUid == request.auth.uid);
+      allow read: if true;
+      allow create: if isAdmin() && isValidEventData(request.resource.data, true);
+      allow update: if (isAdmin() && resource.data.createdByUid == request.auth.uid && hasOnlyAllowedEventFieldsChanged(request.resource.data, resource.data)) ||
+                      (isRequestingUserAuthenticated() && isUserRsvping(request.resource.data, resource.data));
+      allow delete: if isAdmin() && resource.data.createdByUid == request.auth.uid;
     }
 
     // --- Collection: announcements ---
     match /announcements/{announcementId} {
-      allow read: if true; // Announcements are public
-      allow create, update, delete: if isSuperAdminUser() || isRequestingUserAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // --- Collection: cohorts ---
     match /cohorts/{cohortId} {
-      allow read: if true; // Cohort info can be public
-      allow create, update, delete: if isSuperAdminUser() || isRequestingUserAdmin();
+      allow read: if true;
+      allow create, update, delete: if isAdmin();
     }
 
     // --- Collection: systemSettings ---
     match /systemSettings/{docId} {
-      allow read: if true; // Settings can be read by anyone
-      allow write: if isSuperAdminUser() || isRequestingUserAdmin();
+      allow read: if true;
+      allow write: if isAdmin();
     }
 
     // --- Detailed Validation Functions ---
@@ -143,14 +115,14 @@ service cloud.firestore {
       let newData = request.resource.data;
       let immutableFields = ['uid', 'email', 'role', 'isSuperAdmin', 'createdAt', 'isTeamMemberOnly', 'associatedIdeaId', 'associatedTeamLeaderUid'];
       let allowedPersonalFields = ['fullName', 'contactNumber', 'displayName', 'photoURL', 'enrollmentNumber', 'college', 'instituteName', 'updatedAt'];
-      let allowedIdeaFields = ['startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'applicantCategory', 'currentStage', 'teamMembers'];
+      let allowedIdeaFields = ['startupTitle', 'problemDefinition', 'solutionDescription', 'uniqueness', 'applicantCategory', 'currentStage', 'teamMembers', 'updatedAt'];
       let coreFieldsUnchanged = !newData.diff(existingData).affectedKeys().hasAny(immutableFields);
 
       return existingData.isTeamMemberOnly == true
         ? coreFieldsUnchanged &&
           newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields)
         : coreFieldsUnchanged &&
-          newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields + allowedIdeaFields);
+          newData.diff(existingData).affectedKeys().hasOnly(allowedPersonalFields.concat(allowedIdeaFields));
     }
 
     function isAdminUpdatingAllowedFields(request, resource) {
@@ -170,12 +142,12 @@ service cloud.firestore {
     function isOwnerMakingAllowedChanges(request, resource) {
       let newData = request.resource.data;
       let existingData = resource.data;
-      // Fields an owner can update after initial submission
       let ownerUpdatableFields = [
         'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
-        'structuredTeamMembers', 'teamMemberEmails',
+        'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids',
         'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
-        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext', 'incubationDocuments'
+        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
+        'incubationDocuments', 'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
       ];
       let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
@@ -185,13 +157,23 @@ service cloud.firestore {
     }
 
     function isTeamMemberMakingAllowedChanges(request, resource) {
-      let allowedFields = [
-        'incubationDocuments', 'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
-        'sanction1Expenses', 'sanction2Expenses', 'comments', 'updatedAt'
+      let newData = request.resource.data;
+      let existingData = resource.data;
+      let memberUpdatableFields = [
+        'updatedAt',
+        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt',
+        'incubationDocuments',
+        'sanction1Expenses', 'sanction2Expenses',
+        'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
       ];
-      let immutableFields = ['userId', 'createdAt', 'submittedAt', 'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids'];
-      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
-             request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedFields);
+       let immutableFields = ['userId', 'createdAt', 'submittedAt', 'structuredTeamMembers', 'teamMemberEmails', 'teamMemberUids'];
+
+      return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
+             newData.diff(existingData).affectedKeys().hasOnly(memberUpdatableFields);
+    }
+
+    function isJustCommenting(request, resource) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']);
     }
 
     function isAdminUpdatingIdea(request, resource) {
@@ -202,16 +184,14 @@ service cloud.firestore {
         'sanction1DisbursedAt', 'sanction2DisbursedAt', 'sanction1UtilizationStatus', 'sanction1UtilizationRemarks',
         'sanction1UtilizationReviewedBy', 'sanction1UtilizationReviewedAt', 'sanction2UtilizationStatus',
         'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt',
-        // Allow admin to reset these if needed during archival etc.
         'sanction1Expenses', 'sanction2Expenses', 'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName',
-        'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext'
+        'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext',
+        'incubationDocuments'
       ];
       let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
-      return isRequestingUserAdmin() &&
-             !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
              request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedAdminFieldsToChange) &&
-             isValidIdeaData(request.resource.data) &&
              isIdeaDataInternallyConsistent(request.resource.data);
     }
 
@@ -220,20 +200,17 @@ service cloud.firestore {
              data.problem is string && data.problem.size() > 0 &&
              data.solution is string && data.solution.size() > 0 &&
              data.uniqueness is string && data.uniqueness.size() > 0 &&
-             (isRequestingUserAdmin() || data.userId == request.auth.uid);
+             data.userId == request.auth.uid;
     }
 
     function isIdeaDataInternallyConsistent(data) {
-      // If in a cohort, must have a cohortId.
       let cohortLogic = (data.programPhase == 'COHORT') ? (data.cohortId is string) : true;
-      // If marked, must be in phase 2.
       let marksLogic = (data.phase2Marks != null && data.phase2Marks.keys().size() > 0) ? (data.programPhase == 'PHASE_2') : true;
       return cohortLogic && marksLogic;
     }
 
     // EVENT VALIDATION
     function isValidEventData(data, isCreate) {
-      // On create, serverTimestamp() is not yet a timestamp, so we skip the type check.
       let timestampsAreValid = isCreate || (data.startDateTime is timestamp && data.endDateTime is timestamp && data.endDateTime > data.startDateTime);
       return data.title is string && data.title.size() > 0 &&
              data.description is string &&
@@ -250,7 +227,7 @@ service cloud.firestore {
              newData.startDateTime is timestamp && newData.endDateTime is timestamp &&
              newData.endDateTime > newData.startDateTime;
     }
-
+    
     function isUserRsvping(newData, oldData) {
       let allowedFields = ['rsvps', 'rsvpCount'];
       let otherFieldsUnchanged = newData.diff(oldData).affectedKeys().hasOnly(allowedFields);
@@ -262,3 +239,5 @@ service cloud.firestore {
     }
   }
 }
+
+    
