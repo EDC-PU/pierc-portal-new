@@ -72,14 +72,14 @@ export default function IncubateeDetailsPage() {
       
       toast({ 
         title: "Download Initiated", 
-        description: `File: ${formattedFilename}. The file should download automatically. If not, please try right-clicking the View button and selecting 'Save link as'.`,
+        description: `File: ${formattedFilename}. The file should download automatically. If not, please try right-clicking the  image and selecting 'Save Image as'.`,
         duration: 5000
       });
     } catch (error) {
       console.error('Download failed:', error);
       toast({ 
         title: "Download Failed", 
-        description: "Could not initiate download. Please try right-clicking the View button and selecting 'Save link as'.",
+        description: "Could not initiate download. Please try right-clicking the image and selecting 'Save Image as'.",
         variant: "destructive"
       });
     }

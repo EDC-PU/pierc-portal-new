@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -38,7 +37,6 @@ const MarkdownDisplayComponents = {
   strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
   em: ({node, ...props}: any) => <em className="italic" {...props} />,
 };
-
 
 const applicantCategories: { value: ApplicantCategory; label: string }[] = [
   { value: 'PARUL_STUDENT', label: 'Parul University Student' },
@@ -82,7 +80,6 @@ const profileSetupSchemaForIdeaOwners = profileSetupSchemaBase.superRefine((data
 
   const isIdeaOwnerValidationContext = !isAdministrativeContext && (data.role === 'STUDENT' || data.role === 'EXTERNAL_USER');
 
-
   if (isIdeaOwnerValidationContext) {
     if (!data.applicantCategory) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Applicant category is required.', path: ['applicantCategory'] });
     if (!data.startupTitle || data.startupTitle.trim().length < 5) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Startup title must be at least 5 characters.', path: ['startupTitle'] });
@@ -101,7 +98,6 @@ const profileSetupSchemaForIdeaOwners = profileSetupSchemaBase.superRefine((data
     }
   }
 });
-
 
 type ProfileSetupFormData = z.infer<typeof profileSetupSchemaBase>;
 
@@ -131,7 +127,6 @@ export default function ProfileSetupPage() {
   const isCurrentMentorEmail = useMemo(() => isMentorEmail(user?.email), [user?.email, isMentorEmail]);
   const isNewTeamMemberSetupContext = useMemo(() => !!(!userProfile && isTeamMemberForIdea), [userProfile, isTeamMemberForIdea]);
   const isParulEmail = useMemo(() => user?.email?.endsWith('@paruluniversity.ac.in') || false, [user?.email]);
-
 
   const activeSchema = useMemo(() => {
     const isNewAdminOrMentorSetup = !isEditing && (isSuperAdminEmail || isCurrentMentorEmail);
@@ -166,6 +161,8 @@ export default function ProfileSetupPage() {
     return selectedRole || null;
   }, [isSuperAdminEmail, isCurrentMentorEmail, userProfile?.role, isNewTeamMemberSetupContext, isParulEmail, selectedRole]);
 
+  // Track if this is the initial load to prevent resetting form when schema changes
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   useEffect(() => {
     if (!authLoading && initialLoadComplete) {
@@ -230,15 +227,19 @@ export default function ProfileSetupPage() {
           defaultVals.currentStage = undefined;
         }
       }
-      reset(defaultVals);
-      if (defaultVals.role && !selectedRole) {
-        setValue('role', defaultVals.role);
+      
+      // Only reset form on initial load, not when schema changes due to role selection
+      if (isInitialLoad) {
+        reset(defaultVals);
+        if (defaultVals.role && !selectedRole) {
+          setValue('role', defaultVals.role);
+        }
+        setIsInitialLoad(false);
       }
 
       setPageLoading(false);
     }
-  }, [authLoading, initialLoadComplete, user, userProfile, router, reset, setValue, isSuperAdminEmail, isCurrentMentorEmail, isNewTeamMemberSetupContext, isParulEmail, preFilledTeamMemberDataFromLeader]);
-
+  }, [authLoading, initialLoadComplete, user, userProfile, router, reset, setValue, isSuperAdminEmail, isCurrentMentorEmail, isNewTeamMemberSetupContext, isParulEmail, preFilledTeamMemberDataFromLeader, selectedRole, isInitialLoad]);
 
   const processSubmit: SubmitHandler<ProfileSetupFormData> = async (data) => {
     if (!user) return;
@@ -256,12 +257,12 @@ export default function ProfileSetupPage() {
       enrollmentNumber: data.enrollmentNumber || null,
       college: data.college || null,
       instituteName: data.instituteName || null,
-      applicantCategory: data.applicantCategory,
-      startupTitle: data.startupTitle,
-      problemDefinition: data.problemDefinition,
-      solutionDescription: data.solutionDescription,
-      uniqueness: data.uniqueness,
-      currentStage: data.currentStage,
+      applicantCategory: data.applicantCategory || undefined,
+      startupTitle: data.startupTitle || undefined,
+      problemDefinition: data.problemDefinition || undefined,
+      solutionDescription: data.solutionDescription || undefined,
+      uniqueness: data.uniqueness || undefined,
+      currentStage: data.currentStage || undefined,
     };
 
     try {
@@ -294,14 +295,19 @@ export default function ProfileSetupPage() {
   const showRoleSelection = !isEditing && !isSuperAdminEmail && !isCurrentMentorEmail && !isNewTeamMemberSetupContext;
 
   const showIdeaDetailsSection = useMemo(() => {
+    // For editing existing users who are not team members only and not admin faculty
     if (isEditing && userProfile && !userProfile.isTeamMemberOnly && userProfile.role !== 'ADMIN_FACULTY') return true;
+    
+    // For new users who are not team members, not admin/mentor, and have selected a non-admin role
     if (!isEditing && !isNewTeamMemberSetupContext && !isSuperAdminEmail && !isCurrentMentorEmail && determinedRole && determinedRole !== 'ADMIN_FACULTY') return true;
+    
+    // For new users who haven't selected a role yet but are not admin/mentor/team member
+    if (!isEditing && !isNewTeamMemberSetupContext && !isSuperAdminEmail && !isCurrentMentorEmail && !determinedRole) return true;
+    
     return false;
   }, [isEditing, userProfile, isNewTeamMemberSetupContext, isSuperAdminEmail, isCurrentMentorEmail, determinedRole]);
 
-
   const showAdminOrMentorPlaceholderIdeaFields = isNewAdminOrMentorSetup;
-
 
   if (authLoading || !initialLoadComplete || pageLoading) {
     return (
@@ -323,10 +329,9 @@ export default function ProfileSetupPage() {
         ? `You're being added as a team member for "${isTeamMemberForIdea?.title || 'an idea'}" by ${teamLeaderProfileForMember?.displayName || 'the team leader'}. Please complete your details.`
         : (isSuperAdminEmail || isCurrentMentorEmail ? "Confirm your details to activate your administrative/mentorship account." : "Provide your details to get started with the PIERC portal."));
 
-
   return (
-    <div className="flex flex-col flex-1 items-center justify-start animate-fade-in">
-      <Card className="w-full max-w-2xl shadow-2xl my-6">
+    <div className="flex flex-col flex-1 items-center justify-start animate-fade-in p-4 md:p-6">
+      <Card className="w-full max-w-3xl shadow-2xl my-6">
         <CardHeader>
           <div className="flex items-center mb-2">
             <UserCircle className="h-10 w-10 text-primary mr-3" />
@@ -338,15 +343,15 @@ export default function ProfileSetupPage() {
         </CardHeader>
 
         <form onSubmit={handleSubmit(processSubmit)}>
-          <CardContent className="space-y-6 max-h-[calc(100vh-24rem)] overflow-y-auto p-6 pr-3 md:pr-6">
-            <section className="space-y-3 p-4 border rounded-md bg-muted/30">
+          <CardContent className="space-y-8 max-h-[calc(100vh-16rem)] overflow-y-auto p-6 pr-4 md:pr-6">
+            <section className="space-y-4 p-4 border rounded-lg bg-muted/30 shadow-sm">
               <h3 className="font-semibold text-lg text-primary">Account Information</h3>
-              <div>
+              <div className="space-y-2">
                 <Label>Email Address</Label>
                 <p className="text-sm text-foreground/80">{user.email || 'N/A'}</p>
               </div>
               {determinedRole && (
-                <div>
+                <div className="space-y-2">
                   <Label>Your Role</Label>
                   <p className="text-sm text-foreground/80 capitalize">
                     {determinedRole.replace('_', ' ').toLowerCase()}
@@ -357,14 +362,14 @@ export default function ProfileSetupPage() {
               )}
             </section>
 
-            <section className="space-y-4 pt-4">
-              <h3 className="font-semibold text-lg text-primary border-t pt-4">Personal Information</h3>
-              <div>
+            <section className="space-y-6 pt-6">
+              <h3 className="font-semibold text-lg text-primary border-t pt-6">Personal Information</h3>
+              <div className="space-y-2">
                 <Label htmlFor="fullName">Full Name *</Label>
                 <Controller name="fullName" control={control} render={({ field }) => <Input id="fullName" placeholder="Enter your full name" {...field} value={field.value || ''} />} />
                 {errors.fullName && <p className="text-sm text-destructive mt-1">{errors.fullName.message}</p>}
               </div>
-              <div>
+              <div className="space-y-2">
                 <Label htmlFor="contactNumber">Contact Number *</Label>
                 <Controller name="contactNumber" control={control} render={({ field }) => <Input id="contactNumber" type="tel" placeholder="e.g., +91 XXXXXXXXXX" {...field} value={field.value || ''} />} />
                 {errors.contactNumber && <p className="text-sm text-destructive mt-1">{errors.contactNumber.message}</p>}
@@ -393,17 +398,17 @@ export default function ProfileSetupPage() {
               </section>
             )}
 
-            { (determinedRole !== 'ADMIN_FACULTY' || (isEditing && userProfile?.role !== 'ADMIN_FACULTY' && !isCurrentMentorEmail && !isSuperAdminEmail)) && (
+            {(determinedRole !== 'ADMIN_FACULTY' || (isEditing && userProfile?.role !== 'ADMIN_FACULTY' && !isCurrentMentorEmail && !isSuperAdminEmail)) && (
               <section className="space-y-4 pt-4">
                 <h3 className="font-semibold text-lg text-primary border-t pt-4">Academic & Institutional Information</h3>
                 {(isParulEmail || (selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection)) && (
                   <>
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="enrollmentNumber">Enrollment Number {(selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection) ? '*' : ''}</Label>
                       <Controller name="enrollmentNumber" control={control} render={({ field }) => <Input id="enrollmentNumber" placeholder="Parul University Enrollment No." {...field} value={field.value || ''} />} />
                       {errors.enrollmentNumber && <p className="text-sm text-destructive mt-1">{errors.enrollmentNumber.message}</p>}
                     </div>
-                    <div>
+                    <div className="space-y-2">
                       <Label htmlFor="college">College/Faculty at Parul University {(selectedApplicantCategory === 'PARUL_STUDENT' && showIdeaDetailsSection) ? '*' : ''}</Label>
                       <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Parul Institute of Engineering" {...field} value={field.value || ''} />} />
                       {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
@@ -411,105 +416,122 @@ export default function ProfileSetupPage() {
                   </>
                 )}
                 {(!isParulEmail || (selectedApplicantCategory === 'OTHERS' && showIdeaDetailsSection)) && (
-                  <div>
+                  <div className="space-y-2">
                     <Label htmlFor="instituteName">Institute/Organization Name</Label>
                     <Controller name="instituteName" control={control} render={({ field }) => <Input id="instituteName" placeholder="Your institute or organization" {...field} value={field.value || ''} />} />
                     {errors.instituteName && <p className="text-sm text-destructive mt-1">{errors.instituteName.message}</p>}
                   </div>
                 )}
-                 {((selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI') && showIdeaDetailsSection && !isParulEmail) && (
-                  <div>
-                      <Label htmlFor="college">Department/Last Affiliated College at PU</Label>
-                      <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Dept of CS / PIET" {...field} value={field.value || ''} />} />
-                      {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
+                {((selectedApplicantCategory === 'PARUL_STAFF' || selectedApplicantCategory === 'PARUL_ALUMNI') && showIdeaDetailsSection && !isParulEmail) && (
+                  <div className="space-y-2">
+                    <Label htmlFor="college">Department/Last Affiliated College at PU</Label>
+                    <Controller name="college" control={control} render={({ field }) => <Input id="college" placeholder="e.g., Dept of CS / PIET" {...field} value={field.value || ''} />} />
+                    {errors.college && <p className="text-sm text-destructive mt-1">{errors.college.message}</p>}
                   </div>
                 )}
               </section>
             )}
 
-
             {(showIdeaDetailsSection || showAdminOrMentorPlaceholderIdeaFields) && (
               <section className="space-y-4 pt-4">
                 <div className="flex items-center gap-2 border-t pt-4">
-                    <Lightbulb className="h-6 w-6 text-primary" />
-                    <h3 className="font-semibold text-lg text-primary">
-                      {isNewAdminOrMentorSetup ? "Administrative Account Details" : "Your Startup / Idea Details"}
-                    </h3>
+                  <Lightbulb className="h-6 w-6 text-primary" />
+                  <h3 className="font-semibold text-lg text-primary">
+                    {isNewAdminOrMentorSetup ? "Administrative Account Details" : "Your Startup / Idea Details"}
+                  </h3>
                 </div>
-                 <p className="text-xs text-muted-foreground -mt-3">
-                    {isEditing ? "Manage your existing startup/idea information." :
-                     (isNewAdminOrMentorSetup ? "These are placeholder details for your account." : "Tell us about your innovative concept.")}
-                 </p>
+                <p className="text-xs text-muted-foreground -mt-3">
+                  {isEditing ? "Manage your existing startup/idea information." :
+                   (isNewAdminOrMentorSetup ? "These are placeholder details for your account." : "Tell us about your innovative concept.")}
+                </p>
 
                 {!showAdminOrMentorPlaceholderIdeaFields ? (
-                    <>
-                        <div>
-                        <Label>Applicant Category *</Label>
-                        <Controller
-                            name="applicantCategory"
-                            control={control}
-                            render={({ field }) => (
-                            <RadioGroup onValueChange={field.onChange} value={field.value || undefined} className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-1">
-                                {applicantCategories.map(({value, label}) => (
-                                <Label key={value} htmlFor={`ac-${value}`} className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm">
-                                    <RadioGroupItem value={value} id={`ac-${value}`} className="sr-only" /> {label}
-                                </Label>
-                                ))}
-                            </RadioGroup>
-                            )} />
-                        {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{errors.applicantCategory.message}</p>}
-                        </div>
-                        <div>
-                        <Label htmlFor="startupTitle">Title of the Startup/Idea *</Label>
-                        <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your brilliant startup/idea name" {...field} value={field.value || ''} />} />
-                        {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
-                        </div>
-                        <div>
-                            <Label htmlFor="problemDefinition">Define the Problem you are solving *</Label>
-                            <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} value={field.value || ''} rows={3}/>} />
-                            {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{errors.problemDefinition.message}</p>}
-                            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting (e.g., **bold**, *italic*, lists).</p>
-                        </div>
-                        <div>
-                            <Label htmlFor="solutionDescription">Describe your Solution *</Label>
-                            <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="Explain your proposed solution in detail" {...field} value={field.value || ''} rows={3}/>} />
-                            {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{errors.solutionDescription.message}</p>}
-                            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting.</p>
-                        </div>
-                        <div>
-                            <Label htmlFor="uniqueness">What is Unique/Distinctive about your idea? *</Label>
-                            <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="Highlight the novelty and competitive advantage" {...field} value={field.value || ''} rows={3}/>} />
-                            {errors.uniqueness && <p className="text-sm text-destructive mt-1">{errors.uniqueness.message}</p>}
-                            <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting.</p>
-                        </div>
-                        <div>
-                            <Label>Current Stage of your Idea/Startup *</Label>
-                            <Controller
-                                name="currentStage"
-                                control={control}
-                                render={({ field }) => (
-                                <RadioGroup onValueChange={field.onChange} value={field.value || undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
-                                    {currentStages.map(({value, label}) => (
-                                    <Label key={value} htmlFor={`cs-${value}`} className="flex items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
-                                        <RadioGroupItem value={value} id={`cs-${value}`} className="sr-only" /> {label}
-                                    </Label>
-                                    ))}
-                                </RadioGroup>
-                                )} />
-                            {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
-                        </div>
-                    </>
+                  <>
+                    <div className="space-y-2">
+                      <Label>Applicant Category *</Label>
+                      <Controller
+                        name="applicantCategory"
+                        control={control}
+                        render={({ field }) => (
+                          <RadioGroup
+                            onValueChange={field.onChange}
+                            value={field.value || undefined}
+                            className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-1"
+                          >
+                            {applicantCategories.map(({value, label}) => (
+                              <Label
+                                key={value}
+                                htmlFor={`ac-${value}`}
+                                className="flex flex-col items-center text-center justify-center rounded-md border-2 border-muted bg-popover p-2 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer text-xs sm:text-sm"
+                              >
+                                <RadioGroupItem
+                                  value={value}
+                                  id={`ac-${value}`}
+                                  className="sr-only"
+                                />
+                                {label}
+                              </Label>
+                            ))}
+                          </RadioGroup>
+                        )} 
+                      />
+                      {errors.applicantCategory && <p className="text-sm text-destructive mt-1">{errors.applicantCategory.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="startupTitle">Title of the Startup/Idea *</Label>
+                      <Controller name="startupTitle" control={control} render={({ field }) => <Input id="startupTitle" placeholder="Your brilliant startup/idea name" {...field} value={field.value || ''} />} />
+                      {errors.startupTitle && <p className="text-sm text-destructive mt-1">{errors.startupTitle.message}</p>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="problemDefinition">Define the Problem you are solving *</Label>
+                      <Controller name="problemDefinition" control={control} render={({ field }) => <Textarea id="problemDefinition" placeholder="Clearly describe the problem statement" {...field} value={field.value || ''} rows={3}/>} />
+                      {errors.problemDefinition && <p className="text-sm text-destructive mt-1">{errors.problemDefinition.message}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting (e.g., **bold**, *italic*, lists).</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="solutionDescription">Describe your Solution *</Label>
+                      <Controller name="solutionDescription" control={control} render={({ field }) => <Textarea id="solutionDescription" placeholder="Explain your proposed solution in detail" {...field} value={field.value || ''} rows={3}/>} />
+                      {errors.solutionDescription && <p className="text-sm text-destructive mt-1">{errors.solutionDescription.message}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="uniqueness">What is Unique/Distinctive about your idea? *</Label>
+                      <Controller name="uniqueness" control={control} render={({ field }) => <Textarea id="uniqueness" placeholder="Highlight the novelty and competitive advantage" {...field} value={field.value || ''} rows={3}/>} />
+                      {errors.uniqueness && <p className="text-sm text-destructive mt-1">{errors.uniqueness.message}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">You can use Markdown for basic formatting.</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Current Stage of your Idea/Startup *</Label>
+                      <Controller
+                        name="currentStage"
+                        control={control}
+                        render={({ field }) => (
+                          <RadioGroup onValueChange={field.onChange} value={field.value || undefined} className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-1">
+                            {currentStages.map(({value, label}) => (
+                              <Label key={value} htmlFor={`cs-${value}`} className="flex items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover:bg-accent hover:text-accent-foreground [&:has([data-state=checked])]:border-primary cursor-pointer">
+                                <RadioGroupItem value={value} id={`cs-${value}`} className="sr-only" /> {label}
+                              </Label>
+                            ))}
+                          </RadioGroup>
+                        )} 
+                      />
+                      {errors.currentStage && <p className="text-sm text-destructive mt-1">{errors.currentStage.message}</p>}
+                    </div>
+                  </>
                 ) : (
-                    <>
-                        <div><Label>Account Type</Label><Input value={isSuperAdminEmail ? "Super Admin Placeholder" : "Faculty/Mentor Placeholder"} disabled /></div>
-                        <Controller name="applicantCategory" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <Controller name="startupTitle" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <Controller name="problemDefinition" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <Controller name="solutionDescription" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <Controller name="uniqueness" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <Controller name="currentStage" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
-                        <p className="text-xs text-muted-foreground">The fields above are pre-filled for your administrative/mentorship account and are not typically edited here.</p>
-                    </>
+                  <>
+                    <div className="space-y-2">
+                      <Label>Account Type</Label>
+                      <Input value={isSuperAdminEmail ? "Super Admin Placeholder" : "Faculty/Mentor Placeholder"} disabled />
+                    </div>
+                    <Controller name="applicantCategory" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                    <Controller name="startupTitle" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                    <Controller name="problemDefinition" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                    <Controller name="solutionDescription" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                    <Controller name="uniqueness" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                    <Controller name="currentStage" control={control} render={({ field }) => <Input type="hidden" {...field} />} />
+                    <p className="text-xs text-muted-foreground">The fields above are pre-filled for your administrative/mentorship account and are not typically edited here.</p>
+                  </>
                 )}
               </section>
             )}
@@ -519,9 +541,9 @@ export default function ProfileSetupPage() {
                 <h3 className="font-semibold text-lg text-primary border-t pt-4 flex items-center">
                   <ShieldCheck className="h-5 w-5 mr-2"/> Security
                 </h3>
-                 <div>
+                <div className="space-y-2">
                   <Label htmlFor="changePassword">Password</Label>
-                   <Button
+                  <Button
                     id="changePassword"
                     type="button"
                     variant="outline"
@@ -541,34 +563,34 @@ export default function ProfileSetupPage() {
 
           </CardContent>
 
-          <CardFooter className="flex flex-col sm:flex-row justify-between items-center pt-6 border-t">
+          <CardFooter className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-6 border-t bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/95">
             <Button type="submit" className="w-full sm:w-auto" disabled={isSubmitting || pageLoading}>
               {(isSubmitting || pageLoading) && <LoadingSpinner className="mr-2" />}
               {isEditing ? 'Save Profile Changes' : 'Save Profile & Proceed'}
             </Button>
             {isEditing && user?.email !== 'pranavrathi07@gmail.com' && !isCurrentMentorEmail && (
-                <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button type="button" variant="destructive" className="w-full sm:w-auto mt-3 sm:mt-0">
-                            <Trash2 className="mr-2 h-4 w-4" /> Delete My Account
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                        <AlertDialogTitle className="flex items-center"><AlertTriangle className="text-destructive mr-2"/>Are you absolutely sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete your account and all associated data from the PIERC portal.
-                            If you are a team leader, this will also affect your team's idea submission.
-                        </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDeleteOwnAccount} className="bg-destructive hover:bg-destructive/90">
-                            Yes, delete my account
-                        </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                </AlertDialog>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button type="button" variant="destructive" className="w-full sm:w-auto mt-3 sm:mt-0">
+                    <Trash2 className="mr-2 h-4 w-4" /> Delete My Account
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle className="flex items-center"><AlertTriangle className="text-destructive mr-2"/>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete your account and all associated data from the PIERC portal.
+                      If you are a team leader, this will also affect your team's idea submission.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDeleteOwnAccount} className="bg-destructive hover:bg-destructive/90">
+                      Yes, delete my account
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             )}
           </CardFooter>
         </form>
@@ -576,4 +598,3 @@ export default function ProfileSetupPage() {
     </div>
   );
 }
-    

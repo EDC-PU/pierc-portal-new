@@ -1,4 +1,3 @@
-
 'use client';
 
 import { useState, useRef } from 'react';
@@ -106,13 +105,17 @@ export function IdeaComments({ idea, currentUserProfile, onCommentPosted }: Idea
     </div>
   );
 
-
   const onSubmit: SubmitHandler<CommentFormData> = async (data) => {
     try {
       await addCommentToIdea(idea.id!, idea.title, data.comment, currentUserProfile);
-      toast({ title: 'Comment Posted', description: 'Your feedback has been added to the discussion.' });
+      toast({ 
+        title: 'Comment Posted', 
+        description: 'Your feedback has been added. Page will refresh to show your comment.' 
+      });
       reset();
-      onCommentPosted(); // Callback to parent to refetch data
+      
+      // Force reload immediately after successful post
+      window.location.reload();
     } catch (error) {
       console.error("Error posting comment:", error);
       toast({ title: 'Error', description: (error as Error).message || 'Could not post comment.', variant: 'destructive' });

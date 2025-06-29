@@ -30,6 +30,18 @@ service cloud.firestore {
       return isRequestingUserAuthenticated() && request.auth.uid == userId;
     }
 
+    // New helper function to check if user is a team member
+    function isTeamMember(ideaId) {
+      let idea = get(/databases/$(database)/documents/ideas/$(ideaId)).data;
+      return isRequestingUserAuthenticated() && 
+             (idea.teamMemberUids != null && idea.teamMemberUids.hasAny([request.auth.uid]));
+    }
+
+    // New helper function to check if the update is just for comments
+    function isJustCommenting(request, resource) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']);
+    }
+
     // --- Collection: users ---
     match /users/{userId} {
       allow read: if isRequestingUserAuthenticated() || request.auth.uid == userId;
@@ -47,62 +59,18 @@ service cloud.firestore {
     }
 
     // --- Collection: ideas ---
-      match /ideas/{ideaId} {
+    match /ideas/{ideaId} {
       allow read: if isRequestingUserAuthenticated() || request.auth.uid == resource.data.userId;
       
       // CREATE rule for ideas
       allow create: if isSuperAdminUser() || isOwnerCreatingIdea(request, resource);
       
-      // UPDATE rule for ideas - combining both approaches
+      // UPDATE rule for ideas - updated to handle team member comments
       allow update: if isSuperAdminUser() ||
                       (isOwner(resource.data.userId) && isOwnerMakingAllowedChanges(request, resource)) ||
                       (isRequestingUserAdmin() && isAdminUpdatingIdea(request, resource)) ||
-                      // Allow any authenticated user to update ONLY comments and updatedAt fields
-                      (isAuth() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['comments', 'updatedAt']));
-
-      // Extend allowed fields for owner to include incubationDocuments and Yukti fields
-      function isOwnerMakingAllowedChanges(request, resource) {
-        let newData = request.resource.data;
-        let existingData = resource.data;
-        // Fields an owner can update after initial submission
-        let ownerUpdatableFields = [
-          'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
-          'structuredTeamMembers', 'teamMemberEmails',
-          'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
-          'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
-          'incubationDocuments',
-          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
-        ];
-        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
-
-        return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
-               newData.diff(existingData).affectedKeys().hasOnly(ownerUpdatableFields) &&
-               isIdeaDataInternallyConsistent(newData);
-      }
-
-      // Extend allowed fields for admin to include incubationDocuments and Yukti fields
-      function isAdminUpdatingIdea(request, resource) {
-        let allowedAdminFieldsToChange = [
-          'status', 'programPhase', 'phase2Marks', 'mentor', 'cohortId', 'rejectionRemarks', 'rejectedByUid', 'rejectedAt',
-          'nextPhaseDate', 'nextPhaseStartTime', 'nextPhaseEndTime', 'nextPhaseVenue', 'nextPhaseGuidelines', 'updatedAt',
-          'isOutlineAIGenerated', 'fundingSource', 'totalFundingAllocated', 'sanction1Amount', 'sanction2Amount',
-          'sanction1DisbursedAt', 'sanction2DisbursedAt', 'sanction1UtilizationStatus', 'sanction1UtilizationRemarks',
-          'sanction1UtilizationReviewedBy', 'sanction1UtilizationReviewedAt', 'sanction2UtilizationStatus',
-          'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt',
-          // Allow admin to reset these if needed during archival etc.
-          'sanction1Expenses', 'sanction2Expenses', 'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName',
-          'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext',
-          'incubationDocuments',
-          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
-        ];
-        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
-
-        return isRequestingUserAdmin() &&
-               !request.resource.data.diff(resource.data).affectedKeys().hasAny(immutableFields) &&
-               request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowedAdminFieldsToChange) &&
-               isValidIdeaData(request.resource.data) &&
-               isIdeaDataInternallyConsistent(request.resource.data);
-      }
+                      // Allow team members, owner, and admins to comment
+                      ((isOwner(resource.data.userId) || isTeamMember(ideaId) || isAdmin()) && isJustCommenting(request, resource));
 
       // DELETE rule is intentionally restrictive to prevent accidental data loss
       allow delete: if isSuperAdminUser();
@@ -206,24 +174,25 @@ service cloud.firestore {
              data.programPhase == null;
     }
 
-      function isOwnerMakingAllowedChanges(request, resource) {
-        let newData = request.resource.data;
-        let existingData = resource.data;
-        // Fields an owner can update after initial submission
-        let ownerUpdatableFields = [
-          'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
-          'structuredTeamMembers', 'teamMemberEmails',
-          'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
-          'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
-          'incubationDocuments',
-          'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName'
-        ];
-        let immutableFields = ['userId', 'createdAt', 'submittedAt'];
+    function isOwnerMakingAllowedChanges(request, resource) {
+      let newData = request.resource.data;
+      let existingData = resource.data;
+      // Fields an owner can update after initial submission
+      let ownerUpdatableFields = [
+        'phase2PptUrl', 'phase2PptFileName', 'phase2PptUploadedAt', 'updatedAt',
+        'structuredTeamMembers', 'teamMemberEmails',
+        'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName', 'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName',
+        'sanction1Expenses', 'sanction2Expenses', 'sanction1AppliedForNext',
+        'incubationDocuments',
+        'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName',
+        'comments'  // Allow owner to update comments
+      ];
+      let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
-        return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
+      return !newData.diff(existingData).affectedKeys().hasAny(immutableFields) &&
              newData.diff(existingData).affectedKeys().hasOnly(ownerUpdatableFields) &&
              isIdeaDataInternallyConsistent(newData);
-      }
+    }
 
     function isAdminUpdatingIdea(request, resource) {
       let allowedAdminFieldsToChange = [
@@ -235,7 +204,10 @@ service cloud.firestore {
         'sanction2UtilizationRemarks', 'sanction2UtilizationReviewedBy', 'sanction2UtilizationReviewedAt',
         // Allow admin to reset these if needed during archival etc.
         'sanction1Expenses', 'sanction2Expenses', 'beneficiaryName', 'beneficiaryAccountNo', 'beneficiaryBankName',
-        'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext'
+        'beneficiaryIfscCode', 'beneficiaryAccountType', 'beneficiaryCity', 'beneficiaryBranchName', 'sanction1AppliedForNext',
+        'incubationDocuments',
+        'yuktiId', 'yuktiPassword', 'yuktiScreenshotUrl', 'yuktiScreenshotFileName',
+        'comments'  // Allow admin to update comments
       ];
       let immutableFields = ['userId', 'createdAt', 'submittedAt'];
 
